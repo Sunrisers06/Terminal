@@ -6717,6 +6717,27 @@
             }
             window._smartFetch = smartFetch;
 
+            let _dbPromise = null;
+            window._getDuckDB = function () {
+                if (_dbPromise) return _dbPromise;
+                _dbPromise = (async () => {
+                    const duckdb = await import("https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/+esm");
+                    const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
+                    const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
+                    const workerUrl = URL.createObjectURL(
+                        new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' })
+                    );
+                    const worker = new Worker(workerUrl);
+                    URL.revokeObjectURL(workerUrl);
+                    const logger = new duckdb.ConsoleLogger();
+                    const db = new duckdb.AsyncDuckDB(logger, worker);
+                    await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+                    const conn = await db.connect();
+                    return { db, conn };
+                })();
+                return _dbPromise;
+            };
+
             const app = document.getElementById('app-container');
 
             window._isUnlocked = function () { return true; };
@@ -8567,8 +8588,6 @@
             const sb = document.getElementById('sbox');
             sb.className = 'sbox s-info'; sb.textContent = 'Connecting to data sources…'; sb.style.display = 'block';
 
-            const OHLCV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vShTCI8l6LaBJ4gdLiestC5UUzjf0f3vfggnO914YxeYbdaGd1wfcwVLVoBq-z_GUUFnf1WRm7sy1sP/pub?gid=368137703&single=true&output=csv';
-
             /* ── Try loading from IndexedDB first (unless forced refresh) ── */
             let resT, idxT, namesT, newsT, insT, ohlcvT, ssT, epSalesT, scrT;
             let loadedFromCache = false;
@@ -8578,9 +8597,14 @@
                     sb.textContent = '⚡ Loading from cache…';
                     const cached = await window._idbCache.load();
                     if (cached && cached.resT && cached.scrT) {
-                        ({ resT, idxT, namesT, newsT, insT, ohlcvT, ssT, epSalesT, scrT } = cached);
-                        loadedFromCache = true;
-                        window._loadedCacheTs = cached._ts;
+                        ({ resT, idxT, namesT, newsT, insT, ssT, epSalesT, scrT } = cached);
+                        const db = await window._idbCache.openDB();
+                        const pRec = await window._idbCache.idbGet(db, 'ohlc_parquet_v1');
+                        if (pRec && pRec.data) {
+                            ohlcvT = pRec.data;
+                            loadedFromCache = true;
+                            window._loadedCacheTs = cached._ts;
+                        }
                     }
                 } catch (e) {
                     console.warn('[loadAll] IDB load error, falling back to network:', e.message);
@@ -8627,6 +8651,16 @@
                         }
                     };
 
+                    const fetchOHLCVBinary = async () => {
+                        let fetchUrl = 'OHLC.parquet';
+                        if (forceNetwork) {
+                            fetchUrl += '?_nc=' + Date.now();
+                        }
+                        const r = await fetch(fetchUrl);
+                        if (!r.ok) throw new Error('HTTP ' + r.status);
+                        return await r.arrayBuffer();
+                    };
+
                     // Fetch all CSVs in parallel — including OHLCV chart data
                     [resT, idxT, namesT, newsT, insT, ohlcvT, ssT, epSalesT, scrT] = await Promise.all([
                         fetchWithProg('results', 'Results', smartFetch(URLS.results)),
@@ -8634,7 +8668,7 @@
                         smartFetch(URLS.namesMap),
                         fetchWithProg('news', 'News', smartFetch(URLS.news)),
                         fetchWithProg('insights', 'Insights', smartFetch(URLS.insights)),
-                        fetchWithProg('ohlcv', 'OHLCV', smartFetch(OHLCV_URL)),
+                        fetchWithProg('ohlcv', 'OHLCV', fetchOHLCVBinary()),
                         fetchWithProgNoThrow('superstar', 'SuperStar', smartFetch(URLS.superstar)),
                         fetchWithProgNoThrow('epsales', 'EPS/Sales', smartFetch(URLS.epsales)),
                         fetchWithProgNoThrow('screener', 'Screener', smartFetch(URLS.screener)),
@@ -8642,13 +8676,23 @@
 
                     // Save to IDB asynchronously (non-blocking — don’t await)
                     if (window._idbCache) {
-                        window._idbCache.save({ resT, idxT, namesT, newsT, insT, ohlcvT, ssT, epSalesT, scrT })
+                        window._idbCache.save({ resT, idxT, namesT, newsT, insT, ssT, epSalesT, scrT })
                             .catch(e => console.warn('[loadAll] IDB save error (non-critical):', e.message));
+                        const bufferCopy = ohlcvT.slice(0);
+                        (async () => {
+                            try {
+                                const db = await window._idbCache.openDB();
+                                await window._idbCache.idbSet(db, 'ohlc_parquet_v1', { ts: Date.now(), data: bufferCopy });
+                                console.info('[IDB] Cached OHLC.parquet binary successfully.');
+                            } catch (e) {
+                                console.warn('[loadAll] IDB parquet save error:', e.message);
+                            }
+                        })();
                     }
                 }
 
                 // Inject OHLCV data into chart engine immediately — hover charts are now instant
-                if (ohlcvT && window._ohlcvInject) window._ohlcvInject(ohlcvT);
+                if (ohlcvT && window._ohlcvInject) await window._ohlcvInject(ohlcvT);
 
                 sb.textContent = '⏳ Processing data…';
 
@@ -9532,12 +9576,19 @@
             let _currentPeriod = '1y'; // '6m' | '1y' | '2y'
             let _canvasCache = {};     // ticker → {priceImgData, volImgData, W, PH, VH} — instant redraw
 
-            // Allow loadAll() to inject already-fetched OHLCV text → instant index, no re-fetch needed
-            window._ohlcvInject = function (csvText) {
-                _index = buildIndex(csvText);
+            // Allow loadAll() to inject already-fetched OHLCV parquet ArrayBuffer
+            window._ohlcvInject = async function (parquetBuf) {
+                try {
+                    const { db, conn } = await window._getDuckDB();
+                    await db.registerFileBuffer('OHLC.parquet', new Uint8Array(parquetBuf));
+                    const res = await conn.query("SELECT * FROM 'OHLC.parquet'");
+                    const rows = res.toArray();
+                    _index = buildIndexFromParquetRows(rows);
+                    window._ohlcvTickers = _index;
+                } catch (e) {
+                    console.error('[_ohlcvInject] Error loading parquet via DuckDB:', e);
+                }
                 _fetchP = null;
-                // Expose ticker set globally so buildCard can show/hide chart button accurately
-                window._ohlcvTickers = _index;
             };
 
             // Check if a ticker has OHLCV data — called from buildCard
@@ -9547,132 +9598,107 @@
                 return !!(arr && arr.length > 0);
             };
 
-            /* ─── Fast CSV parser ───────────────────────────────────────────
-               Uses indexOf-based field splitting instead of per-char loop.
-               Converts numerics inline; builds ticker index in one pass.
-            ─────────────────────────────────────────────────────────────── */
-            function buildIndex(txt) {
-                // Keep ALL rows — full history needed so MAs (10/40 period) calculate correctly.
-                // drawChart will slice to 6M for display but use full array for MA computation.
-                const lines = txt.replace(/\r/g, '').split('\n');
-                if (lines.length < 2) return new Map();
-
-                const hdrs = fastSplit(lines[0]);
-                const ci = name => {
-                    const variants = [name, name.toLowerCase(), name.toUpperCase()];
-                    for (const v of variants) { const i = hdrs.indexOf(v); if (i !== -1) return i; }
-                    return -1;
-                };
-                const iT = ci('Ticker'), iD = ci('Date'), iO = ci('Open'),
-                    iH = ci('High'), iL = ci('Low'), iC = ci('Close'), iV = ci('Volume');
-
+            /* ─── Build ticker index from Parquet rows queried via DuckDB ─── */
+            function buildIndexFromParquetRows(rows) {
                 const idx = new Map();
+                const safeNum = val => {
+                    if (val === null || val === undefined) return 0;
+                    if (typeof val === 'bigint') return Number(val);
+                    const n = Number(val);
+                    return isNaN(n) ? 0 : n;
+                };
 
-                for (let li = 1; li < lines.length; li++) {
-                    const line = lines[li];
-                    if (!line || line.length < 5) continue;
-
-                    const f = fastSplit(line);
-                    const ticker = (f[iT] || '').trim().toUpperCase();
+                for (let i = 0; i < rows.length; i++) {
+                    const r = rows[i];
+                    
+                    let ticker = '';
+                    let rawDate = null;
+                    let o = 0, h = 0, l = 0, c = 0, v = 0;
+                    
+                    for (const key in r) {
+                        const kl = key.toLowerCase();
+                        if (kl === 'ticker') ticker = String(r[key] || '').trim().toUpperCase();
+                        else if (kl === 'date') rawDate = r[key];
+                        else if (kl === 'open') o = safeNum(r[key]);
+                        else if (kl === 'high') h = safeNum(r[key]);
+                        else if (kl === 'low') l = safeNum(r[key]);
+                        else if (kl === 'close') c = safeNum(r[key]);
+                        else if (kl === 'volume' || kl === 'vol') v = safeNum(r[key]);
+                    }
+                    
                     if (!ticker) continue;
-
-                    const ds = (f[iD] || '').trim();
-                    const dt = pd(ds);
-                    if (!dt) continue;
-
-                    const o = +f[iO] || 0, h = +f[iH] || 0,
-                        l = +f[iL] || 0, c = +f[iC] || 0,
-                        v = +f[iV] || 0;
+                    
+                    let dt = null;
+                    if (rawDate instanceof Date) {
+                        dt = rawDate;
+                    } else if (rawDate !== null && rawDate !== undefined) {
+                        if (typeof rawDate === 'bigint') {
+                            dt = new Date(Number(rawDate));
+                        } else if (typeof rawDate === 'number') {
+                            dt = new Date(rawDate);
+                        } else {
+                            dt = new Date(rawDate);
+                        }
+                    }
+                    if (!dt || isNaN(dt.getTime())) continue;
                     if (!c) continue;
-
+                    
                     const row = { date: dt, open: o, high: h, low: l, close: c, vol: v };
                     let arr = idx.get(ticker);
-                    if (!arr) { arr = []; idx.set(ticker, arr); }
+                    if (!arr) {
+                        arr = [];
+                        idx.set(ticker, arr);
+                    }
                     arr.push(row);
                 }
-
+                
                 // Sort each ticker ascending once (full history)
                 idx.forEach(arr => arr.sort((a, b) => a.date - b.date));
                 return idx;
             }
 
-            /* ─── Minimal fast field splitter (handles quoted commas) ─── */
-            function fastSplit(line) {
-                // Fast path: no quotes (covers 99% of financial CSV rows)
-                if (line.indexOf('"') === -1) return line.split(',');
-                // Slow path: quoted fields
-                const out = []; let cur = '', q = false;
-                for (let i = 0; i < line.length; i++) {
-                    const c = line[i];
-                    if (c === '"') { q = !q; }
-                    else if (c === ',' && !q) { out.push(cur); cur = ''; }
-                    else cur += c;
-                }
-                out.push(cur);
-                return out;
-            }
-
-            /* ─── Date parser ─── */
-            function pd(s) {
-                if (!s) return null;
-                let m;
-                if ((m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/))) return new Date(+m[3], +m[2] - 1, +m[1]);
-                if ((m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/))) return new Date(+m[1], +m[2] - 1, +m[3]);
-                const d = new Date(s); return isNaN(d) ? null : d;
-            }
-
-            /* ─── Fetch with proxy fallback — uses same smartFetch strategy as loadAll ─── */
-            function fetchOHLCV() {
-                // Use the same PROXIES list and cache-busting as window._smartFetch for consistency
-                const url = CHART_URL + (CHART_URL.includes('?') ? '&' : '?') + '_nc=' + Date.now();
-                const proxies = [
-                    u => u,
-                    u => 'https://corsproxy.io/?' + encodeURIComponent(u),
-                    u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
-                ];
-                let chain = Promise.reject(new Error('start'));
-                for (const px of proxies) {
-                    chain = chain.catch(() => {
-                        return new Promise((resolve, reject) => {
-                            const ctrl = new AbortController();
-                            const tid = setTimeout(() => ctrl.abort(), 10000);
-                            fetch(px(url), { signal: ctrl.signal })
-                                .then(r => { clearTimeout(tid); return r.ok ? r.text() : Promise.reject('HTTP ' + r.status); })
-                                .then(t => {
-                                    if (t && t.trim().length > 0 && !t.toLowerCase().startsWith('<html')) resolve(t);
-                                    else reject(new Error('Bad response'));
-                                })
-                                .catch(e => { clearTimeout(tid); reject(e); });
-                        });
-                    });
-                }
-                return chain;
+            /* ─── Fetch local OHLC.parquet binary ─── */
+            async function fetchOHLCV() {
+                const res = await fetch('OHLC.parquet');
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return await res.arrayBuffer();
             }
 
             /* ─── Prefetch: kick off immediately, no delay ─── */
-            /* Skip if loadAll() already injected OHLCV data via window._ohlcvInject */
             function prefetch() {
-                if (_index || _fetchP) return; // already have data or in-flight
-                _fetchP = fetchOHLCV()
-                    .then(txt => {
-                        _index = buildIndex(txt);
-                        window._ohlcvTickers = _index;
-                        _fetchP = null;
-                    })
-                    .catch(() => { _fetchP = null; });
+                if (_index || _fetchP) return;
+                _fetchP = (async () => {
+                    const buf = await fetchOHLCV();
+                    const { db, conn } = await window._getDuckDB();
+                    await db.registerFileBuffer('OHLC.parquet', new Uint8Array(buf));
+                    const res = await conn.query("SELECT * FROM 'OHLC.parquet'");
+                    const rows = res.toArray();
+                    _index = buildIndexFromParquetRows(rows);
+                    window._ohlcvTickers = _index;
+                })().catch(e => {
+                    console.error('[prefetch] Error prefetching OHLCV:', e);
+                    _fetchP = null;
+                });
             }
 
             /* ─── Ensure data ready (returns Promise) — with single in-flight dedupe ─── */
             function ensureData() {
                 if (_index) return Promise.resolve();
                 if (_fetchP) return _fetchP;
-                _fetchP = fetchOHLCV()
-                    .then(txt => {
-                        _index = buildIndex(txt);
-                        window._ohlcvTickers = _index;
-                        _fetchP = null;
-                    })
-                    .catch(e => { _fetchP = null; throw e; });
+                _fetchP = (async () => {
+                    const buf = await fetchOHLCV();
+                    const { db, conn } = await window._getDuckDB();
+                    await db.registerFileBuffer('OHLC.parquet', new Uint8Array(buf));
+                    const res = await conn.query("SELECT * FROM 'OHLC.parquet'");
+                    const rows = res.toArray();
+                    _index = buildIndexFromParquetRows(rows);
+                    window._ohlcvTickers = _index;
+                    _fetchP = null;
+                })().catch(e => {
+                    console.error('[ensureData] Error loading OHLCV:', e);
+                    _fetchP = null;
+                    throw e;
+                });
                 return _fetchP;
             }
 
