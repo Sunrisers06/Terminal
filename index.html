@@ -16146,12 +16146,12 @@
             opacity: 0;
             pointer-events: none;
         }
-        @media (max-width: 1024px) {
+        @media (max-width: 1366px), (hover: none) and (pointer: coarse) {
             .fs-nav-overlay-btn { opacity: 1; pointer-events: auto; }
         }
         .fs-nav-overlay-btn:active { background: rgba(255, 255, 255, 0.15); color: #fff; }
-        #fs-nav-up { top: 50%; margin-top: -50px; }
-        #fs-nav-down { top: 50%; margin-top: 6px; }
+        #fs-nav-up { top: auto; bottom: 70px; margin-top: 0; }
+        #fs-nav-down { top: auto; bottom: 16px; margin-top: 0; }
 
         /* Force Landscape Mode on Portrait Mobile/Tablet */
         @media screen and (max-width: 1024px) and (orientation: portrait) {
