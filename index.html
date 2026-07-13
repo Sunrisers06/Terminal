@@ -6168,6 +6168,8 @@
                     </div>
                     <button class="fh-filter-btn" id="hold-filter-btn" onclick="toggleFHFilter('H')"
                         title="Holding Tickers">H</button>
+                    <button class="fh-filter-btn" id="fs-chart-btn" onclick="openFullScreenChart()"
+                        title="Full Screen Chart">C</button>
                     <button class="fh-filter-btn" id="upcoming-results-btn" onclick="openUpcomingResults()"
                         title="Upcoming Results">U</button>
                     <button class="top-filter-btn" id="top-filter-btn" onclick="toggleTopPanel(event)"
@@ -6678,34 +6680,32 @@
             let _secret = null;
             let _unlocked = false;
 
-            const URLS = {
-                results: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRq_s8CqNXdi3zYnTDkP8YvtZGq79ZmRKwb5jdbplyjUx1GS_KcCwJf7qeV0dVx_K-Xmpxl30QcVFSH/pub?gid=1885676334&single=true&output=csv',
-                indices: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRq_s8CqNXdi3zYnTDkP8YvtZGq79ZmRKwb5jdbplyjUx1GS_KcCwJf7qeV0dVx_K-Xmpxl30QcVFSH/pub?gid=807666290&single=true&output=csv',
-                news: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRq_s8CqNXdi3zYnTDkP8YvtZGq79ZmRKwb5jdbplyjUx1GS_KcCwJf7qeV0dVx_K-Xmpxl30QcVFSH/pub?gid=607495579&single=true&output=csv',
-                auth: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRq_s8CqNXdi3zYnTDkP8YvtZGq79ZmRKwb5jdbplyjUx1GS_KcCwJf7qeV0dVx_K-Xmpxl30QcVFSH/pub?gid=1388154912&single=true&output=csv',
-                insights: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRq_s8CqNXdi3zYnTDkP8YvtZGq79ZmRKwb5jdbplyjUx1GS_KcCwJf7qeV0dVx_K-Xmpxl30QcVFSH/pub?gid=1479405821&single=true&output=csv',
-                namesMap: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRq_s8CqNXdi3zYnTDkP8YvtZGq79ZmRKwb5jdbplyjUx1GS_KcCwJf7qeV0dVx_K-Xmpxl30QcVFSH/pub?gid=2075157589&single=true&output=csv',
-                superstar: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vShTCI8l6LaBJ4gdLiestC5UUzjf0f3vfggnO914YxeYbdaGd1wfcwVLVoBq-z_GUUFnf1WRm7sy1sP/pub?gid=0&single=true&output=csv',
-                epsales: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSaxjsS5vrT2UYikSwMMFi86R1OEoIg7t37x2Pd8MkoMiR8poqxGNQabPQdCwk5WUPjpjzsv0Vtq8IK/pub?gid=63767384&single=true&output=csv',
-                screener: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSduHf77Jj9UtFk_S-jw6RGs2msasnq3kTw8wnM_ZjcjB7gjIN58Ev6fkrHpIKGDiazQwRimsRtmbib/pub?gid=1148840211&single=true&output=csv'
+            // ── Parquet data source registry (replaces Google Sheets URLs) ──
+            const PARQUET_FILES = {
+                results: 'Results.parquet',
+                indices: 'indices.parquet',
+                news: 'news.parquet',
+                insights: 'insights.parquet',
+                namesMap: 'namesMap.parquet',
+                superstar: 'SuperStar.parquet',
+                epsales: 'epsSales.parquet',
+                screener: 'screener.parquet'
             };
-            window._URLS = URLS;
+            window._PARQUET_FILES = PARQUET_FILES;
 
+            // Keep smartFetch only for FH_CSV_URL (favourites/holdings — no parquet available)
             const PROXIES = [
                 u => u,
                 u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
                 u => 'https://corsproxy.io/?' + encodeURIComponent(u)
             ];
-
             async function smartFetch(baseUrl) {
                 const url = baseUrl + (baseUrl.includes('?') ? '&' : '?') + '_nc=' + Date.now();
                 for (const px of PROXIES) {
                     try {
                         const ctrl = new AbortController();
                         const tid = setTimeout(() => ctrl.abort(), 8000);
-
                         const r = await fetch(px(url), { signal: ctrl.signal });
-
                         clearTimeout(tid);
                         if (r.ok) {
                             const t = await r.text();
@@ -6717,6 +6717,7 @@
             }
             window._smartFetch = smartFetch;
 
+            // ── DuckDB-wasm singleton ──
             let _dbPromise = null;
             window._getDuckDB = function () {
                 if (_dbPromise) return _dbPromise;
@@ -6736,6 +6737,64 @@
                     return { db, conn };
                 })();
                 return _dbPromise;
+            };
+
+            // ── _parquetToCSV: fetch a local .parquet file and return CSV text ──
+            // Buffer cache so each file is only fetched once per session.
+            const _pqBufCache = {};
+            window._parquetToCSV = async function (filename) {
+                if (!_pqBufCache[filename]) {
+                    const r = await fetch(filename);
+                    if (!r.ok) throw new Error('HTTP ' + r.status + ' loading ' + filename);
+                    _pqBufCache[filename] = await r.arrayBuffer();
+                }
+                const { db, conn } = await window._getDuckDB();
+                await db.registerFileBuffer(filename, new Uint8Array(_pqBufCache[filename].slice(0)));
+                const result = await conn.query(`SELECT * FROM '${filename}'`);
+                const cols = result.schema.fields.map(f => f.name);
+                const rows = result.toArray();
+                const esc = v => {
+                    if (v === null || v === undefined) return '';
+                    let s;
+                    if (typeof v === 'bigint') s = String(Number(v));
+                    else if (v instanceof Date) s = v.toISOString().slice(0, 10);
+                    else s = String(v);
+                    return (s.includes(',') || s.includes('"') || s.includes('\n'))
+                        ? '"' + s.replace(/"/g, '""') + '"' : s;
+                };
+                let csv = cols.join(',') + '\n';
+                for (const row of rows) {
+                    csv += cols.map(c => esc(row[c])).join(',') + '\n';
+                }
+                return csv;
+            };
+
+            // ── _parquetToRows: fetch a local .parquet file and return array of objects directly ──
+            // Skips CSV serialization for high performance loading of large datasets like deals.
+            window._parquetToRows = async function (filename) {
+                if (!_pqBufCache[filename]) {
+                    const r = await fetch(filename);
+                    if (!r.ok) throw new Error('HTTP ' + r.status + ' loading ' + filename);
+                    _pqBufCache[filename] = await r.arrayBuffer();
+                }
+                const { db, conn } = await window._getDuckDB();
+                await db.registerFileBuffer(filename, new Uint8Array(_pqBufCache[filename].slice(0)));
+                const result = await conn.query(`SELECT * FROM '${filename}'`);
+
+                const esc = v => {
+                    if (v === null || v === undefined) return '';
+                    if (typeof v === 'bigint') return String(Number(v));
+                    if (v instanceof Date) return v.toISOString().slice(0, 10);
+                    return String(v);
+                };
+
+                const cols = result.schema.fields.map(f => f.name);
+                const rawRows = result.toArray();
+                return rawRows.map(row => {
+                    const obj = {};
+                    cols.forEach(c => obj[c] = esc(row[c]));
+                    return obj;
+                });
             };
 
             const app = document.getElementById('app-container');
@@ -7632,8 +7691,7 @@
         async function fetchNseNewsData(btn) {
             if (btn) btn.innerHTML = '⏳';
             try {
-                const res = await fetch('https://docs.google.com/spreadsheets/d/e/2PACX-1vQkut365u0X8AscEt0Zngenr1OxgnBmkewpd3fJHsT2XfI7O-Ufm-WsckHwWgah--QzcwRtxOY0UsEO/pub?gid=0&single=true&output=csv');
-                const text = await res.text();
+                const text = await window._parquetToCSV('NSE_news.parquet');
                 const raw = parseCSV(text);
                 allNseNewsData = raw.map(r => {
                     const keys = Object.keys(r);
@@ -8105,7 +8163,14 @@
                     r._matchScore = 0;
                 }
 
-                if (idxQ !== 'all' && (!indexDataMap[idxQ] || !indexDataMap[idxQ].has(String(r._ticker).toUpperCase()))) return false;
+                if (idxQ !== 'all') {
+                    if (idxQ.startsWith('fh_')) {
+                        const fhKey = idxQ.replace('fh_', '');
+                        if (!window._fhTickers || !window._fhTickers[fhKey] || !window._fhTickers[fhKey].includes(String(r._ticker).toUpperCase() + '.NS')) return false;
+                    } else {
+                        if (!indexDataMap[idxQ] || !indexDataMap[idxQ].has(String(r._ticker).toUpperCase())) return false;
+                    }
+                }
                 if (qtrQ !== 'all' && r._qtr !== qtrQ) return false;
                 if (secQ !== 'all' && r._sec !== secQ) return false;
                 if (indQ !== 'all' && r._ind !== indQ) return false;
@@ -8541,7 +8606,14 @@
             });
             const idxNames = Object.keys(indexDataMap).sort();
             const idxSel = document.getElementById('index-filter');
-            idxSel.innerHTML = '<option value="all">All Indices</option>' + idxNames.map(i => `<option value="${i}">${i}</option>`).join('');
+            idxSel.innerHTML = '<option value="all">All Indices</option>' +
+                idxNames.map(i => `<option value="${i}">${i}</option>`).join('') +
+                '<optgroup label="Watchlist">' +
+                '<option value="fh_F">All Favorites</option>' +
+                '<option value="fh_FF">FunFav Only</option>' +
+                '<option value="fh_TF">TechFav Only</option>' +
+                '<option value="fh_H">Holding</option>' +
+                '</optgroup>';
             if (idxNames.includes('Nifty_ALL')) idxSel.value = 'Nifty_ALL';
             document.getElementById('qtr-filter').innerHTML = '<option value="all">All Quarters</option>' + [...qtrSet].sort().map(i => `<option value="${i}">${i}</option>`).join('');
             document.getElementById('sec-filter').innerHTML = '<option value="all">All Sectors</option>' + [...secSet].sort().map(i => `<option value="${i}">${i}</option>`).join('');
@@ -8661,17 +8733,17 @@
                         return await r.arrayBuffer();
                     };
 
-                    // Fetch all CSVs in parallel — including OHLCV chart data
+                    // Fetch all data sources in parallel from local Parquet files via DuckDB
                     [resT, idxT, namesT, newsT, insT, ohlcvT, ssT, epSalesT, scrT] = await Promise.all([
-                        fetchWithProg('results', 'Results', smartFetch(URLS.results)),
-                        fetchWithProg('indices', 'Indices', smartFetch(URLS.indices)),
-                        smartFetch(URLS.namesMap),
-                        fetchWithProg('news', 'News', smartFetch(URLS.news)),
-                        fetchWithProg('insights', 'Insights', smartFetch(URLS.insights)),
+                        fetchWithProg('results', 'Results', window._parquetToCSV('Results.parquet')),
+                        fetchWithProg('indices', 'Indices', window._parquetToCSV('indices.parquet')),
+                        window._parquetToCSV('namesMap.parquet'),
+                        fetchWithProg('news', 'News', window._parquetToCSV('news.parquet')),
+                        fetchWithProg('insights', 'Insights', window._parquetToCSV('insights.parquet')),
                         fetchWithProg('ohlcv', 'OHLCV', fetchOHLCVBinary()),
-                        fetchWithProgNoThrow('superstar', 'SuperStar', smartFetch(URLS.superstar)),
-                        fetchWithProgNoThrow('epsales', 'EPS/Sales', smartFetch(URLS.epsales)),
-                        fetchWithProgNoThrow('screener', 'Screener', smartFetch(URLS.screener)),
+                        fetchWithProgNoThrow('superstar', 'SuperStar', window._parquetToCSV('SuperStar.parquet')),
+                        fetchWithProgNoThrow('epsales', 'EPS/Sales', window._parquetToCSV('epsSales.parquet')),
+                        fetchWithProgNoThrow('screener', 'Screener', window._parquetToCSV('screener.parquet')),
                     ]);
 
                     // Save to IDB asynchronously (non-blocking — don’t await)
@@ -9567,7 +9639,7 @@
         (function () {
             'use strict';
 
-            const CHART_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vShTCI8l6LaBJ4gdLiestC5UUzjf0f3vfggnO914YxeYbdaGd1wfcwVLVoBq-z_GUUFnf1WRm7sy1sP/pub?gid=368137703&single=true&output=csv';
+            // CHART_URL removed — OHLCV data now loaded from OHLC.parquet via DuckDB
 
             let _index = null;   // Map<TICKER_UPPER → [{date,open,high,low,close,vol}]> (pre-filtered 6M, sorted)
             let _fetchP = null;   // in-flight Promise
@@ -9610,11 +9682,11 @@
 
                 for (let i = 0; i < rows.length; i++) {
                     const r = rows[i];
-                    
+
                     let ticker = '';
                     let rawDate = null;
                     let o = 0, h = 0, l = 0, c = 0, v = 0;
-                    
+
                     for (const key in r) {
                         const kl = key.toLowerCase();
                         if (kl === 'ticker') ticker = String(r[key] || '').trim().toUpperCase();
@@ -9625,9 +9697,9 @@
                         else if (kl === 'close') c = safeNum(r[key]);
                         else if (kl === 'volume' || kl === 'vol') v = safeNum(r[key]);
                     }
-                    
+
                     if (!ticker) continue;
-                    
+
                     let dt = null;
                     if (rawDate instanceof Date) {
                         dt = rawDate;
@@ -9642,7 +9714,7 @@
                     }
                     if (!dt || isNaN(dt.getTime())) continue;
                     if (!c) continue;
-                    
+
                     const row = { date: dt, open: o, high: h, low: l, close: c, vol: v };
                     let arr = idx.get(ticker);
                     if (!arr) {
@@ -9651,7 +9723,7 @@
                     }
                     arr.push(row);
                 }
-                
+
                 // Sort each ticker ascending once (full history)
                 idx.forEach(arr => arr.sort((a, b) => a.date - b.date));
                 return idx;
@@ -10752,22 +10824,22 @@
                 }
 
                 if (!window._chartCalcCache) window._chartCalcCache = new Map();
-                const _lastRaw = allRaw[allRaw.length - 1] || {};
+                const _lastRaw = allRaw[allRaw.length - 1];
                 const _calcCacheKey = [
                     UC,
-                    period,
                     allRaw.length,
-                    _lastRaw.date ? _lastRaw.date.getTime() : 0,
-                    _lastRaw.close || 0
+                    _lastRaw.date.getTime(),
+                    _lastRaw.close
                 ].join('|');
+
                 let _calcCached = window._chartCalcCache.get(_calcCacheKey);
-                let raw, benchTicker;
+                let fullProcessed, benchTicker;
 
                 if (_calcCached) {
-                    raw = _calcCached.raw;
+                    fullProcessed = _calcCached.fullProcessed;
                     benchTicker = _calcCached.benchTicker;
                 } else {
-                    // ── Compute MAs, A/D, and OBV on FULL history, then slice to selected period for display ──
+                    // ── Compute MAs, A/D, and OBV on FULL history ONCE ──
                     const closes = allRaw.map(r => r.close);
                     const vols = allRaw.map(r => r.vol);
                     const s10full = sma(closes, 10);
@@ -10829,14 +10901,6 @@
                         }
                     }
                     const atr14full = sma(trFull, 14);
-
-                    const months = period === '2y' ? 24 : period === '1y' ? 12 : 6;
-                    const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - months);
-                    const cutTs = cutoff.getTime();
-                    // Find first index inside window
-                    let startIdx = 0;
-                    while (startIdx < allRaw.length && allRaw[startIdx].date.getTime() < cutTs) startIdx++;
-
                     const adSmaFull = sma(adFull, 9);
                     const obvSmaFull = sma(obvFull, 9);
 
@@ -10847,7 +10911,7 @@
                     else if (m.Nifty_SC && m.Nifty_SC.has(UC)) benchTicker = 'SMALLCAP';
                     else if (m.Nifty_100 && m.Nifty_100.has(UC)) benchTicker = 'NIFTY50';
 
-                    // Fallback to NIFTY50 if the chosen index (like NIFTY_TOTAL) is missing from the OHLCV CSV
+                    // Fallback to NIFTY50 if the chosen index is missing from OHLCV CSV
                     if (_index && !_index.has(benchTicker) && _index.has('NIFTY50')) {
                         benchTicker = 'NIFTY50';
                     }
@@ -10858,35 +10922,65 @@
 
                     let lastBenchClose = benchRawFull.length ? benchRawFull[0].close : 1;
 
-                    // Display slice with attached MA, A/D, and OBV values
-                    raw = allRaw.slice(startIdx).map((r, i) => {
+                    // Compute fully hydrated points for ALL history
+                    fullProcessed = allRaw.map((r, i) => {
                         const t = r.date.getTime();
                         if (benchByDate.has(t)) lastBenchClose = benchByDate.get(t);
                         return {
                             ...r,
                             benchClose: lastBenchClose,
-                            ma10: s10full[startIdx + i],
-                            ma20: s20full[startIdx + i],
-                            ma30: s30full[startIdx + i],
-                            ma40: s40full[startIdx + i],
-                            ad: adFull[startIdx + i],
-                            obv: obvFull[startIdx + i],
-                            adSma: adSmaFull[startIdx + i],
-                            obvSma: obvSmaFull[startIdx + i],
-                            volSma50: volSma50full[startIdx + i],
-                            volSma9: volSma9full[startIdx + i],
-                            hUpV15: hUpV15full[startIdx + i],
-                            hDnV15: hDnV15full[startIdx + i],
-                            atr14: atr14full[startIdx + i]
+                            ma10: s10full[i],
+                            ma20: s20full[i],
+                            ma30: s30full[i],
+                            ma40: s40full[i],
+                            ad: adFull[i],
+                            obv: obvFull[i],
+                            adSma: adSmaFull[i],
+                            obvSma: obvSmaFull[i],
+                            volSma50: volSma50full[i],
+                            volSma9: volSma9full[i],
+                            hUpV15: hUpV15full[i],
+                            hDnV15: hDnV15full[i],
+                            atr14: atr14full[i]
                         };
                     });
 
-                    window._chartCalcCache.set(_calcCacheKey, { raw, benchTicker });
+                    window._chartCalcCache.set(_calcCacheKey, { fullProcessed, benchTicker });
                     if (window._chartCalcCache.size > 240) {
                         const firstKey = window._chartCalcCache.keys().next().value;
                         window._chartCalcCache.delete(firstKey);
                     }
                 }
+
+                // ── Candlestick Replay Truncation ──
+                let currentData = fullProcessed;
+                if (window._fsReplay && window._fsReplay.active && window._fsReplay.currentMaxDate && pCv && pCv.id === 'fs-chart-pcv') {
+                    let trimIdx = currentData.length - 1;
+                    while (trimIdx >= 0 && currentData[trimIdx].date.getTime() > window._fsReplay.currentMaxDate) {
+                        trimIdx--;
+                    }
+                    currentData = currentData.slice(0, trimIdx + 1);
+                }
+
+                if (!currentData.length) {
+                    loadEl.innerHTML = '<span style="color:#f43f5e;font-size:11px;">No data for ' + ticker + ' at this date</span>';
+                    loadEl.style.display = 'flex'; pCv.style.display = 'none'; vCv.style.display = 'none';
+                    if (indCv) indCv.style.display = 'none';
+                    if (dealCv) dealCv.style.display = 'none';
+                    return;
+                }
+
+                // ── Period Slicing (6m, 1y, etc.) looking backward from the END of the valid data ──
+                const months = period === '5y' ? 60 : period === '4y' ? 48 : period === '3y' ? 36 : period === '2y' ? 24 : period === '1y' ? 12 : 6;
+                const lastDate = currentData[currentData.length - 1].date;
+                const cutoff = new Date(lastDate.getTime());
+                cutoff.setMonth(cutoff.getMonth() - months);
+                const cutTs = cutoff.getTime();
+
+                let startIdx = 0;
+                while (startIdx < currentData.length && currentData[startIdx].date.getTime() < cutTs) startIdx++;
+
+                const raw = currentData.slice(startIdx);
 
                 if (!raw.length) {
                     loadEl.innerHTML = '<span style="color:#f43f5e;font-size:11px;">No ' + period.toUpperCase() + ' data for ' + ticker + '</span>';
@@ -10904,13 +10998,32 @@
                     if (indCv) indCv.style.opacity = '1';
                 });
 
+                if (pCv.id === 'fs-chart-pcv') {
+                    if (widthEl) {
+                        widthEl.style.maxWidth = "none";
+                    }
+                }
+
                 const isMobile = window.innerWidth < 600;
-                // Full container width; price chart uses 16:9-ish ratio, volume ~1/5 of price height, indicators ~18%
-                const W = widthEl ? (widthEl.offsetWidth || (isMobile ? 300 : 380)) : (isMobile ? 300 : 380);
-                const PH = Math.round(W * 0.62);   // ~8:5 ratio — taller, more chart real-estate
-                const VH = Math.round(W * 0.14);   // volume panel ~14% of width
-                const IH = Math.round(W * 0.18);   // indicators panel ~18% of width
-                const DPR = Math.min(window.devicePixelRatio || 1, 2);
+                let W = widthEl ? (widthEl.offsetWidth || (isMobile ? 300 : 380)) : (isMobile ? 300 : 380);
+
+                let PH, VH, IH;
+                if (pCv.id === 'fs-chart-pcv') {
+                    const parentH = (widthEl && widthEl.parentElement) ? widthEl.parentElement.clientHeight : (window.innerHeight - 40);
+                    const hasDeals = dealCv && dealCv.style.display !== 'none';
+                    const constantH = 10 + (hasDeals ? 22 : 0) + 15; // 15px margins/safety
+                    const remH = Math.max(parentH - constantH, 300);
+                    PH = Math.round(remH * 0.74);
+                    VH = Math.round(remH * 0.12);
+                    IH = Math.round(remH * 0.14);
+                } else {
+                    PH = Math.round(W * 0.62);   // ~8:5 ratio — taller, more chart real-estate
+                    VH = Math.round(W * 0.14);   // volume panel ~14% of width
+                    IH = Math.round(W * 0.18);   // indicators panel ~18% of width
+                }
+                const DPR = pCv.id === 'fs-chart-pcv'
+                    ? Math.min(window.devicePixelRatio || 1, 3)
+                    : Math.min(window.devicePixelRatio || 1, 2);
 
                 pCv.style.width = W + 'px'; pCv.style.height = PH + 'px'; pCv.width = W * DPR; pCv.height = PH * DPR;
                 vCv.style.width = W + 'px'; vCv.style.height = VH + 'px'; vCv.width = W * DPR; vCv.height = VH * DPR;
@@ -10929,7 +11042,8 @@
                 /* ════════════════════════════════════════
                    PRICE CHART
                 ════════════════════════════════════════ */
-                const PP = { t: 10, b: 22, l: 6, r: 48 };
+                const isFs = (pCv && pCv.id === 'fs-chart-pcv');
+                const PP = isFs ? { t: 12, b: 32, l: 8, r: 70 } : { t: 10, b: 22, l: 6, r: 48 };
                 const pW = W - PP.l - PP.r;
                 const pH = PH - PP.t - PP.b;
 
@@ -11001,9 +11115,12 @@
                     const onMouseMove = (e) => {
                         const state = pCv._chartState;
                         if (!state || !state.raw || state.n === 0) return;
-                        const rect = canvas.getBoundingClientRect();
-                        const mx = e.clientX - rect.left;
-                        const my = e.clientY - rect.top;
+                        const coords = window._getRotatedCoords ? window._getRotatedCoords(e, canvas) : (() => {
+                            const rect = canvas.getBoundingClientRect();
+                            return { mx: e.clientX - rect.left, my: e.clientY - rect.top };
+                        })();
+                        const mx = coords.mx;
+                        const my = coords.my;
 
                         // Calculate nearest index
                         let idx = Math.round((mx - state.PP.l) / (state.pW / state.n) - 0.5);
@@ -11034,9 +11151,12 @@
                     const onTouch = (e) => {
                         const state = pCv._chartState;
                         if (!state || !state.raw || state.n === 0 || e.touches.length === 0) return;
-                        const rect = canvas.getBoundingClientRect();
-                        const mx = e.touches[0].clientX - rect.left;
-                        const my = e.touches[0].clientY - rect.top;
+                        const coords = window._getRotatedCoords ? window._getRotatedCoords(e, canvas) : (() => {
+                            const rect = canvas.getBoundingClientRect();
+                            return { mx: e.touches[0].clientX - rect.left, my: e.touches[0].clientY - rect.top };
+                        })();
+                        const mx = coords.mx;
+                        const my = coords.my;
 
                         let idx = Math.round((mx - state.PP.l) / (state.pW / state.n) - 0.5);
                         idx = Math.max(0, Math.min(state.n - 1, idx));
@@ -11065,7 +11185,7 @@
 
                 // ── Horizontal dashed grid lines with RIGHT-aligned price labels ──
                 const nGridLines = 5;
-                pc.font = 'bold 8px "Lexend",monospace'; pc.textAlign = 'right'; pc.textBaseline = 'middle';
+                pc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 8px "Lexend",monospace'; pc.textAlign = 'right'; pc.textBaseline = 'middle';
                 for (let g = 0; g <= nGridLines; g++) {
                     const frac = g / nGridLines;
                     const val = Math.exp(logMax - frac * logR);
@@ -11078,7 +11198,7 @@
                     pc.setLineDash([]);
                     // Price label — full white bold, right-aligned flush to right edge
                     pc.fillStyle = '#ffffff';
-                    pc.fillText(fmtP(val), W - 2, y);
+                    pc.fillText(fmtP(val), W - 4, y);
                 }
 
                 // ── MA lines ──
@@ -11296,11 +11416,13 @@
                 pc.setLineDash([]);
                 // Price tag box — right-aligned flush to right edge
                 const tagTxt = fmtP(lc);
-                pc.font = 'bold 8px "Lexend",monospace';
-                const tagW = pc.measureText(tagTxt).width + 8;
-                pc.fillStyle = '#1e6eff'; pc.fillRect(W - tagW - 1, yLc - 5, tagW, 10);
+                pc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 8px "Lexend",monospace';
+                const tagW = pc.measureText(tagTxt).width + (isFs ? 10 : 8);
+                const tagH = isFs ? 15 : 10;
+                const tagOffY = isFs ? -7.5 : -5;
+                pc.fillStyle = '#1e6eff'; pc.fillRect(W - tagW - 1, yLc + tagOffY, tagW, tagH);
                 pc.fillStyle = '#fff'; pc.textAlign = 'right'; pc.textBaseline = 'middle';
-                pc.fillText(tagTxt, W - 3, yLc);
+                pc.fillText(tagTxt, W - 4, yLc);
 
                 // ── Separator line at bottom of price chart ──
                 pc.strokeStyle = 'rgba(255,255,255,0.15)'; pc.lineWidth = 0.8; pc.setLineDash([]);
@@ -11312,6 +11434,9 @@
 
                 const fmtChartDate = d => {
                     const mos = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                    if (pCv.id === 'fs-chart-pcv') {
+                        return d.getDate() + ' ' + mos[d.getMonth()] + ' \'' + String(d.getFullYear()).slice(-2);
+                    }
                     return d.getDate() + ' ' + mos[d.getMonth()];
                 };
 
@@ -11323,15 +11448,15 @@
                     const label = fmtChartDate(displayDate);
 
                     if (isLast) {
-                        pc.font = 'bold 8.5px "Lexend",monospace';
+                        pc.font = isFs ? 'bold 12px "Lexend",monospace' : 'bold 8.5px "Lexend",monospace';
                         pc.fillStyle = '#ffffff';
                         pc.textAlign = 'right';
-                        pc.fillText(label, W - PP.r, PH - PP.b + 4);
+                        pc.fillText(label, W - PP.r, PH - PP.b + (isFs ? 6 : 4));
                     } else {
-                        pc.font = 'bold 7.5px "Lexend",monospace';
+                        pc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 7.5px "Lexend",monospace';
                         pc.fillStyle = '#e2e8f0';
                         pc.textAlign = 'center';
-                        pc.fillText(label, toX(i), PH - PP.b + 4);
+                        pc.fillText(label, toX(i), PH - PP.b + (isFs ? 6 : 4));
                     }
                 });
 
@@ -11364,18 +11489,20 @@
                         // Right-axis price badge (logarithmic mapping)
                         const valAtY = Math.exp(logMin + logR * (1 - (hy - PP.t) / pH));
                         const priceTxt = fmtP(valAtY);
-                        pc.font = 'bold 8px "Lexend",monospace';
-                        const badgeW = pc.measureText(priceTxt).width + 6;
+                        pc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 8px "Lexend",monospace';
+                        const badgeW = pc.measureText(priceTxt).width + (isFs ? 8 : 6);
+                        const badgeH = isFs ? 15 : 10;
+                        const badgeOff = isFs ? 7.5 : 5;
                         let dby = hy;
-                        if (dby - 5 < PP.t) dby = PP.t + 5;
-                        if (dby + 5 > PH - PP.b) dby = PH - PP.b - 5;
+                        if (dby - badgeOff < PP.t) dby = PP.t + badgeOff;
+                        if (dby + badgeOff > PH - PP.b) dby = PH - PP.b - badgeOff;
 
                         pc.fillStyle = '#475569'; // Slate-600
-                        pc.fillRect(W - badgeW - 1, dby - 5, badgeW, 10);
+                        pc.fillRect(W - badgeW - 1, dby - badgeOff, badgeW, badgeH);
                         pc.fillStyle = '#ffffff';
                         pc.textAlign = 'right';
                         pc.textBaseline = 'middle';
-                        pc.fillText(priceTxt, W - 3, dby);
+                        pc.fillText(priceTxt, W - 4, dby);
                     }
 
                     pc.setLineDash([]);
@@ -11385,18 +11512,19 @@
                         const hoverCandle = raw[pCv._hoverIdx];
                         if (hoverCandle) {
                             const dateTxt = fmtChartDate(hoverCandle.date);
-                            pc.font = 'bold 8px "Lexend",monospace';
-                            const dBadgeW = pc.measureText(dateTxt).width + 6;
+                            pc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 8px "Lexend",monospace';
+                            const dBadgeW = pc.measureText(dateTxt).width + (isFs ? 10 : 6);
                             let dbx = hx;
                             if (dbx - dBadgeW / 2 < PP.l) dbx = PP.l + dBadgeW / 2;
                             if (dbx + dBadgeW / 2 > W - PP.r) dbx = W - PP.r - dBadgeW / 2;
 
+                            const dbH = isFs ? 15 : 10;
                             pc.fillStyle = '#475569'; // Slate-600
-                            pc.fillRect(dbx - dBadgeW / 2, PH - PP.b + 1, dBadgeW, 10);
+                            pc.fillRect(dbx - dBadgeW / 2, PH - PP.b + 1, dBadgeW, dbH);
                             pc.fillStyle = '#ffffff';
                             pc.textAlign = 'center';
                             pc.textBaseline = 'top';
-                            pc.fillText(dateTxt, dbx, PH - PP.b + 2);
+                            pc.fillText(dateTxt, dbx, PH - PP.b + (isFs ? 3 : 2));
                         }
                     }
 
@@ -11422,7 +11550,7 @@
                 /* ════════════════════════════════════════
                    VOLUME CHART (bottom panel)
                 ════════════════════════════════════════ */
-                const VP = { t: 3, b: 14, l: 6, r: 48 };
+                const VP = isFs ? { t: 4, b: 20, l: 8, r: 70 } : { t: 3, b: 14, l: 6, r: 48 };
                 const vW2 = W - VP.l - VP.r;
                 const vH2 = VH - VP.t - VP.b;
 
@@ -11467,10 +11595,10 @@
                 vc.setLineDash([]);
 
                 // Volume right-side labels — full white bold, right-aligned
-                vc.font = 'bold 7.5px "Lexend",monospace'; vc.fillStyle = '#ffffff';
+                vc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 7.5px "Lexend",monospace'; vc.fillStyle = '#ffffff';
                 vc.textAlign = 'right'; vc.textBaseline = 'middle';
-                vc.fillText(fmtV(maxV), W - 2, VP.t + 4);
-                vc.fillText(fmtV(maxV * 0.5), W - 2, VP.t + vH2 * 0.5);
+                vc.fillText(fmtV(maxV), W - 4, VP.t + (isFs ? 6 : 4));
+                vc.fillText(fmtV(maxV * 0.5), W - 4, VP.t + vH2 * 0.5);
 
                 // "PERIOD" badge bottom-right of volume panel
                 const badgeTxt = period.toUpperCase();
@@ -11513,18 +11641,20 @@
                         // Volume badge on right-axis
                         const volVal = maxV * (1 - (hy - VP.t) / vH2);
                         const volTxt = fmtV(volVal);
-                        vc.font = 'bold 7.5px "Lexend",monospace';
-                        const badgeW = vc.measureText(volTxt).width + 6;
+                        vc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 7.5px "Lexend",monospace';
+                        const badgeW = vc.measureText(volTxt).width + (isFs ? 8 : 6);
+                        const badgeH = isFs ? 15 : 10;
+                        const badgeOff = isFs ? 7.5 : 5;
                         let dby = hy;
-                        if (dby - 5 < VP.t) dby = VP.t + 5;
-                        if (dby + 5 > VH - VP.b) dby = VH - VP.b - 5;
+                        if (dby - badgeOff < VP.t) dby = VP.t + badgeOff;
+                        if (dby + badgeOff > VH - VP.b) dby = VH - VP.b - badgeOff;
 
                         vc.fillStyle = '#475569'; // Slate-600
-                        vc.fillRect(W - badgeW - 1, dby - 5, badgeW, 10);
+                        vc.fillRect(W - badgeW - 1, dby - badgeOff, badgeW, badgeH);
                         vc.fillStyle = '#ffffff';
                         vc.textAlign = 'right';
                         vc.textBaseline = 'middle';
-                        vc.fillText(volTxt, W - 3, dby);
+                        vc.fillText(volTxt, W - 4, dby);
 
                         // Institutional Volume Tooltip
                         if (pCv._hoverIdx !== undefined && pCv._hoverIdx !== null) {
@@ -11556,7 +11686,7 @@
                    INDICATORS PANEL (A/D and OBV)
                 ════════════════════════════════════════ */
                 if (ic) {
-                    const IP = { t: 5, b: 5, l: 6, r: 48 };
+                    const IP = isFs ? { t: 6, b: 8, l: 8, r: 70 } : { t: 5, b: 5, l: 6, r: 48 };
                     const iH = IH - IP.t - IP.b;
 
                     let adMin = Infinity, adMax = -Infinity;
@@ -11643,36 +11773,36 @@
                     const obvText = 'OBV: ' + fmtV(displayObv);
 
                     // Indicator labels / legend (A/D and OBV key in top left)
-                    ic.font = 'bold 7.5px "Lexend",monospace';
+                    ic.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 7.5px "Lexend",monospace';
                     ic.textAlign = 'left';
                     ic.textBaseline = 'top';
 
                     ic.fillStyle = '#ff00ff';
-                    ic.fillText(adText, IP.l + 2, IP.t + 1);
+                    ic.fillText(adText, IP.l + 2, IP.t + (isFs ? 2 : 1));
 
                     const adTextWidth = ic.measureText(adText).width;
                     ic.fillStyle = 'rgba(255,255,255,0.25)';
-                    ic.fillText(' | ', IP.l + 2 + adTextWidth, IP.t + 1);
+                    ic.fillText(' | ', IP.l + 2 + adTextWidth, IP.t + (isFs ? 2 : 1));
 
                     const sepWidth = ic.measureText(' | ').width;
                     ic.fillStyle = '#00ccff';
-                    ic.fillText(obvText, IP.l + 2 + adTextWidth + sepWidth, IP.t + 1);
+                    ic.fillText(obvText, IP.l + 2 + adTextWidth + sepWidth, IP.t + (isFs ? 2 : 1));
 
-                    ic.font = 'bold 7px "Lexend",monospace';
+                    ic.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 7px "Lexend",monospace';
                     ic.textAlign = 'right';
                     ic.textBaseline = 'middle';
 
                     // Draw A/D value at the mapped Y position of the last point
                     ic.fillStyle = '#ff00ff';
-                    ic.fillText(fmtV(lastAd), W - 2, toYAD(lastAd));
+                    ic.fillText(fmtV(lastAd), W - 4, toYAD(lastAd));
 
                     // Draw OBV value (shifted slightly up or down to avoid overlap if needed)
                     let obvY = toYOBV(lastObv);
-                    if (Math.abs(obvY - toYAD(lastAd)) < 9) {
-                        obvY += obvY > toYAD(lastAd) ? 8 : -8;
+                    if (Math.abs(obvY - toYAD(lastAd)) < (isFs ? 13 : 9)) {
+                        obvY += obvY > toYAD(lastAd) ? (isFs ? 12 : 8) : (isFs ? -12 : -8);
                     }
                     ic.fillStyle = '#00ccff';
-                    ic.fillText(fmtV(lastObv), W - 2, obvY);
+                    ic.fillText(fmtV(lastObv), W - 4, obvY);
 
                     // Draw crosshair on indicator canvas if hovering
                     if (pCv._hoverX !== undefined && pCv._hoverX !== null) {
@@ -12982,12 +13112,12 @@
         (function () {
             'use strict';
 
-            /* ── Data URLs ── */
-            const DEAL_URLS = {
-                insider: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRTl5_t5UuKMKuSmX8xEiG4rTTrww2spi-caRvUr6gPRb_eXoQfWGxLKb62vHRELvmPwBBM1SulDHa5/pub?gid=1466981391&single=true&output=csv',
-                bulk: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRTl5_t5UuKMKuSmX8xEiG4rTTrww2spi-caRvUr6gPRb_eXoQfWGxLKb62vHRELvmPwBBM1SulDHa5/pub?gid=64018897&single=true&output=csv',
-                block: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRTl5_t5UuKMKuSmX8xEiG4rTTrww2spi-caRvUr6gPRb_eXoQfWGxLKb62vHRELvmPwBBM1SulDHa5/pub?gid=1543112021&single=true&output=csv',
-                sast: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRTl5_t5UuKMKuSmX8xEiG4rTTrww2spi-caRvUr6gPRb_eXoQfWGxLKb62vHRELvmPwBBM1SulDHa5/pub?gid=535652047&single=true&output=csv'
+            /* ── Parquet files for deal data (replaces Google Sheets URLs) ── */
+            const DEAL_PARQUETS = {
+                insider: 'InsiderTrades.parquet',
+                bulk: 'BulkTrades.parquet',
+                block: 'BlockTrades.parquet',
+                sast: 'SastTrades.parquet'
             };
 
             /* ── Column maps: which columns to use per sub-section ── */
@@ -13016,37 +13146,6 @@
             /* ── Pagination state: offset per sub-section ── */
             let _renderOffset = { insider: 0, bulk: 0, block: 0, sast: 0 };
 
-            /* ── Dedicated fetch for deal CSVs with proxy fallback ──
-               Uses three proxies in sequence, stopping at the first valid CSV response.
-               Does NOT use _smartFetch to avoid its cache-buster param breaking Google Sheets pub URLs.
-            ── */
-            async function dealFetch(baseUrl) {
-                const proxies = [
-                    // 1. Direct — works when CORS allows (Google Sheets pub CSVs support CORS)
-                    u => u,
-                    // 2. allorigins proxy
-                    u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
-                    // 3. corsproxy.io
-                    u => 'https://corsproxy.io/?' + encodeURIComponent(u)
-                ];
-
-                for (const px of proxies) {
-                    try {
-                        const ctrl = new AbortController();
-                        const tid = setTimeout(() => ctrl.abort(), 10000);
-                        const resp = await fetch(px(baseUrl), { signal: ctrl.signal });
-                        clearTimeout(tid);
-                        if (!resp.ok) continue;
-                        const text = await resp.text();
-                        // Validate: must be non-empty and not an HTML error page
-                        const t = text.trim();
-                        if (t.length > 0 && !t.toLowerCase().startsWith('<!doctype') && !t.toLowerCase().startsWith('<html')) {
-                            return text;
-                        }
-                    } catch (_) { /* try next proxy */ }
-                }
-                throw new Error('All proxies failed for: ' + baseUrl.slice(0, 60));
-            }
 
             /* ── CSV splitter (handles quoted commas) ── */
             function splitLine(line) {
@@ -13124,10 +13223,35 @@
             async function loadOneSub(sub) {
                 setSubLoading(sub, `⏳ Loading ${sub} trades…`);
                 try {
-                    const text = await dealFetch(DEAL_URLS[sub]);
-                    const rows = parseDealCSV(text, COLS[sub]);
+                    const rawRows = await window._parquetToRows(DEAL_PARQUETS[sub]);
+                    if (!rawRows.length) {
+                        _data[sub] = [];
+                        return true;
+                    }
+
+                    const wantedCols = COLS[sub];
+                    const rawHdrs = Object.keys(rawRows[0]);
+                    const keyMap = {};
+                    wantedCols.forEach(wc => {
+                        const wcL = wc.toLowerCase();
+                        let found = rawHdrs.find(h => h.toLowerCase() === wcL);
+                        if (!found) found = rawHdrs.find(h => h.toLowerCase().startsWith(wcL));
+                        if (!found) found = rawHdrs.find(h => h.toLowerCase().includes(wcL));
+                        keyMap[wc] = found || null;
+                    });
+
+                    const rows = rawRows.map(raw => {
+                        const row = {};
+                        wantedCols.forEach(wc => {
+                            const pk = keyMap[wc];
+                            row[wc] = pk ? String(raw[pk] || '').trim() : '';
+                        });
+                        row._tok = wantedCols.map(wc => row[wc]).join(' ').toLowerCase();
+                        return row;
+                    }).filter(r => wantedCols.some(wc => r[wc])); // Skip empty rows
+
                     _data[sub] = rows;
-                    console.log(`[DealBlock] ${sub}: ${rows.length} rows loaded`);
+                    console.log(`[DealBlock] ${sub}: ${rows.length} rows loaded (fast parquet to objects)`);
                     return true;
                 } catch (err) {
                     console.warn(`[DealBlock] ${sub} fetch failed:`, err.message);
@@ -14093,7 +14217,7 @@
         (function () {
             'use strict';
 
-            const UR_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSaxjsS5vrT2UYikSwMMFi86R1OEoIg7t37x2Pd8MkoMiR8poqxGNQabPQdCwk5WUPjpjzsv0Vtq8IK/pub?gid=0&single=true&output=csv';
+            // UR_CSV_URL replaced — data now loaded from Upcoming_Result.parquet via DuckDB
 
             let _urData = null;   // sorted array of {dateObj, company, ticker, link}
             let _urLoading = false;
@@ -14125,11 +14249,6 @@
             }
             function escH(s) {
                 return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-            }
-
-            /* ── Fetch with proxy fallback ── */
-            async function urFetch(url) {
-                return window._smartFetch(url); // Use global smartFetch
             }
 
             /* ── CSV parser ── */
@@ -14311,7 +14430,7 @@
                         } catch (e) { /* fall through to network */ }
                     }
                     if (!text) {
-                        text = await urFetch(UR_CSV_URL);
+                        text = await window._parquetToCSV('Upcoming_Result.parquet');
                         // Save to IDB async
                         if (window._idbCache) {
                             (async () => {
@@ -14829,8 +14948,7 @@
             const btn = document.querySelector('button[onclick="refreshSuperstarData()"]');
             if (btn) btn.innerHTML = '⏳';
             try {
-                const res = await fetch('https://docs.google.com/spreadsheets/d/e/2PACX-1vShTCI8l6LaBJ4gdLiestC5UUzjf0f3vfggnO914YxeYbdaGd1wfcwVLVoBq-z_GUUFnf1WRm7sy1sP/pub?gid=0&single=true&output=csv');
-                const text = await res.text();
+                const text = await window._parquetToCSV('SuperStar.parquet');
                 window.superStarRawData = parseCSV(text);
                 window._superstarInit();
             } catch (e) {
@@ -14906,9 +15024,10 @@
                 const active = window._fhState.active;
                 const tickerSet = window._fhTickers[active];
                 if (tickerSet && tickerSet.size) {
+                    const strippedSet = new Set([...tickerSet].map(t => String(t).toUpperCase().replace(/\.NS$/, '')));
                     data = data.filter(r => {
                         const rtk = String(r.Ticker || '').toUpperCase().trim().replace(/\.NS$/, '');
-                        return tickerSet.has(rtk);
+                        return strippedSet.has(rtk);
                     });
                 }
             }
@@ -15511,7 +15630,7 @@
         (function () {
             'use strict';
 
-            const SURV_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS1dVVfb2izjTu5u7RVlDZf3TF64nERBs5W0UX7grs8HgDRU-lk61rhqMOex_a5rgOkyZUV7DwbYBQj/pub?gid=0&single=true&output=csv';
+            // SURV_CSV_URL replaced — data now loaded from SURVEILLANCE.parquet via DuckDB
 
             function splitCsvLine(line) {
                 if (line.indexOf('"') === -1) return line.split(',');
@@ -15551,32 +15670,1555 @@
 
             async function loadSurvData() {
                 try {
-                    let text;
-                    if (typeof window._smartFetch === 'function') {
-                        text = await window._smartFetch(SURV_CSV_URL);
-                    } else {
-                        const res = await fetch(SURV_CSV_URL);
-                        text = await res.text();
-                    }
+                    const text = await window._parquetToCSV('SURVEILLANCE.parquet');
                     window._survMap = parseSurvCsv(text);
                     // Re-render cards so flags appear immediately
                     if (typeof window.renderCards === 'function') {
                         setTimeout(() => window.renderCards(true), 100);
                     }
                 } catch (e) {
-                    console.warn('[SurvFlags] Failed to load surveillance CSV:', e);
+                    console.warn('[SurvFlags] Failed to load surveillance parquet:', e);
                 }
             }
 
-            // Wait until _smartFetch is ready (main app initialises it async)
+            // Wait until DuckDB helper is ready
             function waitAndLoad() {
-                if (typeof window._smartFetch === 'function') {
+                if (typeof window._parquetToCSV === 'function') {
                     loadSurvData();
                 } else {
                     setTimeout(waitAndLoad, 500);
                 }
             }
             waitAndLoad();
+        })();
+    </script>
+
+    <!-- ══════════════════════════════════════════════════════
+     FULLSCREEN SINGLE CHART VIEW
+    ══════════════════════════════════════════════════════ -->
+    <style>
+        #fs-chart-modal select {
+            appearance: none;
+            -webkit-appearance: none;
+            font-family: inherit;
+            font-size: 12px;
+            letter-spacing: 0.3px;
+            transition: border-color 0.15s, background 0.15s;
+        }
+
+        #fs-chart-modal select:hover {
+            border-color: rgba(255, 255, 255, 0.18);
+        }
+
+        #fs-chart-modal select:focus {
+            border-color: rgba(255, 255, 255, 0.35);
+            outline: none;
+        }
+
+        #fs-close-btn {
+            transition: background 0.15s, opacity 0.15s;
+        }
+
+        #fs-close-btn:hover {
+            opacity: 0.85;
+        }
+
+        #fs-chart-modal label {
+            text-transform: uppercase;
+            letter-spacing: 0.7px;
+        }
+
+        .fs-select-wrap {
+            position: relative;
+        }
+
+        .fs-select-wrap::after {
+            content: '▾';
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text2);
+            font-size: 10px;
+            pointer-events: none;
+        }
+
+        /* Listbox ticker select */
+        #fs-ticker-select {
+            appearance: auto !important;
+            -webkit-appearance: auto !important;
+        }
+
+        #fs-ticker-select option {
+            padding: 5px 8px;
+            font-size: 12px;
+            background: #111118;
+            color: #e8e8ed;
+        }
+
+        #fs-ticker-select option:checked,
+        #fs-ticker-select option:focus {
+            background: #1d6fe8;
+            color: #fff;
+        }
+
+        /* ── Drum-roll date picker ─────────────────────────────── */
+        .fs-date-wrap {
+            position: relative;
+            width: 100%;
+        }
+
+        /* hidden real inputs keep the value */
+        .fs-date-real {
+            display: none;
+        }
+
+        /* Trigger button that shows current date */
+        .fs-drum-trigger {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #111118;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 5px;
+            padding: 5px 8px;
+            cursor: pointer;
+            box-sizing: border-box;
+            gap: 4px;
+            transition: border-color 0.15s;
+        }
+
+        .fs-drum-trigger:hover {
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .fs-drum-trigger-label {
+            font-size: 8px;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.35);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+
+        .fs-drum-trigger-val {
+            font-size: 11px;
+            font-weight: 600;
+            color: #e8e8ed;
+            flex: 1;
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .fs-drum-trigger-ico {
+            font-size: 9px;
+            color: rgba(255, 255, 255, 0.3);
+        }
+
+        /* Overlay backdrop */
+        #fs-drum-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 200000;
+            align-items: flex-end;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(2px);
+        }
+
+        #fs-drum-overlay.open {
+            display: flex;
+        }
+
+        /* Picker card */
+        #fs-drum-card {
+            width: 100%;
+            max-width: 340px;
+            background: #1c1c24;
+            border-radius: 14px 14px 0 0;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 0 0 env(safe-area-inset-bottom, 8px);
+            overflow: hidden;
+            transform: translateY(100%);
+            transition: transform 0.28s cubic-bezier(.32, 1.26, .5, 1);
+        }
+
+        #fs-drum-overlay.open #fs-drum-card {
+            transform: translateY(0);
+        }
+
+        /* Header */
+        #fs-drum-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 16px 6px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+        }
+
+        #fs-drum-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.45);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+
+        .fs-drum-hbtn {
+            padding: 4px 14px;
+            border-radius: 20px;
+            border: none;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: opacity 0.15s;
+        }
+
+        .fs-drum-hbtn:hover {
+            opacity: 0.75;
+        }
+
+        #fs-drum-cancel {
+            background: rgba(255, 255, 255, 0.08);
+            color: #e8e8ed;
+        }
+
+        #fs-drum-confirm {
+            background: #1d6fe8;
+            color: #fff;
+        }
+
+        /* Columns container */
+        #fs-drum-cols {
+            display: flex;
+            gap: 0;
+            position: relative;
+            height: 210px;
+            overflow: hidden;
+            margin: 8px 0 0;
+        }
+
+        /* Selection band */
+        #fs-drum-cols::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            height: 38px;
+            background: rgba(29, 111, 232, 0.18);
+            border-top: 1.5px solid rgba(29, 111, 232, 0.55);
+            border-bottom: 1.5px solid rgba(29, 111, 232, 0.55);
+            pointer-events: none;
+            z-index: 2;
+            border-radius: 4px;
+        }
+
+        /* Top & bottom fade */
+        #fs-drum-cols::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(to bottom,
+                    #1c1c24 0%, transparent 30%,
+                    transparent 70%, #1c1c24 100%);
+            pointer-events: none;
+            z-index: 3;
+        }
+
+        .fs-drum-col {
+            flex: 1;
+            overflow-y: scroll;
+            scroll-snap-type: y mandatory;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+            height: 100%;
+            border-right: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .fs-drum-col:last-child {
+            border-right: none;
+        }
+
+        .fs-drum-col::-webkit-scrollbar {
+            display: none;
+        }
+
+        .fs-drum-item {
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.55);
+            cursor: pointer;
+            scroll-snap-align: center;
+            user-select: none;
+            transition: color 0.15s, font-weight 0.15s;
+            letter-spacing: 0.2px;
+        }
+
+        .fs-drum-item.selected {
+            color: #fff;
+            font-weight: 700;
+            font-size: 15px;
+        }
+
+        /* Spacer top/bottom so first/last can center */
+        .fs-drum-spacer {
+            height: 86px;
+            flex-shrink: 0;
+        }
+
+        /* Footer buttons */
+        #fs-drum-footer {
+            display: flex;
+            border-top: 1px solid rgba(255, 255, 255, 0.07);
+            margin-top: 8px;
+        }
+
+        .fs-drum-foot-btn {
+            flex: 1;
+            padding: 13px 0;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: 600;
+            transition: background 0.15s;
+        }
+
+        .fs-drum-foot-btn:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        #fs-drum-ok {
+            color: #1d6fe8;
+            border-right: 1px solid rgba(255, 255, 255, 0.07);
+        }
+
+        #fs-drum-x {
+            color: rgba(255, 255, 255, 0.4);
+        }
+
+        /* Step mode indicator */
+        #fs-step-indicator {
+            font-size: 9px;
+            color: rgba(255, 255, 255, 0.3);
+            text-align: center;
+            letter-spacing: 0.3px;
+            min-height: 11px;
+            transition: color 0.2s;
+        }
+
+        #fs-step-indicator.active {
+            color: #f59e0b;
+        }
+
+        /* Paper Trade styles */
+        .fs-pt-row {
+            display: flex;
+            gap: 4px;
+        }
+
+        .fs-pt-btn {
+            flex: 1;
+            padding: 6px 2px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+            transition: opacity 0.15s, transform 0.1s;
+        }
+
+        .fs-pt-btn:hover {
+            opacity: 0.85;
+        }
+
+        .fs-pt-btn:active {
+            transform: scale(0.96);
+        }
+
+        .fs-pt-buy {
+            background: #16a34a;
+            color: #fff;
+        }
+
+        .fs-pt-sell {
+            background: #dc2626;
+            color: #fff;
+        }
+
+        .fs-pt-close {
+            background: rgba(255, 255, 255, 0.08);
+            color: #e8e8ed;
+        }
+
+        #fs-pt-pnl {
+            font-size: 10px;
+            font-weight: 700;
+            text-align: center;
+            padding: 4px 0 0;
+            letter-spacing: 0.3px;
+            min-height: 14px;
+        }
+
+        #fs-pt-log {
+            font-size: 8.5px;
+            color: rgba(255, 255, 255, 0.3);
+            max-height: 54px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+        }
+
+        #fs-pt-log span {
+            padding: 1px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        /* Drawing Tools styles */
+        #fs-draw-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        #fs-draw-canvas.drawing {
+            pointer-events: all;
+            cursor: crosshair;
+        }
+
+        .fs-draw-btn {
+            padding: 4px 6px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.05);
+            color: rgba(255, 255, 255, 0.55);
+            cursor: pointer;
+            font-size: 10px;
+            font-weight: 600;
+            transition: background 0.15s, color 0.15s, border-color 0.15s;
+            white-space: nowrap;
+        }
+
+        .fs-draw-btn.active {
+            background: rgba(245, 158, 11, 0.18);
+            color: #f59e0b;
+            border-color: rgba(245, 158, 11, 0.5);
+        }
+
+        .fs-draw-btn:hover {
+            background: rgba(255, 255, 255, 0.09);
+            color: #fff;
+        }
+
+        /* Mobile navigation overlay buttons */
+        .fs-nav-overlay-btn {
+            position: absolute;
+            left: 16px;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 16px;
+            cursor: pointer;
+            z-index: 50;
+            backdrop-filter: blur(4px);
+            transition: background 0.2s, color 0.2s, opacity 0.2s;
+            opacity: 0;
+            pointer-events: none;
+        }
+        @media (max-width: 1024px) {
+            .fs-nav-overlay-btn { opacity: 1; pointer-events: auto; }
+        }
+        .fs-nav-overlay-btn:active { background: rgba(255, 255, 255, 0.15); color: #fff; }
+        #fs-nav-up { top: 50%; margin-top: -50px; }
+        #fs-nav-down { top: 50%; margin-top: 6px; }
+
+        /* Force Landscape Mode on Portrait Mobile/Tablet */
+        @media screen and (max-width: 1024px) and (orientation: portrait) {
+            #fs-chart-modal {
+                transform: rotate(90deg);
+                transform-origin: left top;
+                width: 100vh !important;
+                height: 100vw !important;
+                position: fixed;
+                top: 0 !important;
+                left: 100vw !important;
+                overflow: hidden;
+            }
+        }
+    </style>
+    <div id="fs-chart-modal"
+        style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; width:100%; height:100%; background:var(--bg); z-index:99999; flex-direction:row; overflow:hidden;">
+        <!-- Left Settings Panel — compact 160px -->
+        <div id="fs-sidebar"
+            style="width:160px; min-width:160px; background:#0a0a10; border-right:1px solid rgba(255,255,255,0.07); padding:14px 12px; display:flex; flex-direction:column; gap:12px; box-sizing:border-box;">
+            <!-- Header -->
+            <div style="display:flex; align-items:center; margin-bottom:4px; cursor:pointer; width:100%;"
+                onclick="closeFullScreenChart()" title="Close Charts">
+                <img src="https://lh3.googleusercontent.com/d/1pPqrvLPPH2Mh9aqjQgG1eAnoziFAxtWg" alt="Sundarx Quantara"
+                    style="width:100%; height:auto; display:block; filter:brightness(0) invert(1);">
+            </div>
+
+            <!-- Filter Group -->
+            <div style="display:flex; flex-direction:column; gap:4px;">
+                <label style="font-size:9px; font-weight:700; color:rgba(255,255,255,0.35);">Group</label>
+                <div class="fs-select-wrap">
+                    <select id="fs-group-select" onchange="updateFSTickers(false)"
+                        style="width:100%; padding:6px 24px 6px 8px; background:#111118; border:1px solid rgba(255,255,255,0.09); color:#e8e8ed; border-radius:4px; font-weight:600; cursor:pointer; box-sizing:border-box;">
+                    </select>
+                </div>
+            </div>
+
+            <!-- Ticker -->
+            <div style="display:flex; flex-direction:column; gap:4px; flex:1; min-height:0;">
+                <label style="font-size:9px; font-weight:700; color:rgba(255,255,255,0.35);">Ticker</label>
+                <select id="fs-ticker-select" size="20" onchange="renderFullScreenChart()"
+                    style="width:100%; flex:1; min-height:0; height:100%; padding:4px 0; background:#111118; border:1px solid rgba(255,255,255,0.09); color:#e8e8ed; border-radius:4px; font-size:12px; font-weight:600; cursor:pointer; box-sizing:border-box; overflow-y:auto; scrollbar-width:thin; scrollbar-color:rgba(255,255,255,0.15) transparent;">
+                </select>
+            </div>
+
+            <!-- Duration -->
+            <div style="display:flex; flex-direction:column; gap:4px;">
+                <label style="font-size:9px; font-weight:700; color:rgba(255,255,255,0.35);">Period</label>
+                <div class="fs-select-wrap">
+                    <select id="fs-duration-select" onchange="renderFullScreenChart()"
+                        style="width:100%; padding:6px 24px 6px 8px; background:#111118; border:1px solid rgba(255,255,255,0.09); color:#e8e8ed; border-radius:4px; font-weight:600; cursor:pointer; box-sizing:border-box;">
+                        <option value="6m">6 M</option>
+                        <option value="1y">1 Y</option>
+                        <option value="2y">2 Y</option>
+                        <option value="3y" selected>3 Y</option>
+                        <option value="4y">4 Y</option>
+                        <option value="5y">5 Y</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Replay Section -->
+            <div
+                style="border-top:1px solid rgba(255,255,255,0.07); padding-top:10px; display:flex; flex-direction:column; gap:6px;">
+                <div
+                    style="font-size:9px; font-weight:700; color:rgba(255,255,255,0.35); text-transform:uppercase; letter-spacing:0.7px;">
+                    Replay</div>
+
+                <!-- From date drum picker -->
+                <button class="fs-drum-trigger" onclick="window.openFsDrum('fs-replay-start','From')"
+                    id="fs-drum-trigger-start">
+                    <span class="fs-drum-trigger-label">From</span>
+                    <span class="fs-drum-trigger-val" id="fs-drum-val-start">—</span>
+                    <span class="fs-drum-trigger-ico">▾</span>
+                </button>
+                <input type="hidden" id="fs-replay-start">
+
+                <!-- To date drum picker -->
+                <button class="fs-drum-trigger" onclick="window.openFsDrum('fs-replay-end','To')"
+                    id="fs-drum-trigger-end">
+                    <span class="fs-drum-trigger-label">To</span>
+                    <span class="fs-drum-trigger-val" id="fs-drum-val-end">—</span>
+                    <span class="fs-drum-trigger-ico">▾</span>
+                </button>
+                <input type="hidden" id="fs-replay-end">
+
+                <div style="display:flex; flex-direction:column; gap:3px;">
+                    <label style="font-size:9px; color:rgba(255,255,255,0.3);">Speed</label>
+                    <div class="fs-select-wrap">
+                        <select id="fs-replay-speed" onchange="window.changeFsReplaySpeed()"
+                            style="width:100%; padding:5px 24px 5px 6px; background:#111118; border:1px solid rgba(255,255,255,0.09); color:#e8e8ed; border-radius:3px; font-size:11px; font-weight:600; cursor:pointer; box-sizing:border-box; appearance:none; -webkit-appearance:none;">
+                            <option value="1000" selected>1 Candle / sec</option>
+                            <option value="500">2 Candle / sec</option>
+                            <option value="333">3 Candle / sec</option>
+                            <option value="200">5 Candle / sec</option>
+                            <option value="100">10 Candle / sec</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="display:flex; gap:4px;">
+                    <button id="fs-replay-btn" onclick="window.toggleFsReplay()"
+                        style="flex:1; padding:7px 2px; background:#1d6fe8; color:#fff; border:none; border-radius:3px; cursor:pointer; font-size:14px; line-height:1;">▶</button>
+                    <button id="fs-step-fwd-btn" onclick="window.fsFsStepForward()" title="Step forward 1 candle (→)"
+                        style="flex:1; padding:7px 2px; background:rgba(245,158,11,0.15); color:#f59e0b; border:1px solid rgba(245,158,11,0.3); border-radius:3px; cursor:pointer; font-size:12px; line-height:1;">›</button>
+                    <button id="fs-replay-stop-btn" onclick="window.stopFsReplay()"
+                        style="flex:1; padding:7px 2px; background:rgba(255,255,255,0.07); color:#e8e8ed; border:none; border-radius:3px; cursor:pointer; font-size:14px; line-height:1;">⏹</button>
+                </div>
+                <div id="fs-step-indicator">← → step candle · Space play/pause</div>
+
+                <div id="fs-replay-status"
+                    style="font-size:9px; color:rgba(255,255,255,0.3); text-align:center; min-height:12px; letter-spacing:0.3px;">
+                </div>
+            </div>
+
+            <!-- Paper Trade Section -->
+            <div
+                style="border-top:1px solid rgba(255,255,255,0.07); padding-top:10px; display:flex; flex-direction:column; gap:5px;">
+                <div
+                    style="font-size:9px; font-weight:700; color:rgba(255,255,255,0.35); text-transform:uppercase; letter-spacing:0.7px;">
+                    Paper Trade</div>
+
+                <!-- Qty input -->
+                <div class="fs-date-wrap" data-label="Qty">
+                    <input type="number" id="fs-pt-qty" class="fs-date-input" value="1" min="1" step="1"
+                        style="padding:7px 6px 4px 6px;">
+                    <span class="fs-notch-corner"></span>
+                </div>
+
+                <div class="fs-pt-row">
+                    <button class="fs-pt-btn fs-pt-buy" onclick="window.fsPaperBuy()">▲ Buy</button>
+                    <button class="fs-pt-btn fs-pt-sell" onclick="window.fsPaperSell()">▼ Sell</button>
+                </div>
+                <button class="fs-pt-btn fs-pt-close" style="width:100%;" onclick="window.fsPaperClose()">✕ Close
+                    Position</button>
+
+                <div id="fs-pt-pnl" style="color:rgba(255,255,255,0.5);">No position</div>
+
+                <div id="fs-pt-log"></div>
+            </div>
+
+            <!-- Drawing Tools Section -->
+            <div
+                style="border-top:1px solid rgba(255,255,255,0.07); padding-top:10px; display:flex; flex-direction:column; gap:5px;">
+                <div
+                    style="font-size:9px; font-weight:700; color:rgba(255,255,255,0.35); text-transform:uppercase; letter-spacing:0.7px;">
+                    Draw</div>
+                <div style="display:flex; gap:3px; flex-wrap:wrap;">
+                    <button id="fs-draw-hline-btn" class="fs-draw-btn" onclick="window.fsDrawMode('hline')"
+                        title="Horizontal Level">— Level</button>
+                    <button id="fs-draw-trend-btn" class="fs-draw-btn" onclick="window.fsDrawMode('trend')"
+                        title="Trend Line">↗ Trend</button>
+                </div>
+                <button class="fs-draw-btn" style="width:100%;" onclick="window.fsClearDrawings()">🗑 Clear All</button>
+            </div>
+
+        </div>
+
+        <!-- Right Chart Area — edge-to-edge, zero padding -->
+        <div
+            style="flex-grow:1; height:100%; overflow:hidden; display:flex; justify-content:flex-start; align-items:flex-start; background:var(--bg); box-sizing:border-box;">
+            <div id="fs-chart-wrapper"
+                style="width:100%; height:100%; max-width:none; box-sizing:border-box; position:relative; display:flex; flex-direction:column; justify-content:center; align-items:center;">
+                <div id="fs-chart-loading"
+                    style="display:flex; justify-content:center; align-items:center; width:100%; height:100%; color:var(--text2); font-size:15px; position:absolute; top:0; left:0; background:var(--bg); z-index:10; letter-spacing:0.5px;">
+                    Loading chart…</div>
+                <canvas id="fs-chart-pcv" style="display:none;"></canvas>
+                <canvas id="fs-chart-vcv" style="display:none;"></canvas>
+                <!-- Drawing overlay -->
+                <canvas id="fs-draw-canvas"></canvas>
+                <!-- Transparent navigation buttons -->
+                <button class="fs-nav-overlay-btn" id="fs-nav-up" onclick="window.fsNavTicker(-1)">▲</button>
+                <button class="fs-nav-overlay-btn" id="fs-nav-down" onclick="window.fsNavTicker(1)">▼</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Drum-roll date picker overlay ─────────────────────── -->
+    <div id="fs-drum-overlay">
+        <div id="fs-drum-card">
+            <div id="fs-drum-header">
+                <button class="fs-drum-hbtn" id="fs-drum-cancel" onclick="window.closeFsDrum(false)">Cancel</button>
+                <span id="fs-drum-title">Select Date</span>
+                <button class="fs-drum-hbtn" id="fs-drum-confirm" onclick="window.closeFsDrum(true)">Done</button>
+            </div>
+            <div id="fs-drum-cols">
+                <div class="fs-drum-col" id="fs-drum-col-m"></div>
+                <div class="fs-drum-col" id="fs-drum-col-d"></div>
+                <div class="fs-drum-col" id="fs-drum-col-y"></div>
+            </div>
+            <div id="fs-drum-footer">
+                <button class="fs-drum-foot-btn" id="fs-drum-ok" onclick="window.closeFsDrum(true)">✓</button>
+                <button class="fs-drum-foot-btn" id="fs-drum-x" onclick="window.closeFsDrum(false)">✕</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            // ── Drum-roll date picker engine ───────────────────────────
+            const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December'];
+            const ITEM_H = 38;
+            const PAD = 86; // spacer height = (container - 1 item) / 2 = (210 - 38) / 2
+
+            let _drumTarget = null;  // 'fs-replay-start' | 'fs-replay-end'
+            let _drumValEl = null;  // the span showing the date on the trigger button
+            let _drumScrollM, _drumScrollD, _drumScrollY;
+
+            function _drumBuild(colEl, items, selectedIdx) {
+                colEl.innerHTML = '';
+                const top = document.createElement('div');
+                top.className = 'fs-drum-spacer'; colEl.appendChild(top);
+                items.forEach((txt, i) => {
+                    const div = document.createElement('div');
+                    div.className = 'fs-drum-item' + (i === selectedIdx ? ' selected' : '');
+                    div.textContent = typeof txt === 'number' ? String(txt).padStart(2, '0') : txt;
+                    div.dataset.idx = i;
+                    colEl.appendChild(div);
+                });
+                const bot = document.createElement('div');
+                bot.className = 'fs-drum-spacer'; colEl.appendChild(bot);
+                // Scroll to selected
+                requestAnimationFrame(() => {
+                    colEl.scrollTop = selectedIdx * ITEM_H;
+                });
+            }
+
+            function _drumGetIdx(colEl) {
+                return Math.round(colEl.scrollTop / ITEM_H);
+            }
+
+            function _drumHighlight(colEl) {
+                const idx = _drumGetIdx(colEl);
+                colEl.querySelectorAll('.fs-drum-item').forEach((el, i) => {
+                    el.classList.toggle('selected', i === idx);
+                });
+            }
+
+            function _drumScrollTo(colEl, idx) {
+                colEl.scrollTo({ top: idx * ITEM_H, behavior: 'smooth' });
+            }
+
+            function _drumBindCol(colEl) {
+                colEl.addEventListener('scroll', () => _drumHighlight(colEl), { passive: true });
+                colEl.addEventListener('click', e => {
+                    const item = e.target.closest('.fs-drum-item');
+                    if (!item) return;
+                    _drumScrollTo(colEl, parseInt(item.dataset.idx));
+                });
+            }
+
+            window.openFsDrum = function (targetId, label) {
+                _drumTarget = targetId;
+                _drumValEl = document.getElementById(
+                    targetId === 'fs-replay-start' ? 'fs-drum-val-start' : 'fs-drum-val-end'
+                );
+                document.getElementById('fs-drum-title').textContent = label || 'Select Date';
+
+                // Parse existing value or use today
+                const inp = document.getElementById(targetId);
+                let d = inp && inp.value ? new Date(inp.value + 'T00:00:00') : new Date();
+                if (isNaN(d)) d = new Date();
+
+                const selM = d.getMonth();       // 0-based
+                const selD = d.getDate() - 1;    // 0-based
+                const curY = new Date().getFullYear();
+                const years = [];
+                for (let y = curY - 12; y <= curY + 2; y++) years.push(y);
+                const selY = years.indexOf(d.getFullYear());
+
+                const colM = document.getElementById('fs-drum-col-m');
+                const colD = document.getElementById('fs-drum-col-d');
+                const colY = document.getElementById('fs-drum-col-y');
+
+                const days = [];
+                for (let i = 1; i <= 31; i++) days.push(i);
+
+                _drumBuild(colM, MONTHS, selM);
+                _drumBuild(colD, days, selD);
+                _drumBuild(colY, years, selY >= 0 ? selY : years.length - 3);
+
+                // Bind scroll events once
+                if (!colM._drumBound) {
+                    _drumBindCol(colM); _drumBindCol(colD); _drumBindCol(colY);
+                    colM._drumBound = colD._drumBound = colY._drumBound = true;
+                }
+
+                const overlay = document.getElementById('fs-drum-overlay');
+                overlay.style.display = 'flex';
+                requestAnimationFrame(() => overlay.classList.add('open'));
+            };
+
+            window.closeFsDrum = function (confirm) {
+                if (confirm && _drumTarget) {
+                    const colM = document.getElementById('fs-drum-col-m');
+                    const colD = document.getElementById('fs-drum-col-d');
+                    const colY = document.getElementById('fs-drum-col-y');
+
+                    const mIdx = _drumGetIdx(colM);
+                    const dIdx = _drumGetIdx(colD);
+                    const yIdx = _drumGetIdx(colY);
+
+                    const curY = new Date().getFullYear();
+                    const baseY = curY - 12;
+                    const year = baseY + yIdx;
+                    const month = mIdx + 1;
+                    const day = dIdx + 1;
+
+                    const yyyy = year;
+                    const mm = String(month).padStart(2, '0');
+                    const dd = String(day).padStart(2, '0');
+                    const val = `${yyyy}-${mm}-${dd}`;
+
+                    const inp = document.getElementById(_drumTarget);
+                    if (inp) inp.value = val;
+
+                    // Update trigger display: "Apr 12 2017"
+                    const display = `${MONTHS[mIdx].slice(0, 3)} ${dd} ${yyyy}`;
+                    if (_drumValEl) _drumValEl.textContent = display;
+                }
+
+                const overlay = document.getElementById('fs-drum-overlay');
+                overlay.classList.remove('open');
+                setTimeout(() => { overlay.style.display = 'none'; }, 300);
+                _drumTarget = null;
+            };
+
+            // Close on backdrop click
+            document.getElementById('fs-drum-overlay').addEventListener('click', function (e) {
+                if (e.target === this) window.closeFsDrum(false);
+            });
+
+            // ── Helper: set a drum date programmatically (for defaults) ──
+            window._setDrumDate = function (targetId, isoStr) {
+                const inp = document.getElementById(targetId);
+                if (inp) inp.value = isoStr;
+                const valId = targetId === 'fs-replay-start' ? 'fs-drum-val-start' : 'fs-drum-val-end';
+                const valEl = document.getElementById(valId);
+                if (valEl && isoStr) {
+                    const d = new Date(isoStr + 'T00:00:00');
+                    if (!isNaN(d)) {
+                        const mm = String(d.getDate()).padStart(2, '0');
+                        valEl.textContent = `${MONTHS[d.getMonth()].slice(0, 3)} ${mm} ${d.getFullYear()}`;
+                    }
+                }
+            };
+
+        })();
+    </script>
+
+    <script>
+        (function () {
+            window.openFullScreenChart = function () {
+                document.getElementById('fs-chart-modal').style.display = 'flex';
+
+                // Populate Group Select dynamically
+                const groupSel = document.getElementById('fs-group-select');
+                groupSel.innerHTML = `
+                    <option value="all">All Tickers</option>
+                    <option value="favorites">Favorites</option>
+                    <option value="holdings">Holdings</option>
+                `;
+
+
+                // Add individual indices if available
+                if (window.indexDataMap) {
+                    Object.keys(window.indexDataMap).sort().forEach(idxName => {
+                        const opt = document.createElement('option');
+                        opt.value = 'idx_' + idxName;
+                        opt.textContent = idxName;
+                        groupSel.appendChild(opt);
+                    });
+                }
+
+                setTimeout(function () {
+                    window.updateFSTickers(true);
+
+                    // Defer setting replay dates until we have data (say 500ms after opening)
+                    setTimeout(() => {
+                        const startEl = document.getElementById('fs-replay-start');
+                        const endEl = document.getElementById('fs-replay-end');
+                        if (startEl && endEl && !startEl.value && !endEl.value) {
+                            const arr = _fsGetReplayArray();
+                            if (arr && arr.length > 0) {
+                                const lastDt = arr[arr.length - 1].date;
+                                const endIso = lastDt.toISOString().slice(0, 10);
+                                const firstDt = new Date(lastDt);
+                                firstDt.setFullYear(firstDt.getFullYear() - 1);
+                                const startIso = firstDt.toISOString().slice(0, 10);
+                                // Use drum-date helper so the trigger buttons also show the date
+                                if (typeof window._setDrumDate === 'function') {
+                                    window._setDrumDate('fs-replay-start', startIso);
+                                    window._setDrumDate('fs-replay-end', endIso);
+                                } else {
+                                    startEl.value = startIso;
+                                    endEl.value = endIso;
+                                }
+                            }
+                        }
+                    }, 500);
+
+                }, 50);
+            };
+
+            window.closeFullScreenChart = function () {
+                window.stopFsReplay();
+                document.getElementById('fs-chart-modal').style.display = 'none';
+            };
+
+            window.updateFSTickers = function (preserveValue) {
+                const group = document.getElementById('fs-group-select').value;
+                const tickerSel = document.getElementById('fs-ticker-select');
+                const prevVal = tickerSel.value;
+
+                const tickerSet = new Set();
+
+                // Get list based on selected group
+                if (group === 'all') {
+                    // Include everything
+                    ['NIFTY50', 'MIDCAP', 'SMALLCAP', 'MICROCAP'].forEach(idx => {
+                        if (window._ohlcvTickers && window._ohlcvTickers.has(idx)) tickerSet.add(idx);
+                    });
+                    if (window.indexDataMap) {
+                        Object.keys(window.indexDataMap).forEach(idxName => {
+                            window.indexDataMap[idxName].forEach(tk => tickerSet.add(tk.toUpperCase()));
+                        });
+                    }
+                    if (window._fhTickers) {
+                        if (window._fhTickers.F) window._fhTickers.F.forEach(t => tickerSet.add(t.replace(/\.NS$/i, '').toUpperCase()));
+                        if (window._fhTickers.H) window._fhTickers.H.forEach(t => tickerSet.add(t.replace(/\.NS$/i, '').toUpperCase()));
+                    }
+                } else if (group === 'favorites') {
+                    if (window._fhTickers && window._fhTickers.F) {
+                        window._fhTickers.F.forEach(t => tickerSet.add(t.replace(/\.NS$/i, '').toUpperCase()));
+                    }
+                } else if (group === 'holdings') {
+                    if (window._fhTickers && window._fhTickers.H) {
+                        window._fhTickers.H.forEach(t => tickerSet.add(t.replace(/\.NS$/i, '').toUpperCase()));
+                    }
+                } else if (group.startsWith('idx_')) {
+                    const idxName = group.replace('idx_', '');
+                    // Add index itself if it is a ticker (e.g. NIFTY50)
+                    if (window._ohlcvTickers && window._ohlcvTickers.has(idxName)) {
+                        tickerSet.add(idxName);
+                    }
+                    if (window.indexDataMap && window.indexDataMap[idxName]) {
+                        window.indexDataMap[idxName].forEach(tk => tickerSet.add(tk.toUpperCase()));
+                    }
+                }
+
+                const tickers = Array.from(tickerSet).sort();
+                tickerSel.innerHTML = '';
+                tickers.forEach(tk => {
+                    const opt = document.createElement('option');
+                    opt.value = tk;
+                    opt.textContent = tk;
+                    tickerSel.appendChild(opt);
+                });
+
+                if (preserveValue && prevVal && tickers.includes(prevVal)) {
+                    tickerSel.value = prevVal;
+                } else if (tickers.length > 0) {
+                    tickerSel.selectedIndex = 0;
+                }
+
+                window.renderFullScreenChart();
+            };
+
+            window.renderFullScreenChart = function () {
+                const tk = document.getElementById('fs-ticker-select').value;
+                const tf = document.getElementById('fs-duration-select').value;
+                if (!tk) return;
+
+                const wrap = document.getElementById('fs-chart-wrapper');
+                const loadEl = document.getElementById('fs-chart-loading');
+                const pCv = document.getElementById('fs-chart-pcv');
+                const vCv = document.getElementById('fs-chart-vcv');
+
+
+                if (typeof window._renderCardCandleChart === 'function') {
+                    window._renderCardCandleChart(tk, tf, pCv, vCv, loadEl, wrap);
+                } else if (typeof drawChartCore === 'function') {
+                    drawChartCore(tk, tf, pCv, vCv, loadEl, wrap);
+                }
+            };
+
+            // ── Candlestick Replay engine ──────────────────────────────────────────
+            window._fsReplay = { timer: null, paused: false, active: false, currentMaxDate: 0, endDate: 0 };
+
+            function _fsGetReplayArray() {
+                const tk = document.getElementById('fs-ticker-select')?.value?.toUpperCase();
+                if (!tk || !window._chartCalcCache) return null;
+                for (const [, cached] of window._chartCalcCache) {
+                    if (cached.fullProcessed && cached.fullProcessed.length > 0) return cached.fullProcessed;
+                }
+                return null;
+            }
+
+            function _fsReplayTick() {
+                if (window._fsReplay.paused || !window._fsReplay.active) return;
+                const statusEl = document.getElementById('fs-replay-status');
+
+                const arr = _fsGetReplayArray();
+                if (!arr) {
+                    window._fsReplay.currentMaxDate += 86400000;
+                } else {
+                    let idx = 0;
+                    for (let i = arr.length - 1; i >= 0; i--) {
+                        if (arr[i].date.getTime() <= window._fsReplay.currentMaxDate) {
+                            idx = i;
+                            break;
+                        }
+                    }
+                    if (idx < arr.length - 1) {
+                        window._fsReplay.currentMaxDate = arr[idx + 1].date.getTime();
+                    } else {
+                        window._fsReplay.currentMaxDate += 86400000;
+                    }
+                }
+
+                window.renderFullScreenChart();
+
+                if (statusEl) {
+                    const d = new Date(window._fsReplay.currentMaxDate);
+                    statusEl.textContent = d.toISOString().slice(0, 10);
+                }
+
+                if (window._fsReplay.currentMaxDate >= window._fsReplay.endDate) {
+                    window.stopFsReplay(true);
+                    if (statusEl) statusEl.textContent = 'Done ✔';
+                }
+            }
+
+            window.toggleFsReplay = function () {
+                const btn = document.getElementById('fs-replay-btn');
+                const statusEl = document.getElementById('fs-replay-status');
+
+                // If timer is running and not paused → pause
+                if (window._fsReplay.timer && !window._fsReplay.paused) {
+                    window._fsReplay.paused = true;
+                    if (btn) btn.textContent = '▶';
+                    if (statusEl) statusEl.textContent = 'Paused';
+                    return;
+                }
+
+                // If paused → resume
+                if (window._fsReplay.timer && window._fsReplay.paused) {
+                    window._fsReplay.paused = false;
+                    if (btn) btn.textContent = '⏸';
+                    if (statusEl) statusEl.textContent = '';
+                    return;
+                }
+
+                // Not running → start fresh
+                const startSel = document.getElementById('fs-replay-start');
+                const endSel = document.getElementById('fs-replay-end');
+                if (!startSel || !endSel) return;
+
+                const startVal = startSel.value;
+                const endVal = endSel.value;
+
+                if (!startVal || !endVal) {
+                    if (statusEl) statusEl.textContent = 'Select dates';
+                    return;
+                }
+
+                const startTs = new Date(startVal).getTime();
+                const endTs = new Date(endVal).getTime();
+
+                if (isNaN(startTs) || isNaN(endTs) || startTs > endTs) {
+                    if (statusEl) statusEl.textContent = 'Bad range';
+                    return;
+                }
+
+                window._fsReplay.active = true;
+                window._fsReplay.currentMaxDate = startTs;
+                window._fsReplay.endDate = endTs;
+                window._fsReplay.paused = false;
+                if (btn) btn.textContent = '⏸';
+
+                const speedSel = document.getElementById('fs-replay-speed');
+                const interval = speedSel ? parseInt(speedSel.value) || 500 : 500;
+
+                // Tick immediately, then set interval based on speed
+                if (typeof _patchedTick !== 'undefined') {
+                    _patchedTick();
+                    window._fsReplay.timer = setInterval(_patchedTick, interval);
+                } else {
+                    _fsReplayTick();
+                    window._fsReplay.timer = setInterval(_fsReplayTick, interval);
+                }
+            };
+
+            window.changeFsReplaySpeed = function () {
+                if (window._fsReplay.timer) {
+                    clearInterval(window._fsReplay.timer);
+                    const speedSel = document.getElementById('fs-replay-speed');
+                    const interval = speedSel ? parseInt(speedSel.value) || 500 : 500;
+                    if (typeof _patchedTick !== 'undefined') {
+                        window._fsReplay.timer = setInterval(_patchedTick, interval);
+                    } else {
+                        window._fsReplay.timer = setInterval(_fsReplayTick, interval);
+                    }
+                }
+            };
+
+            window.stopFsReplay = function (keepActive = false) {
+                if (window._fsReplay.timer) { clearInterval(window._fsReplay.timer); window._fsReplay.timer = null; }
+                window._fsReplay.paused = false;
+                if (!keepActive) {
+                    window._fsReplay.active = false;
+                    window.renderFullScreenChart(); // re-render without truncation
+                }
+                const btn = document.getElementById('fs-replay-btn');
+                const statusEl = document.getElementById('fs-replay-status');
+                if (btn) btn.textContent = '▶';
+                if (!keepActive && statusEl) statusEl.textContent = '';
+            };
+
+            // ═══════════════════════════════════════════════════════
+            // STEP MODE — advance/rewind one trading candle at a time
+            // ═══════════════════════════════════════════════════════
+            window.fsFsStepForward = function () {
+                if (!window._fsReplay.active) return;
+                // Pause auto-play while stepping
+                if (window._fsReplay.timer) {
+                    clearInterval(window._fsReplay.timer);
+                    window._fsReplay.timer = null;
+                    window._fsReplay.paused = true;
+                    const btn = document.getElementById('fs-replay-btn');
+                    if (btn) btn.textContent = '▶';
+                }
+
+                const arr = _fsGetReplayArray();
+                if (arr) {
+                    let idx = 0;
+                    for (let i = arr.length - 1; i >= 0; i--) {
+                        if (arr[i].date.getTime() <= window._fsReplay.currentMaxDate) {
+                            idx = i;
+                            break;
+                        }
+                    }
+                    if (idx < arr.length - 1) {
+                        window._fsReplay.currentMaxDate = arr[idx + 1].date.getTime();
+                    } else {
+                        window._fsReplay.currentMaxDate += 86400000;
+                    }
+                } else {
+                    window._fsReplay.currentMaxDate += 86400000;
+                }
+
+                window.renderFullScreenChart();
+
+                const statusEl = document.getElementById('fs-replay-status');
+                if (statusEl) {
+                    const d = new Date(window._fsReplay.currentMaxDate);
+                    statusEl.textContent = d.toISOString().slice(0, 10);
+                }
+
+                if (window._fsReplay.currentMaxDate >= window._fsReplay.endDate) {
+                    window.stopFsReplay(true);
+                    if (statusEl) statusEl.textContent = 'Done ✔';
+                }
+
+                if (typeof window._fsUpdatePnlDisplay === 'function') window._fsUpdatePnlDisplay();
+            };
+
+            window.fsFsStepBack = function () {
+                if (!window._fsReplay.active) return;
+                // Pause auto-play while stepping
+                if (window._fsReplay.timer) {
+                    clearInterval(window._fsReplay.timer);
+                    window._fsReplay.timer = null;
+                    window._fsReplay.paused = true;
+                    const btn = document.getElementById('fs-replay-btn');
+                    if (btn) btn.textContent = '▶';
+                }
+
+                const arr = _fsGetReplayArray();
+                if (arr) {
+                    let idx = 0;
+                    for (let i = arr.length - 1; i >= 0; i--) {
+                        if (arr[i].date.getTime() <= window._fsReplay.currentMaxDate) {
+                            idx = i;
+                            break;
+                        }
+                    }
+                    if (idx > 0) {
+                        window._fsReplay.currentMaxDate = arr[idx - 1].date.getTime();
+                    }
+                } else {
+                    window._fsReplay.currentMaxDate -= 86400000;
+                }
+
+                window.renderFullScreenChart();
+                const statusEl = document.getElementById('fs-replay-status');
+                if (statusEl) {
+                    const d = new Date(window._fsReplay.currentMaxDate);
+                    statusEl.textContent = d.toISOString().slice(0, 10);
+                }
+
+                if (typeof window._fsUpdatePnlDisplay === 'function') window._fsUpdatePnlDisplay();
+            };
+
+            // ═══════════════════════════════════════════════════════
+            // PAPER TRADE ENGINE
+            // ═══════════════════════════════════════════════════════
+            window._fsPaperTrade = {
+                position: null,   // { side:'long'|'short', qty, entryPrice, entryDate }
+                trades: [],       // completed trades
+                totalPnl: 0
+            };
+
+            function _fsCurrentClose() {
+                const tk = document.getElementById('fs-ticker-select')?.value?.toUpperCase();
+                if (!tk || !window._chartCalcCache) return null;
+                for (const [, cached] of window._chartCalcCache) {
+                    if (!cached.fullProcessed) continue;
+                    const arr = cached.fullProcessed;
+                    const maxTs = window._fsReplay.active ? window._fsReplay.currentMaxDate : Infinity;
+                    for (let i = arr.length - 1; i >= 0; i--) {
+                        if (arr[i].date.getTime() <= maxTs) {
+                            return { close: arr[i].close, date: arr[i].date };
+                        }
+                    }
+                }
+                return null;
+            }
+
+            function _fsUpdatePnlDisplay() {
+                const pnlEl = document.getElementById('fs-pt-pnl');
+                if (!pnlEl) return;
+                const pt = window._fsPaperTrade;
+                if (!pt.position) {
+                    pnlEl.style.color = 'rgba(255,255,255,0.35)';
+                    pnlEl.textContent = pt.trades.length
+                        ? 'Total: ' + (pt.totalPnl >= 0 ? '+' : '') + pt.totalPnl.toFixed(2)
+                        : 'No position';
+                    return;
+                }
+                const curr = _fsCurrentClose();
+                if (!curr) { pnlEl.textContent = '…'; return; }
+                const { side, qty, entryPrice } = pt.position;
+                const diff = side === 'long' ? curr.close - entryPrice : entryPrice - curr.close;
+                const unreal = diff * qty;
+                const pct = (diff / entryPrice * 100).toFixed(2);
+                const color = unreal >= 0 ? '#22c55e' : '#f43f5e';
+                pnlEl.style.color = color;
+                pnlEl.innerHTML = (side === 'long' ? 'Long' : 'Short') + ' ' + qty
+                    + ' @ ' + entryPrice.toFixed(2)
+                    + '<br>' + (unreal >= 0 ? '+' : '') + unreal.toFixed(2)
+                    + ' (' + (unreal >= 0 ? '+' : '') + pct + '%)';
+            }
+
+            window.fsPaperBuy = function () {
+                const curr = _fsCurrentClose();
+                if (!curr) return;
+                const qty = parseInt(document.getElementById('fs-pt-qty')?.value) || 1;
+                const pt = window._fsPaperTrade;
+                if (pt.position && pt.position.side === 'long') {
+                    // Add to position
+                    const totalQty = pt.position.qty + qty;
+                    pt.position.entryPrice = (pt.position.entryPrice * pt.position.qty + curr.close * qty) / totalQty;
+                    pt.position.qty = totalQty;
+                } else if (pt.position && pt.position.side === 'short') {
+                    window.fsPaperClose();
+                } else {
+                    pt.position = { side: 'long', qty, entryPrice: curr.close, entryDate: curr.date };
+                }
+                _fsUpdatePnlDisplay();
+            };
+
+            window.fsPaperSell = function () {
+                const curr = _fsCurrentClose();
+                if (!curr) return;
+                const qty = parseInt(document.getElementById('fs-pt-qty')?.value) || 1;
+                const pt = window._fsPaperTrade;
+                if (pt.position && pt.position.side === 'short') {
+                    const totalQty = pt.position.qty + qty;
+                    pt.position.entryPrice = (pt.position.entryPrice * pt.position.qty + curr.close * qty) / totalQty;
+                    pt.position.qty = totalQty;
+                } else if (pt.position && pt.position.side === 'long') {
+                    window.fsPaperClose();
+                } else {
+                    pt.position = { side: 'short', qty, entryPrice: curr.close, entryDate: curr.date };
+                }
+                _fsUpdatePnlDisplay();
+            };
+
+            window.fsPaperClose = function () {
+                const curr = _fsCurrentClose();
+                if (!curr) return;
+                const pt = window._fsPaperTrade;
+                if (!pt.position) return;
+                const { side, qty, entryPrice, entryDate } = pt.position;
+                const exitPrice = curr.close;
+                const diff = side === 'long' ? exitPrice - entryPrice : entryPrice - exitPrice;
+                const pnl = diff * qty;
+                pt.totalPnl += pnl;
+                pt.trades.push({ side, qty, entryPrice, exitPrice, pnl, entryDate, exitDate: curr.date });
+                pt.position = null;
+                // Add to log
+                const logEl = document.getElementById('fs-pt-log');
+                if (logEl) {
+                    const span = document.createElement('span');
+                    const color = pnl >= 0 ? '#22c55e' : '#f43f5e';
+                    span.style.color = color;
+                    span.textContent = (side === 'long' ? '▲' : '▼') + ' ' + qty
+                        + ' ' + entryPrice.toFixed(1) + '→' + exitPrice.toFixed(1)
+                        + ' ' + (pnl >= 0 ? '+' : '') + pnl.toFixed(1);
+                    logEl.insertBefore(span, logEl.firstChild);
+                    // Keep last 8
+                    while (logEl.children.length > 8) logEl.removeChild(logEl.lastChild);
+                }
+                _fsUpdatePnlDisplay();
+            };
+
+            // Update P&L display on every replay tick
+            const _origFsReplayTick = _fsReplayTick;
+            const _patchedTick = function () {
+                _origFsReplayTick();
+                _fsUpdatePnlDisplay();
+            };
+            // Patch tick by replacing timer call in toggleFsReplay
+            // (P&L is also updated by fsPaperBuy/Sell/Close directly)
+
+            // ═══════════════════════════════════════════════════════
+            // DRAWING TOOLS ENGINE
+            // ═══════════════════════════════════════════════════════
+            window._fsDrawings = [];       // { type, x1,y1,x2,y2 } or { type:'hline', y }
+            window._fsDrawMode = null;     // 'hline' | 'trend' | null
+            let _fsDrawPending = null;     // in-progress trend line
+
+            window.fsDrawMode = function (mode) {
+                const canvas = document.getElementById('fs-draw-canvas');
+                const hBtn = document.getElementById('fs-draw-hline-btn');
+                const tBtn = document.getElementById('fs-draw-trend-btn');
+                if (window._fsDrawMode === mode) {
+                    window._fsDrawMode = null;
+                    if (canvas) canvas.classList.remove('drawing');
+                    [hBtn, tBtn].forEach(b => b && b.classList.remove('active'));
+                } else {
+                    window._fsDrawMode = mode;
+                    if (canvas) canvas.classList.add('drawing');
+                    [hBtn, tBtn].forEach(b => b && b.classList.remove('active'));
+                    if (mode === 'hline' && hBtn) hBtn.classList.add('active');
+                    if (mode === 'trend' && tBtn) tBtn.classList.add('active');
+                }
+                _fsPaintDrawings();
+            };
+
+            window.fsClearDrawings = function () {
+                window._fsDrawings = [];
+                _fsPaintDrawings();
+            };
+
+            function _fsPaintDrawings() {
+                const canvas = document.getElementById('fs-draw-canvas');
+                if (!canvas) return;
+                const wrapper = document.getElementById('fs-chart-wrapper');
+                if (!wrapper) return;
+                canvas.width = wrapper.clientWidth;
+                canvas.height = wrapper.clientHeight;
+                canvas.style.width = wrapper.clientWidth + 'px';
+                canvas.style.height = wrapper.clientHeight + 'px';
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.save();
+                ctx.setLineDash([5, 4]);
+                ctx.lineWidth = 1.5;
+                for (const d of window._fsDrawings) {
+                    if (d.type === 'hline') {
+                        ctx.strokeStyle = 'rgba(245,158,11,0.7)';
+                        ctx.beginPath();
+                        ctx.moveTo(0, d.y);
+                        ctx.lineTo(canvas.width, d.y);
+                        ctx.stroke();
+                        // Price label
+                        ctx.setLineDash([]);
+                        ctx.font = 'bold 9px monospace';
+                        ctx.fillStyle = 'rgba(245,158,11,0.85)';
+                        ctx.fillText(d.label || '', canvas.width - 4, d.y - 3);
+                        ctx.textAlign = 'right';
+                        ctx.setLineDash([5, 4]);
+                    } else if (d.type === 'trend') {
+                        ctx.strokeStyle = 'rgba(99,179,237,0.75)';
+                        ctx.setLineDash([]);
+                        ctx.beginPath();
+                        ctx.moveTo(d.x1, d.y1);
+                        ctx.lineTo(d.x2, d.y2);
+                        ctx.stroke();
+                        // Extend line slightly
+                        ctx.strokeStyle = 'rgba(99,179,237,0.25)';
+                        ctx.setLineDash([3, 6]);
+                        const dx = d.x2 - d.x1, dy = d.y2 - d.y1;
+                        if (dx !== 0) {
+                            const extX = canvas.width;
+                            const extY = d.y2 + dy / dx * (extX - d.x2);
+                            ctx.beginPath();
+                            ctx.moveTo(d.x2, d.y2);
+                            ctx.lineTo(extX, extY);
+                            ctx.stroke();
+                        }
+                        ctx.setLineDash([5, 4]);
+                    }
+                }
+                // Draw in-progress line
+                if (_fsDrawPending && _fsDrawPending.x2 != null) {
+                    ctx.strokeStyle = 'rgba(99,179,237,0.5)';
+                    ctx.setLineDash([4, 4]);
+                    ctx.lineWidth = 1.2;
+                    ctx.beginPath();
+                    ctx.moveTo(_fsDrawPending.x1, _fsDrawPending.y1);
+                    ctx.lineTo(_fsDrawPending.x2, _fsDrawPending.y2);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+
+            (function () {
+                const canvas = document.getElementById('fs-draw-canvas');
+                if (!canvas) return;
+
+                canvas.addEventListener('click', function (e) {
+                    if (!window._fsDrawMode) return;
+                    const coords = window._getRotatedCoords ? window._getRotatedCoords(e, canvas) : (() => {
+                        const rect = canvas.getBoundingClientRect();
+                        return { mx: e.clientX - rect.left, my: e.clientY - rect.top };
+                    })();
+                    const x = coords.mx;
+                    const y = coords.my;
+
+                    if (window._fsDrawMode === 'hline') {
+                        // Get price label from chart state
+                        const pCv = document.getElementById('fs-chart-pcv');
+                        let label = '';
+                        if (pCv && pCv._chartState) {
+                            const st = pCv._chartState;
+                            // Reverse-map y to price (log scale)
+                            const logMin = Math.log(st.pMin || 1);
+                            const logR = st.logR || 1;
+                            const pH = st.PH - st.PP.t - st.PP.b;
+                            const frac = (y - st.PP.t) / pH;
+                            const price = Math.exp(Math.log(st.pMax || 1) - frac * logR);
+                            label = isFinite(price) ? price.toFixed(1) : '';
+                        }
+                        window._fsDrawings.push({ type: 'hline', y, label });
+                        _fsPaintDrawings();
+                    } else if (window._fsDrawMode === 'trend') {
+                        if (!_fsDrawPending) {
+                            _fsDrawPending = { x1: x, y1: y, x2: null, y2: null };
+                        } else {
+                            window._fsDrawings.push({ type: 'trend', x1: _fsDrawPending.x1, y1: _fsDrawPending.y1, x2: x, y2: y });
+                            _fsDrawPending = null;
+                            _fsPaintDrawings();
+                        }
+                    }
+                });
+
+                canvas.addEventListener('mousemove', function (e) {
+                    if (!_fsDrawPending || window._fsDrawMode !== 'trend') return;
+                    const coords = window._getRotatedCoords ? window._getRotatedCoords(e, canvas) : (() => {
+                        const rect = canvas.getBoundingClientRect();
+                        return { mx: e.clientX - rect.left, my: e.clientY - rect.top };
+                    })();
+                    _fsDrawPending.x2 = coords.mx;
+                    _fsDrawPending.y2 = coords.my;
+                    _fsPaintDrawings();
+                });
+
+                canvas.addEventListener('contextmenu', function (e) {
+                    e.preventDefault();
+                    // Right-click cancels current drawing
+                    _fsDrawPending = null;
+                    window._fsDrawMode = null;
+                    canvas.classList.remove('drawing');
+                    document.getElementById('fs-draw-hline-btn')?.classList.remove('active');
+                    document.getElementById('fs-draw-trend-btn')?.classList.remove('active');
+                    _fsPaintDrawings();
+                });
+            })();
+
+            let fsResizeTimer = null;
+            window.addEventListener('resize', function () {
+                const modal = document.getElementById('fs-chart-modal');
+                if (modal && modal.style.display === 'flex') {
+                    clearTimeout(fsResizeTimer);
+                    fsResizeTimer = setTimeout(function () {
+                        window.renderFullScreenChart();
+                        _fsPaintDrawings();
+                    }, 100);
+                }
+            }, { passive: true });
+
+            // Global helper to extract coordinates, accounting for CSS rotation on mobile
+            window._getRotatedCoords = function(e, canvas) {
+                const rect = canvas.getBoundingClientRect();
+                let clientX = e.clientX, clientY = e.clientY;
+                if (e.touches && e.touches.length > 0) {
+                    clientX = e.touches[0].clientX;
+                    clientY = e.touches[0].clientY;
+                }
+                const isFs = canvas.id.startsWith('fs-');
+                const isRotated = window.innerWidth <= 1024 && window.innerHeight > window.innerWidth;
+                if (isFs && isRotated) {
+                    return { mx: clientY - rect.top, my: rect.right - clientX };
+                }
+                return { mx: clientX - rect.left, my: clientY - rect.top };
+            };
+
+            // Global navigation function for mobile transparent buttons and keyboard arrows
+            window.fsNavTicker = function (dir) {
+                const tickerSel = document.getElementById('fs-ticker-select');
+                if (!tickerSel || tickerSel.options.length <= 1) return;
+
+                let idx = tickerSel.selectedIndex;
+                const total = tickerSel.options.length;
+
+                if (dir < 0 && idx > 0) idx--;
+                else if (dir > 0 && idx < total - 1) idx++;
+
+                if (tickerSel.selectedIndex !== idx) {
+                    tickerSel.selectedIndex = idx;
+
+                    // Center the selected option in the listbox scroll area
+                    const optionHeight = tickerSel.scrollHeight / total;
+                    const visibleH = tickerSel.clientHeight;
+                    const targetScrollTop = (idx * optionHeight) - (visibleH / 2) + (optionHeight / 2);
+                    tickerSel.scrollTop = Math.max(0, targetScrollTop);
+
+                    window.renderFullScreenChart();
+                }
+            };
+
+            // Keyboard navigation for tickers in full screen chart modal
+            window.addEventListener('keydown', function (e) {
+                const modal = document.getElementById('fs-chart-modal');
+                if (!modal || modal.style.display !== 'flex') return;
+
+                if (e.key === 'Escape') {
+                    window.closeFullScreenChart();
+                    return;
+                }
+
+                if (e.key === ' ' || e.key === 'Spacebar') {
+                    // Space: toggle replay pause/resume (or start if not running)
+                    e.preventDefault();
+                    window.toggleFsReplay();
+                    _fsUpdatePnlDisplay();
+                    return;
+                }
+
+                // Arrow Right / Left — step candles when replay is active
+                if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && window._fsReplay && window._fsReplay.active) {
+                    e.preventDefault();
+                    if (e.key === 'ArrowRight') window.fsFsStepForward();
+                    else window.fsFsStepBack();
+                    _fsUpdatePnlDisplay();
+                    return;
+                }
+
+                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    window.fsNavTicker(e.key === 'ArrowUp' ? -1 : 1);
+                }
+            });
         })();
     </script>
 
