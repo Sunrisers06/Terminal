@@ -15697,126 +15697,331 @@
      FULLSCREEN SINGLE CHART VIEW
     ══════════════════════════════════════════════════════ -->
     <style>
+        /* ═══════════════════════════════════════════════════════
+           FULLSCREEN CHART — APPLE-STYLE LEFT PANEL
+        ═══════════════════════════════════════════════════════ */
+
         #fs-chart-modal select {
             appearance: none;
             -webkit-appearance: none;
-            font-family: inherit;
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', sans-serif;
             font-size: 12px;
-            letter-spacing: 0.3px;
+            letter-spacing: 0.2px;
             transition: border-color 0.15s, background 0.15s;
         }
-
-        #fs-chart-modal select:hover {
-            border-color: rgba(255, 255, 255, 0.18);
-        }
-
-        #fs-chart-modal select:focus {
-            border-color: rgba(255, 255, 255, 0.35);
-            outline: none;
-        }
-
-        #fs-close-btn {
-            transition: background 0.15s, opacity 0.15s;
-        }
-
-        #fs-close-btn:hover {
-            opacity: 0.85;
-        }
-
+        #fs-chart-modal select:focus { border-color: rgba(29,111,232,0.6) !important; outline: none; }
         #fs-chart-modal label {
             text-transform: uppercase;
-            letter-spacing: 0.7px;
+            letter-spacing: 0.8px;
         }
 
-        .fs-select-wrap {
-            position: relative;
+        /* Sidebar container */
+        #fs-sidebar {
+            width: 176px;
+            min-width: 176px;
+            background: #111114;
+            border-right: 1px solid rgba(255,255,255,0.06);
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+            overflow-y: auto;
+            overflow-x: hidden;
+            scrollbar-width: none;
         }
+        #fs-sidebar::-webkit-scrollbar { display: none; }
 
-        .fs-select-wrap::after {
-            content: '▾';
-            position: absolute;
-            right: 10px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: var(--text2);
+        /* Sidebar header / logo bar */
+        #fs-sidebar-header {
+            display: flex;
+            align-items: center;
+            padding: 14px 14px 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        #fs-sidebar-header img { width: 100%; height: auto; display: block; filter: brightness(0) invert(1); opacity: 0.85; }
+
+        /* Section block */
+        .fs-section {
+            padding: 12px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .fs-section:last-child { border-bottom: none; }
+
+        /* Section label */
+        .fs-section-label {
             font-size: 10px;
+            font-weight: 600;
+            color: rgba(255,255,255,0.3);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Collapsible section headers */
+        .fs-section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            user-select: none;
+            width: 100%;
+        }
+        .fs-section-chevron {
+            font-size: 8px;
+            color: rgba(255, 255, 255, 0.35);
+            transition: transform 0.2s ease, color 0.15s;
+        }
+        .fs-section-header:hover .fs-section-chevron {
+            color: rgba(255, 255, 255, 0.75);
+        }
+        .fs-section-content {
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .fs-section.expanded .fs-section-content {
+            display: flex;
+        }
+        .fs-section.expanded .fs-section-chevron {
+            transform: rotate(180deg);
+        }
+
+        /* Apple-style select wrapper */
+        .fs-ctrl-row { display: flex; flex-direction: column; gap: 4px; }
+        .fs-ctrl-label {
+            font-size: 10px; font-weight: 500;
+            color: rgba(255,255,255,0.3);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+        .fs-sel-wrap { position: relative; }
+        .fs-sel-wrap::after {
+            content: '\25BE';
+            position: absolute; right: 9px; top: 50%;
+            transform: translateY(-50%);
+            color: rgba(255,255,255,0.3);
+            font-size: 9px;
             pointer-events: none;
         }
+        .fs-sel {
+            width: 100%;
+            padding: 7px 26px 7px 10px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 8px;
+            color: #e8e8ed;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            box-sizing: border-box;
+            transition: border-color 0.15s;
+        }
+        .fs-sel:hover { border-color: rgba(255,255,255,0.16); }
 
-        /* Listbox ticker select */
+        /* Ticker listbox */
         #fs-ticker-select {
             appearance: auto !important;
             -webkit-appearance: auto !important;
-        }
-
-        #fs-ticker-select option {
-            padding: 5px 8px;
+            width: 100%;
+            flex: 1;
+            min-height: 0;
+            height: 100%;
+            padding: 3px 0;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 8px;
+            color: #e8e8ed;
             font-size: 12px;
-            background: #111118;
+            font-weight: 500;
+            cursor: pointer;
+            box-sizing: border-box;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255,255,255,0.1) transparent;
+        }
+        #fs-ticker-select option {
+            padding: 5px 10px;
+            font-size: 12px;
+            background: #111114;
             color: #e8e8ed;
         }
-
         #fs-ticker-select option:checked,
         #fs-ticker-select option:focus {
             background: #1d6fe8;
             color: #fff;
         }
+        .fs-ticker-block { display: flex; flex-direction: column; gap: 4px; flex: 1; min-height: 0; padding: 0 14px 14px; }
 
-        /* ── Drum-roll date picker ─────────────────────────────── */
-        .fs-date-wrap {
-            position: relative;
+        /* Search Input Style */
+        .fs-search-input {
             width: 100%;
+            box-sizing: border-box;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            color: #e8e8ed;
+            font-size: 12px;
+            padding: 7px 10px;
+            margin-bottom: 6px;
+            outline: none;
+            transition: border-color 0.15s, background-color 0.15s;
+        }
+        .fs-search-input:focus {
+            border-color: rgba(29, 111, 232, 0.6);
+            background: rgba(255, 255, 255, 0.08);
         }
 
-        /* hidden real inputs keep the value */
-        .fs-date-real {
-            display: none;
-        }
-
-        /* Trigger button that shows current date */
+        /* Date drum trigger button */
         .fs-drum-trigger {
             width: 100%;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            background: #111118;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            border-radius: 5px;
-            padding: 5px 8px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 8px;
+            padding: 7px 10px;
             cursor: pointer;
             box-sizing: border-box;
-            gap: 4px;
+            gap: 6px;
             transition: border-color 0.15s;
         }
-
-        .fs-drum-trigger:hover {
-            border-color: rgba(255, 255, 255, 0.3);
-        }
-
+        .fs-drum-trigger:hover { border-color: rgba(255,255,255,0.18); }
         .fs-drum-trigger-label {
-            font-size: 8px;
-            font-weight: 700;
-            color: rgba(255, 255, 255, 0.35);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            font-size: 9px; font-weight: 600;
+            color: rgba(255,255,255,0.35);
+            text-transform: uppercase; letter-spacing: 0.6px;
             white-space: nowrap;
         }
-
         .fs-drum-trigger-val {
-            font-size: 11px;
-            font-weight: 600;
+            font-size: 11px; font-weight: 500;
             color: #e8e8ed;
-            flex: 1;
-            text-align: right;
+            flex: 1; text-align: right; white-space: nowrap;
+        }
+        .fs-drum-trigger-ico { font-size: 9px; color: rgba(255,255,255,0.25); }
+
+        /* Replay control buttons */
+        .fs-replay-btns { display: flex; gap: 5px; }
+        .fs-replay-btns button {
+            flex: 1; padding: 8px 2px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px; line-height: 1;
+            border: none;
+            transition: opacity 0.15s;
+        }
+        .fs-replay-btns button:hover { opacity: 0.8; }
+        #fs-replay-btn { background: #1d6fe8; color: #fff; }
+        #fs-step-fwd-btn { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3) !important; }
+        #fs-replay-stop-btn { background: rgba(255,255,255,0.07); color: #e8e8ed; }
+
+
+        #fs-replay-status {
+            font-size: 9px; color: rgba(255,255,255,0.28);
+            text-align: center; min-height: 12px; letter-spacing: 0.3px;
+        }
+
+        /* Paper trade */
+        .fs-pt-row { display: flex; gap: 5px; }
+        .fs-pt-btn {
+            flex: 1; padding: 8px 2px;
+            border: none; border-radius: 8px;
+            cursor: pointer; font-size: 10px; font-weight: 700;
+            letter-spacing: 0.4px; text-transform: uppercase;
+            transition: opacity 0.15s, transform 0.1s;
+        }
+        .fs-pt-btn:hover { opacity: 0.85; }
+        .fs-pt-btn:active { transform: scale(0.96); }
+        .fs-pt-buy { background: #16a34a; color: #fff; }
+        .fs-pt-sell { background: #dc2626; color: #fff; }
+        .fs-pt-close {
+            width: 100%; background: rgba(255,255,255,0.07);
+            border: 1px solid rgba(255,255,255,0.1) !important;
+            color: #e8e8ed;
+        }
+        #fs-pt-pnl {
+            font-size: 10px; font-weight: 700;
+            text-align: center; padding: 2px 0 0;
+            letter-spacing: 0.3px; min-height: 14px;
+            color: rgba(255,255,255,0.5);
+        }
+        #fs-pt-log {
+            font-size: 8.5px; color: rgba(255,255,255,0.28);
+            max-height: 54px; overflow-y: auto;
+            display: flex; flex-direction: column; gap: 1px;
+            scrollbar-width: none;
+        }
+        #fs-pt-log span { padding: 1px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+
+        /* Drawing tools */
+        .fs-draw-tools-row { display: flex; gap: 5px; flex-wrap: wrap; }
+        .fs-draw-btn {
+            flex: 1; padding: 7px 4px;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            background: rgba(255,255,255,0.04);
+            color: rgba(255,255,255,0.5);
+            cursor: pointer; font-size: 10px; font-weight: 600;
+            transition: background 0.15s, color 0.15s, border-color 0.15s;
             white-space: nowrap;
         }
+        .fs-draw-btn.active {
+            background: rgba(245,158,11,0.16);
+            color: #f59e0b;
+            border-color: rgba(245,158,11,0.4);
+        }
+        .fs-draw-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
+        .fs-draw-clear {
+            width: 100%;
+            border-radius: 8px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            color: rgba(255,255,255,0.4);
+            padding: 7px;
+            font-size: 10px; font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .fs-draw-clear:hover { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.7); }
 
-        .fs-drum-trigger-ico {
-            font-size: 9px;
-            color: rgba(255, 255, 255, 0.3);
+        /* Drawing overlay canvas */
+        #fs-draw-canvas {
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 5;
+        }
+        #fs-draw-canvas.drawing { pointer-events: all; cursor: crosshair; }
+
+        /* fs-date-wrap (qty input) */
+        .fs-date-wrap {
+            position: relative; width: 100%;
+        }
+        .fs-date-real { display: none; }
+        .fs-date-input {
+            width: 100%; box-sizing: border-box;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.09);
+            border-radius: 8px;
+            color: #e8e8ed;
+            font-size: 12px; font-weight: 500;
+            padding: 7px 10px;
+        }
+        .fs-notch-corner { display: none; }
+
+        /* fs-select-wrap (legacy wrapper – kept for compat) */
+        .fs-select-wrap { position: relative; }
+        .fs-select-wrap::after {
+            content: '\25BE'; position: absolute; right: 9px; top: 50%;
+            transform: translateY(-50%); color: rgba(255,255,255,0.3);
+            font-size: 9px; pointer-events: none;
         }
 
-        /* Overlay backdrop */
+        /* ── Drum-roll date picker overlay ─────────────────────── */
         #fs-drum-overlay {
             display: none;
             position: fixed;
@@ -16005,125 +16210,7 @@
             color: rgba(255, 255, 255, 0.4);
         }
 
-        /* Step mode indicator */
-        #fs-step-indicator {
-            font-size: 9px;
-            color: rgba(255, 255, 255, 0.3);
-            text-align: center;
-            letter-spacing: 0.3px;
-            min-height: 11px;
-            transition: color 0.2s;
-        }
 
-        #fs-step-indicator.active {
-            color: #f59e0b;
-        }
-
-        /* Paper Trade styles */
-        .fs-pt-row {
-            display: flex;
-            gap: 4px;
-        }
-
-        .fs-pt-btn {
-            flex: 1;
-            padding: 6px 2px;
-            border: none;
-            border-radius: 3px;
-            cursor: pointer;
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 0.4px;
-            text-transform: uppercase;
-            transition: opacity 0.15s, transform 0.1s;
-        }
-
-        .fs-pt-btn:hover {
-            opacity: 0.85;
-        }
-
-        .fs-pt-btn:active {
-            transform: scale(0.96);
-        }
-
-        .fs-pt-buy {
-            background: #16a34a;
-            color: #fff;
-        }
-
-        .fs-pt-sell {
-            background: #dc2626;
-            color: #fff;
-        }
-
-        .fs-pt-close {
-            background: rgba(255, 255, 255, 0.08);
-            color: #e8e8ed;
-        }
-
-        #fs-pt-pnl {
-            font-size: 10px;
-            font-weight: 700;
-            text-align: center;
-            padding: 4px 0 0;
-            letter-spacing: 0.3px;
-            min-height: 14px;
-        }
-
-        #fs-pt-log {
-            font-size: 8.5px;
-            color: rgba(255, 255, 255, 0.3);
-            max-height: 54px;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 1px;
-        }
-
-        #fs-pt-log span {
-            padding: 1px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-        }
-
-        /* Drawing Tools styles */
-        #fs-draw-canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 5;
-        }
-
-        #fs-draw-canvas.drawing {
-            pointer-events: all;
-            cursor: crosshair;
-        }
-
-        .fs-draw-btn {
-            padding: 4px 6px;
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 3px;
-            background: rgba(255, 255, 255, 0.05);
-            color: rgba(255, 255, 255, 0.55);
-            cursor: pointer;
-            font-size: 10px;
-            font-weight: 600;
-            transition: background 0.15s, color 0.15s, border-color 0.15s;
-            white-space: nowrap;
-        }
-
-        .fs-draw-btn.active {
-            background: rgba(245, 158, 11, 0.18);
-            color: #f59e0b;
-            border-color: rgba(245, 158, 11, 0.5);
-        }
-
-        .fs-draw-btn:hover {
-            background: rgba(255, 255, 255, 0.09);
-            color: #fff;
-        }
 
         /* Mobile navigation overlay buttons */
         .fs-nav-overlay-btn {
@@ -16169,143 +16256,127 @@
     </style>
     <div id="fs-chart-modal"
         style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; width:100%; height:100%; background:var(--bg); z-index:99999; flex-direction:row; overflow:hidden;">
-        <!-- Left Settings Panel — compact 160px -->
-        <div id="fs-sidebar"
-            style="width:160px; min-width:160px; background:#0a0a10; border-right:1px solid rgba(255,255,255,0.07); padding:14px 12px; display:flex; flex-direction:column; gap:12px; box-sizing:border-box;">
-            <!-- Header -->
-            <div style="display:flex; align-items:center; margin-bottom:4px; cursor:pointer; width:100%;"
-                onclick="closeFullScreenChart()" title="Close Charts">
-                <img src="https://lh3.googleusercontent.com/d/1pPqrvLPPH2Mh9aqjQgG1eAnoziFAxtWg" alt="Sundarx Quantara"
-                    style="width:100%; height:auto; display:block; filter:brightness(0) invert(1);">
+    <!-- Left Panel: Apple-style sidebar -->
+        <div id="fs-sidebar">
+            <!-- Header: Logo -->
+            <div id="fs-sidebar-header" onclick="closeFullScreenChart()" title="Close Charts">
+                <img src="https://lh3.googleusercontent.com/d/1pPqrvLPPH2Mh9aqjQgG1eAnoziFAxtWg" alt="Sundarx Quantara">
             </div>
 
-            <!-- Filter Group -->
-            <div style="display:flex; flex-direction:column; gap:4px;">
-                <label style="font-size:9px; font-weight:700; color:rgba(255,255,255,0.35);">Group</label>
-                <div class="fs-select-wrap">
-                    <select id="fs-group-select" onchange="updateFSTickers(false)"
-                        style="width:100%; padding:6px 24px 6px 8px; background:#111118; border:1px solid rgba(255,255,255,0.09); color:#e8e8ed; border-radius:4px; font-weight:600; cursor:pointer; box-sizing:border-box;">
-                    </select>
+            <!-- Search bar at top -->
+            <div class="fs-section" style="padding: 10px 14px 4px 14px; border-bottom: none;">
+                <div style="position: relative; width: 100%;">
+                    <input type="text" id="fs-ticker-search" class="fs-search-input" placeholder="Search Ticker..." oninput="window.updateFSTickers(true)" style="margin-bottom: 0; padding-right: 28px;">
+                    <button id="fs-search-clear" onclick="window.clearFSSearch()" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: rgba(255,255,255,0.35); font-size: 11px; cursor: pointer; display: none; padding: 4px; line-height: 1; outline: none;">✕</button>
                 </div>
             </div>
 
-            <!-- Ticker -->
-            <div style="display:flex; flex-direction:column; gap:4px; flex:1; min-height:0;">
-                <label style="font-size:9px; font-weight:700; color:rgba(255,255,255,0.35);">Ticker</label>
-                <select id="fs-ticker-select" size="20" onchange="renderFullScreenChart()"
-                    style="width:100%; flex:1; min-height:0; height:100%; padding:4px 0; background:#111118; border:1px solid rgba(255,255,255,0.09); color:#e8e8ed; border-radius:4px; font-size:12px; font-weight:600; cursor:pointer; box-sizing:border-box; overflow-y:auto; scrollbar-width:thin; scrollbar-color:rgba(255,255,255,0.15) transparent;">
-                </select>
-            </div>
-
-            <!-- Duration -->
-            <div style="display:flex; flex-direction:column; gap:4px;">
-                <label style="font-size:9px; font-weight:700; color:rgba(255,255,255,0.35);">Period</label>
-                <div class="fs-select-wrap">
-                    <select id="fs-duration-select" onchange="renderFullScreenChart()"
-                        style="width:100%; padding:6px 24px 6px 8px; background:#111118; border:1px solid rgba(255,255,255,0.09); color:#e8e8ed; border-radius:4px; font-weight:600; cursor:pointer; box-sizing:border-box;">
-                        <option value="6m">6 M</option>
-                        <option value="1y">1 Y</option>
-                        <option value="2y">2 Y</option>
-                        <option value="3y" selected>3 Y</option>
-                        <option value="4y">4 Y</option>
-                        <option value="5y">5 Y</option>
-                    </select>
-                </div>
-            </div>
-
-            <!-- Replay Section -->
-            <div
-                style="border-top:1px solid rgba(255,255,255,0.07); padding-top:10px; display:flex; flex-direction:column; gap:6px;">
-                <div
-                    style="font-size:9px; font-weight:700; color:rgba(255,255,255,0.35); text-transform:uppercase; letter-spacing:0.7px;">
-                    Replay</div>
-
-                <!-- From date drum picker -->
-                <button class="fs-drum-trigger" onclick="window.openFsDrum('fs-replay-start','From')"
-                    id="fs-drum-trigger-start">
-                    <span class="fs-drum-trigger-label">From</span>
-                    <span class="fs-drum-trigger-val" id="fs-drum-val-start">—</span>
-                    <span class="fs-drum-trigger-ico">▾</span>
-                </button>
-                <input type="hidden" id="fs-replay-start">
-
-                <!-- To date drum picker -->
-                <button class="fs-drum-trigger" onclick="window.openFsDrum('fs-replay-end','To')"
-                    id="fs-drum-trigger-end">
-                    <span class="fs-drum-trigger-label">To</span>
-                    <span class="fs-drum-trigger-val" id="fs-drum-val-end">—</span>
-                    <span class="fs-drum-trigger-ico">▾</span>
-                </button>
-                <input type="hidden" id="fs-replay-end">
-
-                <div style="display:flex; flex-direction:column; gap:3px;">
-                    <label style="font-size:9px; color:rgba(255,255,255,0.3);">Speed</label>
-                    <div class="fs-select-wrap">
-                        <select id="fs-replay-speed" onchange="window.changeFsReplaySpeed()"
-                            style="width:100%; padding:5px 24px 5px 6px; background:#111118; border:1px solid rgba(255,255,255,0.09); color:#e8e8ed; border-radius:3px; font-size:11px; font-weight:600; cursor:pointer; box-sizing:border-box; appearance:none; -webkit-appearance:none;">
-                            <option value="1000" selected>1 Candle / sec</option>
-                            <option value="500">2 Candle / sec</option>
-                            <option value="333">3 Candle / sec</option>
-                            <option value="200">5 Candle / sec</option>
-                            <option value="100">10 Candle / sec</option>
-                        </select>
+            <!-- Group filter -->
+            <div class="fs-section">
+                <div class="fs-ctrl-row">
+                    <span class="fs-ctrl-label">Group</span>
+                    <div class="fs-sel-wrap">
+                        <select id="fs-group-select" class="fs-sel" onchange="updateFSTickers(false)"></select>
                     </div>
                 </div>
 
-                <div style="display:flex; gap:4px;">
-                    <button id="fs-replay-btn" onclick="window.toggleFsReplay()"
-                        style="flex:1; padding:7px 2px; background:#1d6fe8; color:#fff; border:none; border-radius:3px; cursor:pointer; font-size:14px; line-height:1;">▶</button>
-                    <button id="fs-step-fwd-btn" onclick="window.fsFsStepForward()" title="Step forward 1 candle (→)"
-                        style="flex:1; padding:7px 2px; background:rgba(245,158,11,0.15); color:#f59e0b; border:1px solid rgba(245,158,11,0.3); border-radius:3px; cursor:pointer; font-size:12px; line-height:1;">›</button>
-                    <button id="fs-replay-stop-btn" onclick="window.stopFsReplay()"
-                        style="flex:1; padding:7px 2px; background:rgba(255,255,255,0.07); color:#e8e8ed; border:none; border-radius:3px; cursor:pointer; font-size:14px; line-height:1;">⏹</button>
-                </div>
-                <div id="fs-step-indicator">← → step candle · Space play/pause</div>
-
-                <div id="fs-replay-status"
-                    style="font-size:9px; color:rgba(255,255,255,0.3); text-align:center; min-height:12px; letter-spacing:0.3px;">
+                <div class="fs-ctrl-row">
+                    <span class="fs-ctrl-label">Period</span>
+                    <div class="fs-sel-wrap">
+                        <select id="fs-duration-select" class="fs-sel" onchange="renderFullScreenChart()">
+                            <option value="6m">6 Months</option>
+                            <option value="1y">1 Year</option>
+                            <option value="2y">2 Years</option>
+                            <option value="3y" selected>3 Years</option>
+                            <option value="4y">4 Years</option>
+                            <option value="5y">5 Years</option>
+                        </select>
+                    </div>
                 </div>
             </div>
 
-            <!-- Paper Trade Section -->
-            <div
-                style="border-top:1px solid rgba(255,255,255,0.07); padding-top:10px; display:flex; flex-direction:column; gap:5px;">
-                <div
-                    style="font-size:9px; font-weight:700; color:rgba(255,255,255,0.35); text-transform:uppercase; letter-spacing:0.7px;">
-                    Paper Trade</div>
-
-                <!-- Qty input -->
-                <div class="fs-date-wrap" data-label="Qty">
-                    <input type="number" id="fs-pt-qty" class="fs-date-input" value="1" min="1" step="1"
-                        style="padding:7px 6px 4px 6px;">
-                    <span class="fs-notch-corner"></span>
-                </div>
-
-                <div class="fs-pt-row">
-                    <button class="fs-pt-btn fs-pt-buy" onclick="window.fsPaperBuy()">▲ Buy</button>
-                    <button class="fs-pt-btn fs-pt-sell" onclick="window.fsPaperSell()">▼ Sell</button>
-                </div>
-                <button class="fs-pt-btn fs-pt-close" style="width:100%;" onclick="window.fsPaperClose()">✕ Close
-                    Position</button>
-
-                <div id="fs-pt-pnl" style="color:rgba(255,255,255,0.5);">No position</div>
-
-                <div id="fs-pt-log"></div>
+            <!-- Ticker list -->
+            <div class="fs-ticker-block">
+                <span class="fs-ctrl-label">Ticker</span>
+                <select id="fs-ticker-select" size="20" onchange="renderFullScreenChart()"></select>
             </div>
 
-            <!-- Drawing Tools Section -->
-            <div
-                style="border-top:1px solid rgba(255,255,255,0.07); padding-top:10px; display:flex; flex-direction:column; gap:5px;">
-                <div
-                    style="font-size:9px; font-weight:700; color:rgba(255,255,255,0.35); text-transform:uppercase; letter-spacing:0.7px;">
-                    Draw</div>
-                <div style="display:flex; gap:3px; flex-wrap:wrap;">
-                    <button id="fs-draw-hline-btn" class="fs-draw-btn" onclick="window.fsDrawMode('hline')"
-                        title="Horizontal Level">— Level</button>
-                    <button id="fs-draw-trend-btn" class="fs-draw-btn" onclick="window.fsDrawMode('trend')"
-                        title="Trend Line">↗ Trend</button>
+            <!-- Replay -->
+            <div class="fs-section" id="fs-sec-replay">
+                <div class="fs-section-header" onclick="window.toggleFsSection('fs-sec-replay')">
+                    <span class="fs-section-label">Replay</span>
+                    <span class="fs-section-chevron">▼</span>
                 </div>
-                <button class="fs-draw-btn" style="width:100%;" onclick="window.fsClearDrawings()">🗑 Clear All</button>
+                <div class="fs-section-content">
+                    <button class="fs-drum-trigger" onclick="window.openFsDrum('fs-replay-start','From')" id="fs-drum-trigger-start">
+                        <span class="fs-drum-trigger-label">From</span>
+                        <span class="fs-drum-trigger-val" id="fs-drum-val-start">—</span>
+                        <span class="fs-drum-trigger-ico">▾</span>
+                    </button>
+                    <input type="hidden" id="fs-replay-start">
+
+                    <button class="fs-drum-trigger" onclick="window.openFsDrum('fs-replay-end','To')" id="fs-drum-trigger-end">
+                        <span class="fs-drum-trigger-label">To</span>
+                        <span class="fs-drum-trigger-val" id="fs-drum-val-end">—</span>
+                        <span class="fs-drum-trigger-ico">▾</span>
+                    </button>
+                    <input type="hidden" id="fs-replay-end">
+
+                    <div class="fs-ctrl-row">
+                        <span class="fs-ctrl-label">Speed</span>
+                        <div class="fs-sel-wrap">
+                            <select id="fs-replay-speed" class="fs-sel" onchange="window.changeFsReplaySpeed()" style="font-size:11px;">
+                                <option value="1000" selected>1 Candle / sec</option>
+                                <option value="500">2 Candle / sec</option>
+                                <option value="333">3 Candle / sec</option>
+                                <option value="200">5 Candle / sec</option>
+                                <option value="100">10 Candle / sec</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="fs-replay-btns">
+                        <button id="fs-replay-btn" onclick="window.toggleFsReplay()">▶</button>
+                        <button id="fs-step-fwd-btn" onclick="window.fsFsStepForward()" title="Step +1 candle">›</button>
+                        <button id="fs-replay-stop-btn" onclick="window.stopFsReplay()">⏹</button>
+                    </div>
+                    <div id="fs-replay-status"></div>
+                </div>
+            </div>
+
+            <!-- Paper Trade -->
+            <div class="fs-section" id="fs-sec-pt">
+                <div class="fs-section-header" onclick="window.toggleFsSection('fs-sec-pt')">
+                    <span class="fs-section-label">Paper Trade</span>
+                    <span class="fs-section-chevron">▼</span>
+                </div>
+                <div class="fs-section-content">
+                    <div class="fs-date-wrap" data-label="Qty">
+                        <input type="number" id="fs-pt-qty" class="fs-date-input" value="1" min="1" step="1">
+                    </div>
+                    <div class="fs-pt-row">
+                        <button class="fs-pt-btn fs-pt-buy" onclick="window.fsPaperBuy()">▲ Buy</button>
+                        <button class="fs-pt-btn fs-pt-sell" onclick="window.fsPaperSell()">▼ Sell</button>
+                    </div>
+                    <button class="fs-pt-btn fs-pt-close" onclick="window.fsPaperClose()">✕ Close Position</button>
+                    <div id="fs-pt-pnl">No position</div>
+                    <div id="fs-pt-log"></div>
+                </div>
+            </div>
+
+            <!-- Draw Tools -->
+            <div class="fs-section" id="fs-sec-draw">
+                <div class="fs-section-header" onclick="window.toggleFsSection('fs-sec-draw')">
+                    <span class="fs-section-label">Draw</span>
+                    <span class="fs-section-chevron">▼</span>
+                </div>
+                <div class="fs-section-content">
+                    <div class="fs-draw-tools-row">
+                        <button id="fs-draw-hline-btn" class="fs-draw-btn" onclick="window.fsDrawMode('hline')" title="Horizontal Level">— Level</button>
+                        <button id="fs-draw-trend-btn" class="fs-draw-btn" onclick="window.fsDrawMode('trend')" title="Trend Line">↗ Trend</button>
+                    </div>
+                    <button class="fs-draw-clear" onclick="window.fsClearDrawings()">🗑 Clear All</button>
+                </div>
             </div>
 
         </div>
@@ -16567,6 +16638,13 @@
                 const tickerSel = document.getElementById('fs-ticker-select');
                 const prevVal = tickerSel.value;
 
+                // Clear search if preserveValue is false (group changed)
+                const searchInput = document.getElementById('fs-ticker-search');
+                if (!preserveValue && searchInput) {
+                    searchInput.value = '';
+                }
+                const searchQuery = searchInput ? searchInput.value.toUpperCase().trim() : '';
+
                 const tickerSet = new Set();
 
                 // Get list based on selected group
@@ -16603,22 +16681,49 @@
                     }
                 }
 
+                // Toggle clear button
+                const clearBtn = document.getElementById('fs-search-clear');
+                if (clearBtn) {
+                    clearBtn.style.display = searchQuery ? 'block' : 'none';
+                }
+
                 const tickers = Array.from(tickerSet).sort();
+
                 tickerSel.innerHTML = '';
+                let hasMatchForPrevVal = false;
+
                 tickers.forEach(tk => {
+                    if (searchQuery && !tk.includes(searchQuery)) return;
                     const opt = document.createElement('option');
                     opt.value = tk;
                     opt.textContent = tk;
                     tickerSel.appendChild(opt);
+                    if (tk === prevVal) hasMatchForPrevVal = true;
                 });
 
-                if (preserveValue && prevVal && tickers.includes(prevVal)) {
+                if (preserveValue && prevVal && hasMatchForPrevVal) {
                     tickerSel.value = prevVal;
-                } else if (tickers.length > 0) {
+                } else if (tickerSel.options.length > 0) {
                     tickerSel.selectedIndex = 0;
                 }
 
                 window.renderFullScreenChart();
+            };
+
+            window.clearFSSearch = function () {
+                const searchInput = document.getElementById('fs-ticker-search');
+                if (searchInput) {
+                    searchInput.value = '';
+                    searchInput.focus();
+                    window.updateFSTickers(true);
+                }
+            };
+
+            window.toggleFsSection = function (elementId) {
+                const sec = document.getElementById(elementId);
+                if (sec) {
+                    sec.classList.toggle('expanded');
+                }
             };
 
             window.renderFullScreenChart = function () {
