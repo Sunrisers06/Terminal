@@ -9713,9 +9713,17 @@
                         }
                     }
                     if (!dt || isNaN(dt.getTime())) continue;
-                    if (!c) continue;
+                    if (!isFinite(c) || c <= 0) continue;
 
-                    const row = { date: dt, open: o, high: h, low: l, close: c, vol: v };
+                    if (!isFinite(o) || o <= 0) o = c;
+                    if (!isFinite(h) || h <= 0) h = Math.max(o, c);
+                    if (!isFinite(l) || l <= 0) l = Math.min(o, c);
+
+                    h = Math.max(h, o, c);
+                    l = Math.min(l, o, c);
+                    if (!isFinite(h) || !isFinite(l) || h <= 0 || l <= 0 || h < l) continue;
+
+                    const row = { date: dt, open: o, high: h, low: l, close: c, vol: Math.max(0, v || 0) };
                     let arr = idx.get(ticker);
                     if (!arr) {
                         arr = [];
@@ -10945,7 +10953,7 @@
                         };
                     });
 
-                    window._chartCalcCache.set(_calcCacheKey, { fullProcessed, benchTicker });
+                    window._chartCalcCache.set(_calcCacheKey, { fullProcessed, benchTicker, ticker: UC });
                     if (window._chartCalcCache.size > 240) {
                         const firstKey = window._chartCalcCache.keys().next().value;
                         window._chartCalcCache.delete(firstKey);
@@ -10970,6 +10978,8 @@
                     return;
                 }
 
+                const isFs = (pCv && pCv.id === 'fs-chart-pcv');
+
                 // ── Period Slicing (6m, 1y, etc.) looking backward from the END of the valid data ──
                 const months = period === '5y' ? 60 : period === '4y' ? 48 : period === '3y' ? 36 : period === '2y' ? 24 : period === '1y' ? 12 : 6;
                 const lastDate = currentData[currentData.length - 1].date;
@@ -10977,10 +10987,39 @@
                 cutoff.setMonth(cutoff.getMonth() - months);
                 const cutTs = cutoff.getTime();
 
-                let startIdx = 0;
-                while (startIdx < currentData.length && currentData[startIdx].date.getTime() < cutTs) startIdx++;
+                let defaultStartIdx = 0;
+                while (defaultStartIdx < currentData.length && currentData[defaultStartIdx].date.getTime() < cutTs) defaultStartIdx++;
 
-                const raw = currentData.slice(startIdx);
+                let periodN = currentData.length - defaultStartIdx;
+                if (periodN <= 0) {
+                    periodN = currentData.length;
+                    defaultStartIdx = 0;
+                }
+
+                // Keep charts readable without creating fake slots for stocks that truly have little history.
+                const MIN_CANDLES = 60;
+                if (!isFs && periodN < MIN_CANDLES && currentData.length > periodN) {
+                    defaultStartIdx = Math.max(0, currentData.length - Math.min(MIN_CANDLES, currentData.length));
+                    periodN = currentData.length - defaultStartIdx;
+                }
+
+                let pOffset = (pCv && pCv._panOffset !== undefined) ? pCv._panOffset : 0;
+
+                // Let the chart zoom out to the full selected period
+                let visibleSlots = periodN;
+                if (visibleSlots < 60) visibleSlots = 60;
+
+                const maxOffset = Math.max(0, periodN - visibleSlots);
+                pOffset = Math.max(0, Math.min(maxOffset, pOffset));
+                if (pCv) pCv._panOffset = pOffset;
+
+                const actualEnd = Math.max(defaultStartIdx, currentData.length - pOffset);
+                const actualStart = Math.max(defaultStartIdx, actualEnd - visibleSlots);
+                const raw = currentData.slice(actualStart, actualEnd);
+
+                // Map the chart to visibleSlots to prevent stretching of small datasets
+                const n = visibleSlots;
+                const drawIndexOffset = visibleSlots - raw.length;
 
                 if (!raw.length) {
                     loadEl.innerHTML = '<span style="color:#f43f5e;font-size:11px;">No ' + period.toUpperCase() + ' data for ' + ticker + '</span>';
@@ -11037,12 +11076,11 @@
                 pc.scale(DPR, DPR); vc.scale(DPR, DPR);
                 if (ic) ic.scale(DPR, DPR);
 
-                const n = raw.length;
+                // n is the visible candle count. X positions are cached from candle dates.
 
                 /* ════════════════════════════════════════
                    PRICE CHART
                 ════════════════════════════════════════ */
-                const isFs = (pCv && pCv.id === 'fs-chart-pcv');
                 const PP = isFs ? { t: 12, b: 32, l: 8, r: 70 } : { t: 10, b: 22, l: 6, r: 48 };
                 const pW = W - PP.l - PP.r;
                 const pH = PH - PP.t - PP.b;
@@ -11057,26 +11095,42 @@
                 for (const r of raw) {
                     if (r.high > pMax) pMax = r.high;
                     if (r.low < pMin) pMin = r.low;
-
-                    const iVal = (r.benchClose || 1) * benchScale;
-
-                    if (iVal > pMax) pMax = iVal;
-                    if (iVal < pMin) pMin = iVal;
                 }
-                const pad = (pMax - pMin) * 0.08;
-                pMin -= pad; pMax += pad * 1.5;
                 if (pMin <= 0.01) pMin = 0.01;
+                if (pMax <= pMin) pMax = pMin + 1;
 
-                const logMin = Math.log(pMin);
-                const logMax = Math.log(pMax);
+                let logMin = Math.log(pMin);
+                let logMax = Math.log(pMax);
+                const logR_initial = logMax - logMin || 1;
+                
+                // Apply proportional padding on the logarithmic scale 
+                // (e.g. 8% empty space at bottom, 12% at top)
+                const logPad = logR_initial * 0.08;
+                logMin -= logPad;
+                logMax += logPad * 1.5;
+
                 const logR = logMax - logMin || 1;
 
                 const toY = v => {
                     if (v <= 0) return PP.t + pH;
                     return PP.t + pH * (1 - (Math.log(v) - logMin) / logR);
                 };
-                const toX = i => PP.l + (i + 0.5) * (pW / n);
-                const bW = Math.max(1.2, pW / n * 0.55);
+                const fractionalShift = (pCv && pCv._panFractional ? pCv._panFractional : 0) + (pCv && pCv._panFractionalTouch ? pCv._panFractionalTouch : 0);
+
+                const toX = i => PP.l + (i + drawIndexOffset + 0.5) * (pW / n) + fractionalShift;
+                const toPaneX = (i, panePad, paneW) => panePad.l + (i + drawIndexOffset + 0.5) * (paneW / n) + fractionalShift;
+
+                const indexFromX = x => {
+                    const logicalI = Math.round((x - fractionalShift - PP.l) / (pW / n) - 0.5);
+                    const rawI = logicalI - drawIndexOffset;
+                    return Math.max(0, Math.min(raw.length - 1, rawI));
+                };
+
+                const barStep = pW / n;
+                const bW = Math.max(1.2, Math.min(isFs ? 8 : 5, barStep * 0.55));
+
+                // Ensure compatibility with array lookups if needed elsewhere
+                const xPositions = raw.map((_, i) => toX(i));
 
                 // Update chart state for event listeners
                 pCv._chartState = {
@@ -11092,7 +11146,19 @@
                     PH,
                     PP,
                     pW,
-                    toX
+                    pH,
+                    pMin,
+                    pMax,
+                    logMin,
+                    logMax,
+                    logR,
+                    toX,
+                    indexFromX,
+                    xPositions,
+                    barStep,
+                    maxPanOffset: maxOffset,
+                    fractionalShift,
+                    drawIndexOffset
                 };
                 pCv.style.cursor = 'crosshair';
                 pCv.style.touchAction = 'pan-y';
@@ -11123,10 +11189,10 @@
                         const my = coords.my;
 
                         // Calculate nearest index
-                        let idx = Math.round((mx - state.PP.l) / (state.pW / state.n) - 0.5);
-                        idx = Math.max(0, Math.min(state.n - 1, idx));
+                        let idx = state.indexFromX ? state.indexFromX(mx) : Math.round((mx - state.PP.l) / (state.pW / state.n) - 0.5);
+                        idx = Math.max(0, Math.min(state.raw.length - 1, idx));
 
-                        pCv._hoverX = state.PP.l + (idx + 0.5) * (state.pW / state.n);
+                        pCv._hoverX = state.toX(idx);
                         pCv._hoverY = my;
                         pCv._hoverIdx = idx;
                         pCv._hoverCanvas = canvas;
@@ -11158,10 +11224,10 @@
                         const mx = coords.mx;
                         const my = coords.my;
 
-                        let idx = Math.round((mx - state.PP.l) / (state.pW / state.n) - 0.5);
-                        idx = Math.max(0, Math.min(state.n - 1, idx));
+                        let idx = state.indexFromX ? state.indexFromX(mx) : Math.round((mx - state.PP.l) / (state.pW / state.n) - 0.5);
+                        idx = Math.max(0, Math.min(state.raw.length - 1, idx));
 
-                        pCv._hoverX = state.PP.l + (idx + 0.5) * (state.pW / state.n);
+                        pCv._hoverX = state.toX(idx);
                         pCv._hoverY = my;
                         pCv._hoverIdx = idx;
                         pCv._hoverCanvas = canvas;
@@ -11409,7 +11475,7 @@
                 });
 
                 // ── Last close: dashed horizontal line + price tag ──
-                const lc = raw[n - 1].close;
+                const lc = raw[raw.length - 1].close;
                 const yLc = toY(lc);
                 pc.strokeStyle = 'rgba(30,110,255,0.45)'; pc.lineWidth = 0.8; pc.setLineDash([2, 3]);
                 pc.beginPath(); pc.moveTo(PP.l, yLc); pc.lineTo(W - PP.r, yLc); pc.stroke();
@@ -11441,8 +11507,8 @@
                 };
 
                 raw.forEach((r, i) => {
-                    const isLast = (i === n - 1);
-                    if (!isLast && (i % step !== 0 || (n - 1 - i) < Math.max(2, step * 0.6))) return;
+                    const isLast = (i === raw.length - 1);
+                    if (!isLast && (i % step !== 0 || (raw.length - 1 - i) < Math.max(2, step * 0.6))) return;
 
                     let displayDate = r.date;
                     const label = fmtChartDate(displayDate);
@@ -11565,7 +11631,7 @@
 
                 // Volume bars — vivid blue bull, vivid magenta bear
                 raw.forEach((r, i) => {
-                    const x = VP.l + (i + 0.5) * (vW2 / n);
+                    const x = toPaneX(i, VP, vW2);
                     const bh = Math.max(1, (r.vol / maxV) * vH2);
                     const volSig = getVolumeSignal(r);
                     let c = volSig.color;
@@ -11586,7 +11652,7 @@
                 let stVolSma = false;
                 raw.forEach((r, i) => {
                     if (r.volSma9 !== null && r.volSma9 !== undefined) {
-                        const x = VP.l + (i + 0.5) * (vW2 / n);
+                        const x = toPaneX(i, VP, vW2);
                         const y = VP.t + vH2 - (r.volSma9 / maxV) * vH2;
                         stVolSma ? vc.lineTo(x, y) : (vc.moveTo(x, y), stVolSma = true);
                     }
@@ -15709,7 +15775,12 @@
             letter-spacing: 0.2px;
             transition: border-color 0.15s, background 0.15s;
         }
-        #fs-chart-modal select:focus { border-color: rgba(29,111,232,0.6) !important; outline: none; }
+
+        #fs-chart-modal select:focus {
+            border-color: rgba(29, 111, 232, 0.6) !important;
+            outline: none;
+        }
+
         #fs-chart-modal label {
             text-transform: uppercase;
             letter-spacing: 0.8px;
@@ -15720,7 +15791,7 @@
             width: 176px;
             min-width: 176px;
             background: #111114;
-            border-right: 1px solid rgba(255,255,255,0.06);
+            border-right: 1px solid rgba(255, 255, 255, 0.06);
             display: flex;
             flex-direction: column;
             box-sizing: border-box;
@@ -15728,18 +15799,28 @@
             overflow-x: hidden;
             scrollbar-width: none;
         }
-        #fs-sidebar::-webkit-scrollbar { display: none; }
+
+        #fs-sidebar::-webkit-scrollbar {
+            display: none;
+        }
 
         /* Sidebar header / logo bar */
         #fs-sidebar-header {
             display: flex;
             align-items: center;
             padding: 14px 14px 10px;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
             cursor: pointer;
             flex-shrink: 0;
         }
-        #fs-sidebar-header img { width: 100%; height: auto; display: block; filter: brightness(0) invert(1); opacity: 0.85; }
+
+        #fs-sidebar-header img {
+            width: 100%;
+            height: auto;
+            display: block;
+            filter: brightness(0) invert(1);
+            opacity: 0.85;
+        }
 
         /* Section block */
         .fs-section {
@@ -15747,15 +15828,18 @@
             display: flex;
             flex-direction: column;
             gap: 8px;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         }
-        .fs-section:last-child { border-bottom: none; }
+
+        .fs-section:last-child {
+            border-bottom: none;
+        }
 
         /* Section label */
         .fs-section-label {
             font-size: 10px;
             font-weight: 600;
-            color: rgba(255,255,255,0.3);
+            color: rgba(255, 255, 255, 0.3);
             text-transform: uppercase;
             letter-spacing: 1px;
         }
@@ -15769,49 +15853,67 @@
             user-select: none;
             width: 100%;
         }
+
         .fs-section-chevron {
             font-size: 8px;
             color: rgba(255, 255, 255, 0.35);
             transition: transform 0.2s ease, color 0.15s;
         }
+
         .fs-section-header:hover .fs-section-chevron {
             color: rgba(255, 255, 255, 0.75);
         }
+
         .fs-section-content {
             display: none;
             flex-direction: column;
             gap: 8px;
             margin-top: 8px;
         }
+
         .fs-section.expanded .fs-section-content {
             display: flex;
         }
+
         .fs-section.expanded .fs-section-chevron {
             transform: rotate(180deg);
         }
 
         /* Apple-style select wrapper */
-        .fs-ctrl-row { display: flex; flex-direction: column; gap: 4px; }
+        .fs-ctrl-row {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
         .fs-ctrl-label {
-            font-size: 10px; font-weight: 500;
-            color: rgba(255,255,255,0.3);
+            font-size: 10px;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.3);
             text-transform: uppercase;
             letter-spacing: 0.8px;
         }
-        .fs-sel-wrap { position: relative; }
+
+        .fs-sel-wrap {
+            position: relative;
+        }
+
         .fs-sel-wrap::after {
             content: '\25BE';
-            position: absolute; right: 9px; top: 50%;
+            position: absolute;
+            right: 9px;
+            top: 50%;
             transform: translateY(-50%);
-            color: rgba(255,255,255,0.3);
+            color: rgba(255, 255, 255, 0.3);
             font-size: 9px;
             pointer-events: none;
         }
+
         .fs-sel {
             width: 100%;
             padding: 7px 26px 7px 10px;
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 8px;
             color: #e8e8ed;
             font-size: 12px;
@@ -15820,41 +15922,58 @@
             box-sizing: border-box;
             transition: border-color 0.15s;
         }
-        .fs-sel:hover { border-color: rgba(255,255,255,0.16); }
 
-        /* Ticker listbox */
-        #fs-ticker-select {
-            appearance: auto !important;
-            -webkit-appearance: auto !important;
+        .fs-sel:hover {
+            border-color: rgba(255, 255, 255, 0.16);
+        }
+
+        /* Ticker listbox replacement */
+        #fs-ticker-list {
+            position: relative;
             width: 100%;
-            flex: 1;
-            min-height: 0;
-            height: 100%;
-            padding: 3px 0;
-            background: rgba(255,255,255,0.04);
-            border: 1px solid rgba(255,255,255,0.08);
+            min-height: 200px;
+            max-height: 40vh;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 8px;
-            color: #e8e8ed;
-            font-size: 12px;
-            font-weight: 500;
-            cursor: pointer;
-            box-sizing: border-box;
             overflow-y: auto;
             scrollbar-width: thin;
-            scrollbar-color: rgba(255,255,255,0.1) transparent;
+            scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+            box-sizing: border-box;
         }
-        #fs-ticker-select option {
-            padding: 5px 10px;
+
+        .fs-ticker-item {
+            padding: 7px 10px;
             font-size: 12px;
-            background: #111114;
+            font-weight: 500;
             color: #e8e8ed;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.15s, color 0.15s;
+            border-bottom: 1px dashed rgba(255, 255, 255, 0.03);
         }
-        #fs-ticker-select option:checked,
-        #fs-ticker-select option:focus {
-            background: #1d6fe8;
+
+        .fs-ticker-item:last-child {
+            border-bottom: none;
+        }
+
+        .fs-ticker-item:hover {
+            background: rgba(255, 255, 255, 0.06);
             color: #fff;
         }
-        .fs-ticker-block { display: flex; flex-direction: column; gap: 4px; flex: 1; min-height: 0; padding: 0 14px 14px; }
+
+        .fs-ticker-item.selected {
+            background: #1d6fe8;
+            color: #fff;
+            font-weight: 600;
+        }
+
+        .fs-ticker-block {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 0 14px 14px;
+        }
 
         /* Search Input Style */
         .fs-search-input {
@@ -15870,6 +15989,7 @@
             outline: none;
             transition: border-color 0.15s, background-color 0.15s;
         }
+
         .fs-search-input:focus {
             border-color: rgba(29, 111, 232, 0.6);
             background: rgba(255, 255, 255, 0.08);
@@ -15881,8 +16001,8 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 8px;
             padding: 7px 10px;
             cursor: pointer;
@@ -15890,135 +16010,265 @@
             gap: 6px;
             transition: border-color 0.15s;
         }
-        .fs-drum-trigger:hover { border-color: rgba(255,255,255,0.18); }
+
+        .fs-drum-trigger:hover {
+            border-color: rgba(255, 255, 255, 0.18);
+        }
+
         .fs-drum-trigger-label {
-            font-size: 9px; font-weight: 600;
-            color: rgba(255,255,255,0.35);
-            text-transform: uppercase; letter-spacing: 0.6px;
+            font-size: 9px;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.35);
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
             white-space: nowrap;
         }
+
         .fs-drum-trigger-val {
-            font-size: 11px; font-weight: 500;
+            font-size: 11px;
+            font-weight: 500;
             color: #e8e8ed;
-            flex: 1; text-align: right; white-space: nowrap;
+            flex: 1;
+            text-align: right;
+            white-space: nowrap;
         }
-        .fs-drum-trigger-ico { font-size: 9px; color: rgba(255,255,255,0.25); }
+
+        .fs-drum-trigger-ico {
+            font-size: 9px;
+            color: rgba(255, 255, 255, 0.25);
+        }
 
         /* Replay control buttons */
-        .fs-replay-btns { display: flex; gap: 5px; }
+        .fs-replay-btns {
+            display: flex;
+            gap: 5px;
+        }
+
         .fs-replay-btns button {
-            flex: 1; padding: 8px 2px;
+            flex: 1;
+            padding: 8px 2px;
             border-radius: 8px;
             cursor: pointer;
-            font-size: 14px; line-height: 1;
+            font-size: 14px;
+            line-height: 1;
             border: none;
             transition: opacity 0.15s;
         }
-        .fs-replay-btns button:hover { opacity: 0.8; }
-        #fs-replay-btn { background: #1d6fe8; color: #fff; }
-        #fs-step-fwd-btn { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3) !important; }
-        #fs-replay-stop-btn { background: rgba(255,255,255,0.07); color: #e8e8ed; }
+
+        .fs-replay-btns button:hover {
+            opacity: 0.8;
+        }
+
+        #fs-replay-btn {
+            background: #1d6fe8;
+            color: #fff;
+        }
+
+        #fs-step-fwd-btn {
+            background: rgba(245, 158, 11, 0.15);
+            color: #f59e0b;
+            border: 1px solid rgba(245, 158, 11, 0.3) !important;
+        }
+
+        #fs-replay-stop-btn {
+            background: rgba(255, 255, 255, 0.07);
+            color: #e8e8ed;
+        }
 
 
         #fs-replay-status {
-            font-size: 9px; color: rgba(255,255,255,0.28);
-            text-align: center; min-height: 12px; letter-spacing: 0.3px;
+            font-size: 9px;
+            color: rgba(255, 255, 255, 0.28);
+            text-align: center;
+            min-height: 12px;
+            letter-spacing: 0.3px;
         }
 
         /* Paper trade */
-        .fs-pt-row { display: flex; gap: 5px; }
+        .fs-pt-row {
+            display: flex;
+            gap: 5px;
+        }
+
         .fs-pt-btn {
-            flex: 1; padding: 8px 2px;
-            border: none; border-radius: 8px;
-            cursor: pointer; font-size: 10px; font-weight: 700;
-            letter-spacing: 0.4px; text-transform: uppercase;
+            flex: 1;
+            padding: 8px 2px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
             transition: opacity 0.15s, transform 0.1s;
         }
-        .fs-pt-btn:hover { opacity: 0.85; }
-        .fs-pt-btn:active { transform: scale(0.96); }
-        .fs-pt-buy { background: #16a34a; color: #fff; }
-        .fs-pt-sell { background: #dc2626; color: #fff; }
+
+        .fs-pt-btn:hover {
+            opacity: 0.85;
+        }
+
+        .fs-pt-btn:active {
+            transform: scale(0.96);
+        }
+
+        .fs-pt-buy {
+            background: #16a34a;
+            color: #fff;
+        }
+
+        .fs-pt-sell {
+            background: #dc2626;
+            color: #fff;
+        }
+
         .fs-pt-close {
-            width: 100%; background: rgba(255,255,255,0.07);
-            border: 1px solid rgba(255,255,255,0.1) !important;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
             color: #e8e8ed;
         }
+
         #fs-pt-pnl {
-            font-size: 10px; font-weight: 700;
-            text-align: center; padding: 2px 0 0;
-            letter-spacing: 0.3px; min-height: 14px;
-            color: rgba(255,255,255,0.5);
+            font-size: 10px;
+            font-weight: 700;
+            text-align: center;
+            padding: 2px 0 0;
+            letter-spacing: 0.3px;
+            min-height: 14px;
+            color: rgba(255, 255, 255, 0.5);
         }
+
         #fs-pt-log {
-            font-size: 8.5px; color: rgba(255,255,255,0.28);
-            max-height: 54px; overflow-y: auto;
-            display: flex; flex-direction: column; gap: 1px;
+            font-size: 8.5px;
+            color: rgba(255, 255, 255, 0.28);
+            max-height: 54px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
             scrollbar-width: none;
         }
-        #fs-pt-log span { padding: 1px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+
+        #fs-pt-log span {
+            padding: 1px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        }
 
         /* Drawing tools */
-        .fs-draw-tools-row { display: flex; gap: 5px; flex-wrap: wrap; }
+        .fs-draw-tools-row {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+
         .fs-draw-btn {
-            flex: 1; padding: 7px 4px;
-            border: 1px solid rgba(255,255,255,0.1);
+            flex: 1;
+            padding: 7px 4px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 8px;
-            background: rgba(255,255,255,0.04);
-            color: rgba(255,255,255,0.5);
-            cursor: pointer; font-size: 10px; font-weight: 600;
+            background: rgba(255, 255, 255, 0.04);
+            color: rgba(255, 255, 255, 0.5);
+            cursor: pointer;
+            font-size: 10px;
+            font-weight: 600;
             transition: background 0.15s, color 0.15s, border-color 0.15s;
             white-space: nowrap;
         }
+
         .fs-draw-btn.active {
-            background: rgba(245,158,11,0.16);
+            background: rgba(245, 158, 11, 0.16);
             color: #f59e0b;
-            border-color: rgba(245,158,11,0.4);
+            border-color: rgba(245, 158, 11, 0.4);
         }
-        .fs-draw-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
+
+        .fs-draw-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: #fff;
+        }
+
         .fs-draw-clear {
             width: 100%;
             border-radius: 8px;
-            background: rgba(255,255,255,0.04);
-            border: 1px solid rgba(255,255,255,0.08);
-            color: rgba(255,255,255,0.4);
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: rgba(255, 255, 255, 0.4);
             padding: 7px;
-            font-size: 10px; font-weight: 600;
+            font-size: 10px;
+            font-weight: 600;
             cursor: pointer;
             transition: background 0.15s;
         }
-        .fs-draw-clear:hover { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.7); }
+
+        .fs-draw-clear:hover {
+            background: rgba(255, 255, 255, 0.07);
+            color: rgba(255, 255, 255, 0.7);
+        }
 
         /* Drawing overlay canvas */
         #fs-draw-canvas {
-            position: absolute; top: 0; left: 0;
-            width: 100%; height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
             pointer-events: none;
             z-index: 5;
         }
-        #fs-draw-canvas.drawing { pointer-events: all; cursor: crosshair; }
+
+        #fs-draw-canvas.drawing {
+            pointer-events: all;
+            cursor: crosshair;
+        }
+
+        #fs-chart-wrapper {
+            touch-action: pan-y;
+            cursor: grab;
+        }
+
+        #fs-chart-wrapper.fs-panning {
+            cursor: grabbing;
+        }
 
         /* fs-date-wrap (qty input) */
         .fs-date-wrap {
-            position: relative; width: 100%;
+            position: relative;
+            width: 100%;
         }
-        .fs-date-real { display: none; }
+
+        .fs-date-real {
+            display: none;
+        }
+
         .fs-date-input {
-            width: 100%; box-sizing: border-box;
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.09);
+            width: 100%;
+            box-sizing: border-box;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.09);
             border-radius: 8px;
             color: #e8e8ed;
-            font-size: 12px; font-weight: 500;
+            font-size: 12px;
+            font-weight: 500;
             padding: 7px 10px;
         }
-        .fs-notch-corner { display: none; }
+
+        .fs-notch-corner {
+            display: none;
+        }
 
         /* fs-select-wrap (legacy wrapper – kept for compat) */
-        .fs-select-wrap { position: relative; }
+        .fs-select-wrap {
+            position: relative;
+        }
+
         .fs-select-wrap::after {
-            content: '\25BE'; position: absolute; right: 9px; top: 50%;
-            transform: translateY(-50%); color: rgba(255,255,255,0.3);
-            font-size: 9px; pointer-events: none;
+            content: '\25BE';
+            position: absolute;
+            right: 9px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 9px;
+            pointer-events: none;
         }
 
         /* ── Drum-roll date picker overlay ─────────────────────── */
@@ -16233,12 +16483,31 @@
             opacity: 0;
             pointer-events: none;
         }
-        @media (max-width: 1366px), (hover: none) and (pointer: coarse) {
-            .fs-nav-overlay-btn { opacity: 1; pointer-events: auto; }
+
+        @media (max-width: 1366px),
+        (hover: none) and (pointer: coarse) {
+            .fs-nav-overlay-btn {
+                opacity: 1;
+                pointer-events: auto;
+            }
         }
-        .fs-nav-overlay-btn:active { background: rgba(255, 255, 255, 0.15); color: #fff; }
-        #fs-nav-up { top: auto; bottom: 70px; margin-top: 0; }
-        #fs-nav-down { top: auto; bottom: 16px; margin-top: 0; }
+
+        .fs-nav-overlay-btn:active {
+            background: rgba(255, 255, 255, 0.15);
+            color: #fff;
+        }
+
+        #fs-nav-up {
+            top: auto;
+            bottom: 70px;
+            margin-top: 0;
+        }
+
+        #fs-nav-down {
+            top: auto;
+            bottom: 16px;
+            margin-top: 0;
+        }
 
         /* Force Landscape Mode on Portrait Mobile/Tablet */
         @media screen and (max-width: 1024px) and (orientation: portrait) {
@@ -16256,7 +16525,7 @@
     </style>
     <div id="fs-chart-modal"
         style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; width:100%; height:100%; background:var(--bg); z-index:99999; flex-direction:row; overflow:hidden;">
-    <!-- Left Panel: Apple-style sidebar -->
+        <!-- Left Panel: Apple-style sidebar -->
         <div id="fs-sidebar">
             <!-- Header: Logo -->
             <div id="fs-sidebar-header" onclick="closeFullScreenChart()" title="Close Charts">
@@ -16266,8 +16535,10 @@
             <!-- Search bar at top -->
             <div class="fs-section" style="padding: 10px 14px 4px 14px; border-bottom: none;">
                 <div style="position: relative; width: 100%;">
-                    <input type="text" id="fs-ticker-search" class="fs-search-input" placeholder="Search Ticker..." oninput="window.updateFSTickers(true)" style="margin-bottom: 0; padding-right: 28px;">
-                    <button id="fs-search-clear" onclick="window.clearFSSearch()" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: rgba(255,255,255,0.35); font-size: 11px; cursor: pointer; display: none; padding: 4px; line-height: 1; outline: none;">✕</button>
+                    <input type="text" id="fs-ticker-search" class="fs-search-input" placeholder="Search Ticker..."
+                        oninput="window.updateFSTickers(true)" style="margin-bottom: 0; padding-right: 28px;">
+                    <button id="fs-search-clear" onclick="window.clearFSSearch()"
+                        style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: rgba(255,255,255,0.35); font-size: 11px; cursor: pointer; display: none; padding: 4px; line-height: 1; outline: none;">✕</button>
                 </div>
             </div>
 
@@ -16298,7 +16569,9 @@
             <!-- Ticker list -->
             <div class="fs-ticker-block">
                 <span class="fs-ctrl-label">Ticker</span>
-                <select id="fs-ticker-select" size="20" onchange="renderFullScreenChart()"></select>
+                <div id="fs-ticker-list"></div>
+                <select id="fs-ticker-select" style="display:none;"
+                    onchange="window.syncFSTickerListSelected(); renderFullScreenChart()"></select>
             </div>
 
             <!-- Replay -->
@@ -16308,14 +16581,16 @@
                     <span class="fs-section-chevron">▼</span>
                 </div>
                 <div class="fs-section-content">
-                    <button class="fs-drum-trigger" onclick="window.openFsDrum('fs-replay-start','From')" id="fs-drum-trigger-start">
+                    <button class="fs-drum-trigger" onclick="window.openFsDrum('fs-replay-start','From')"
+                        id="fs-drum-trigger-start">
                         <span class="fs-drum-trigger-label">From</span>
                         <span class="fs-drum-trigger-val" id="fs-drum-val-start">—</span>
                         <span class="fs-drum-trigger-ico">▾</span>
                     </button>
                     <input type="hidden" id="fs-replay-start">
 
-                    <button class="fs-drum-trigger" onclick="window.openFsDrum('fs-replay-end','To')" id="fs-drum-trigger-end">
+                    <button class="fs-drum-trigger" onclick="window.openFsDrum('fs-replay-end','To')"
+                        id="fs-drum-trigger-end">
                         <span class="fs-drum-trigger-label">To</span>
                         <span class="fs-drum-trigger-val" id="fs-drum-val-end">—</span>
                         <span class="fs-drum-trigger-ico">▾</span>
@@ -16325,7 +16600,8 @@
                     <div class="fs-ctrl-row">
                         <span class="fs-ctrl-label">Speed</span>
                         <div class="fs-sel-wrap">
-                            <select id="fs-replay-speed" class="fs-sel" onchange="window.changeFsReplaySpeed()" style="font-size:11px;">
+                            <select id="fs-replay-speed" class="fs-sel" onchange="window.changeFsReplaySpeed()"
+                                style="font-size:11px;">
                                 <option value="1000" selected>1 Candle / sec</option>
                                 <option value="500">2 Candle / sec</option>
                                 <option value="333">3 Candle / sec</option>
@@ -16337,7 +16613,8 @@
 
                     <div class="fs-replay-btns">
                         <button id="fs-replay-btn" onclick="window.toggleFsReplay()">▶</button>
-                        <button id="fs-step-fwd-btn" onclick="window.fsFsStepForward()" title="Step +1 candle">›</button>
+                        <button id="fs-step-fwd-btn" onclick="window.fsFsStepForward()"
+                            title="Step +1 candle">›</button>
                         <button id="fs-replay-stop-btn" onclick="window.stopFsReplay()">⏹</button>
                     </div>
                     <div id="fs-replay-status"></div>
@@ -16372,8 +16649,10 @@
                 </div>
                 <div class="fs-section-content">
                     <div class="fs-draw-tools-row">
-                        <button id="fs-draw-hline-btn" class="fs-draw-btn" onclick="window.fsDrawMode('hline')" title="Horizontal Level">— Level</button>
-                        <button id="fs-draw-trend-btn" class="fs-draw-btn" onclick="window.fsDrawMode('trend')" title="Trend Line">↗ Trend</button>
+                        <button id="fs-draw-hline-btn" class="fs-draw-btn" onclick="window.fsDrawMode('hline')"
+                            title="Horizontal Level">— Level</button>
+                        <button id="fs-draw-trend-btn" class="fs-draw-btn" onclick="window.fsDrawMode('trend')"
+                            title="Trend Line">↗ Trend</button>
                     </div>
                     <button class="fs-draw-clear" onclick="window.fsClearDrawings()">🗑 Clear All</button>
                 </div>
@@ -16385,7 +16664,7 @@
         <div
             style="flex-grow:1; height:100%; overflow:hidden; display:flex; justify-content:flex-start; align-items:flex-start; background:var(--bg); box-sizing:border-box;">
             <div id="fs-chart-wrapper"
-                style="width:100%; height:100%; max-width:none; box-sizing:border-box; position:relative; display:flex; flex-direction:column; justify-content:center; align-items:center;">
+                style="width:100%; height:100%; max-width:none; box-sizing:border-box; position:relative; display:flex; flex-direction:column; justify-content:flex-start; align-items:flex-start;">
                 <div id="fs-chart-loading"
                     style="display:flex; justify-content:center; align-items:center; width:100%; height:100%; color:var(--text2); font-size:15px; position:absolute; top:0; left:0; background:var(--bg); z-index:10; letter-spacing:0.5px;">
                     Loading chart…</div>
@@ -16690,6 +16969,8 @@
                 const tickers = Array.from(tickerSet).sort();
 
                 tickerSel.innerHTML = '';
+                const listContainer = document.getElementById('fs-ticker-list');
+                if (listContainer) listContainer.innerHTML = '';
                 let hasMatchForPrevVal = false;
 
                 tickers.forEach(tk => {
@@ -16699,6 +16980,19 @@
                     opt.textContent = tk;
                     tickerSel.appendChild(opt);
                     if (tk === prevVal) hasMatchForPrevVal = true;
+
+                    if (listContainer) {
+                        const item = document.createElement('div');
+                        item.className = 'fs-ticker-item';
+                        item.textContent = tk;
+                        item.setAttribute('data-value', tk);
+                        item.onclick = function () {
+                            tickerSel.value = tk;
+                            window.syncFSTickerListSelected();
+                            window.renderFullScreenChart();
+                        };
+                        listContainer.appendChild(item);
+                    }
                 });
 
                 if (preserveValue && prevVal && hasMatchForPrevVal) {
@@ -16707,6 +17001,7 @@
                     tickerSel.selectedIndex = 0;
                 }
 
+                window.syncFSTickerListSelected();
                 window.renderFullScreenChart();
             };
 
@@ -16726,6 +17021,34 @@
                 }
             };
 
+            window.syncFSTickerListSelected = function () {
+                const tickerSel = document.getElementById('fs-ticker-select');
+                const listContainer = document.getElementById('fs-ticker-list');
+                if (!tickerSel || !listContainer) return;
+
+                const val = tickerSel.value;
+                const items = listContainer.querySelectorAll('.fs-ticker-item');
+                let targetItem = null;
+
+                items.forEach(item => {
+                    if (item.getAttribute('data-value') === val) {
+                        item.classList.add('selected');
+                        targetItem = item;
+                    } else {
+                        item.classList.remove('selected');
+                    }
+                });
+
+                if (targetItem) {
+                    // Always scroll to keep the target item in the middle
+                    const containerH = listContainer.clientHeight;
+                    const itemTop = targetItem.offsetTop;
+                    const itemH = targetItem.clientHeight;
+
+                    listContainer.scrollTop = itemTop - (containerH / 2) + (itemH / 2);
+                }
+            };
+
             window.renderFullScreenChart = function () {
                 const tk = document.getElementById('fs-ticker-select').value;
                 const tf = document.getElementById('fs-duration-select').value;
@@ -16736,6 +17059,13 @@
                 const pCv = document.getElementById('fs-chart-pcv');
                 const vCv = document.getElementById('fs-chart-vcv');
 
+                if (pCv) {
+                    if (pCv._lastTicker !== tk || pCv._lastTf !== tf) {
+                        pCv._panOffset = 0;
+                        pCv._lastTicker = tk;
+                        pCv._lastTf = tf;
+                    }
+                }
 
                 if (typeof window._renderCardCandleChart === 'function') {
                     window._renderCardCandleChart(tk, tf, pCv, vCv, loadEl, wrap);
@@ -16751,7 +17081,7 @@
                 const tk = document.getElementById('fs-ticker-select')?.value?.toUpperCase();
                 if (!tk || !window._chartCalcCache) return null;
                 for (const [, cached] of window._chartCalcCache) {
-                    if (cached.fullProcessed && cached.fullProcessed.length > 0) return cached.fullProcessed;
+                    if (cached.ticker === tk && cached.fullProcessed && cached.fullProcessed.length > 0) return cached.fullProcessed;
                 }
                 return null;
             }
@@ -16975,6 +17305,7 @@
                 const tk = document.getElementById('fs-ticker-select')?.value?.toUpperCase();
                 if (!tk || !window._chartCalcCache) return null;
                 for (const [, cached] of window._chartCalcCache) {
+                    if (cached.ticker !== tk) continue;
                     if (!cached.fullProcessed) continue;
                     const arr = cached.fullProcessed;
                     const maxTs = window._fsReplay.active ? window._fsReplay.currentMaxDate : Infinity;
@@ -17252,8 +17583,123 @@
                 }
             }, { passive: true });
 
+            // Horizontal scroll/pan for the full-screen chart.
+            function _fsPanChart(deltaCandles) {
+                const pCv = document.getElementById('fs-chart-pcv');
+                if (!pCv || !pCv._chartState) return false;
+
+                const state = pCv._chartState;
+                const maxOffset = state.maxPanOffset || 0;
+                if (maxOffset <= 0) return false;
+
+                const current = pCv._panOffset || 0;
+                const next = Math.max(0, Math.min(maxOffset, current + deltaCandles));
+                if (next === current) return false;
+
+                pCv._panOffset = next;
+                pCv._panFractional = 0;
+                pCv._panFractionalTouch = 0;
+                pCv._hoverX = null;
+                pCv._hoverY = null;
+                pCv._hoverIdx = null;
+                pCv._hoverCanvas = null;
+
+                window.renderFullScreenChart();
+                requestAnimationFrame(_fsPaintDrawings);
+                return true;
+            }
+
+            window._fsPanChart = _fsPanChart;
+
+            function _fsWireChartPan() {
+                const wrap = document.getElementById('fs-chart-wrapper');
+                const pCv = document.getElementById('fs-chart-pcv');
+                if (!wrap || !pCv || wrap._fsPanWired) return;
+                wrap._fsPanWired = true;
+
+                wrap.addEventListener('wheel', function (e) {
+                    const modal = document.getElementById('fs-chart-modal');
+                    if (!modal || modal.style.display !== 'flex') return;
+                    const state = pCv._chartState;
+                    if (!state || !state.maxPanOffset) return;
+
+                    const horizontalDelta = Math.abs(e.deltaX) >= Math.abs(e.deltaY) ? e.deltaX : (e.shiftKey ? e.deltaY : 0);
+                    if (!horizontalDelta) return;
+
+                    e.preventDefault();
+                    const barStep = Math.max(6, state.barStep || 8);
+                    const candles = Math.sign(horizontalDelta) * Math.max(1, Math.round(Math.abs(horizontalDelta) / barStep));
+                    _fsPanChart(candles);
+                }, { passive: false });
+
+                let dragActive = false;
+                let lastX = 0;
+                let carryPx = 0;
+
+                const getChartX = function (e) {
+                    const coords = window._getRotatedCoords ? window._getRotatedCoords(e, pCv) : (() => {
+                        const rect = pCv.getBoundingClientRect();
+                        return { mx: e.clientX - rect.left, my: e.clientY - rect.top };
+                    })();
+                    return coords.mx;
+                };
+
+                wrap.addEventListener('pointerdown', function (e) {
+                    const modal = document.getElementById('fs-chart-modal');
+                    if (!modal || modal.style.display !== 'flex') return;
+                    if (e.button !== 0 || window._fsDrawMode) return;
+                    if (e.target && e.target.closest && e.target.closest('button, input, select')) return;
+
+                    const state = pCv._chartState;
+                    if (!state || !state.maxPanOffset) return;
+
+                    dragActive = true;
+                    carryPx = 0;
+                    lastX = getChartX(e);
+                    wrap.classList.add('fs-panning');
+                    try { wrap.setPointerCapture(e.pointerId); } catch (err) { }
+                    e.preventDefault();
+                });
+
+                wrap.addEventListener('pointermove', function (e) {
+                    if (!dragActive) return;
+                    const state = pCv._chartState;
+                    if (!state) return;
+
+                    const x = getChartX(e);
+                    carryPx += x - lastX;
+                    lastX = x;
+
+                    const barStep = Math.max(6, state.barStep || 8);
+                    if (Math.abs(carryPx) >= barStep) {
+                        const candles = Math.trunc(carryPx / barStep);
+                        carryPx -= candles * barStep;
+                        _fsPanChart(candles);
+                    }
+                    e.preventDefault();
+                });
+
+                const stopDrag = function (e) {
+                    if (!dragActive) return;
+                    dragActive = false;
+                    carryPx = 0;
+                    wrap.classList.remove('fs-panning');
+                    try { wrap.releasePointerCapture(e.pointerId); } catch (err) { }
+                };
+
+                wrap.addEventListener('pointerup', stopDrag);
+                wrap.addEventListener('pointercancel', stopDrag);
+                wrap.addEventListener('pointerleave', stopDrag);
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', _fsWireChartPan);
+            } else {
+                _fsWireChartPan();
+            }
+
             // Global helper to extract coordinates, accounting for CSS rotation on mobile
-            window._getRotatedCoords = function(e, canvas) {
+            window._getRotatedCoords = function (e, canvas) {
                 const rect = canvas.getBoundingClientRect();
                 let clientX = e.clientX, clientY = e.clientY;
                 if (e.touches && e.touches.length > 0) {
@@ -17281,13 +17727,7 @@
 
                 if (tickerSel.selectedIndex !== idx) {
                     tickerSel.selectedIndex = idx;
-
-                    // Center the selected option in the listbox scroll area
-                    const optionHeight = tickerSel.scrollHeight / total;
-                    const visibleH = tickerSel.clientHeight;
-                    const targetScrollTop = (idx * optionHeight) - (visibleH / 2) + (optionHeight / 2);
-                    tickerSel.scrollTop = Math.max(0, targetScrollTop);
-
+                    window.syncFSTickerListSelected();
                     window.renderFullScreenChart();
                 }
             };
@@ -17316,6 +17756,12 @@
                     if (e.key === 'ArrowRight') window.fsFsStepForward();
                     else window.fsFsStepBack();
                     _fsUpdatePnlDisplay();
+                    return;
+                }
+
+                if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    _fsPanChart(e.key === 'ArrowLeft' ? 8 : -8);
                     return;
                 }
 
