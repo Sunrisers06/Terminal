@@ -11028,6 +11028,25 @@
                     return;
                 }
 
+                // Pre-compute delivery percentage and volume signal colors for all visible candles
+                const delivMap = (isFs && window._fsDelivCache) ? window._fsDelivCache[UC] : null;
+                raw.forEach(r => {
+                    let delivPer = 0;
+                    if (delivMap) {
+                        const dateObj = new Date(r.date);
+                        const day = dateObj.getUTCDay();
+                        const diff = dateObj.getUTCDate() - day + (day === 0 ? -6 : 1);
+                        const monday = new Date(dateObj.setUTCDate(diff));
+                        const mondayStr = `${monday.getUTCFullYear()}-${String(monday.getUTCMonth() + 1).padStart(2, '0')}-${String(monday.getUTCDate()).padStart(2, '0')}`;
+                        delivPer = delivMap[mondayStr] || 0;
+                    }
+                    r.delivPer = delivPer;
+
+                    const volSig = getVolumeSignal(r);
+                    r._vColor = volSig.color;
+                    r._vDesc = volSig.label;
+                });
+
                 loadEl.style.opacity = '0';
                 setTimeout(() => { loadEl.style.display = 'none'; }, 200);
                 pCv.style.display = 'block'; vCv.style.display = 'block';
@@ -11102,7 +11121,7 @@
                 let logMin = Math.log(pMin);
                 let logMax = Math.log(pMax);
                 const logR_initial = logMax - logMin || 1;
-                
+
                 // Apply proportional padding on the logarithmic scale 
                 // (e.g. 8% empty space at bottom, 12% at top)
                 const logPad = logR_initial * 0.08;
@@ -11474,6 +11493,31 @@
                     }
                 });
 
+                // ── Overlay: Delivery % inside Price Pane (bottom 15% height) ──
+                if (isFs) {
+                    raw.forEach((r, i) => {
+                        const dp = r.delivPer || 0;
+                        if (dp > 0) {
+                            const x = toX(i);
+                            const barH = (dp / 100) * (pH * 0.12); // proportional to 100% (max 15% of price pane height)
+                            const y = PP.t + pH - barH;
+
+                            const isHighDeliv = dp >= 50;
+                            pc.fillStyle = r._vColor || '#6b7280';
+                            pc.globalAlpha = isHighDeliv ? 0.95 : 0.65; // higher visibility for high delivery
+                            pc.fillRect(x - bW / 2, y, bW, barH);
+                        }
+                    });
+                    pc.globalAlpha = 1.0;
+
+                    // Add a tiny legend label for Delivery Percentage
+                    pc.fillStyle = 'rgba(255, 255, 255, 0.4)';
+                    pc.font = 'bold 9px "Lexend",monospace';
+                    pc.textAlign = 'left';
+                    pc.textBaseline = 'top';
+                    pc.fillText('Deliv % Overlay', PP.l + 8, PP.t + pH - 15);
+                }
+
                 // ── Last close: dashed horizontal line + price tag ──
                 const lc = raw[raw.length - 1].close;
                 const yLc = toY(lc);
@@ -11633,17 +11677,11 @@
                 raw.forEach((r, i) => {
                     const x = toPaneX(i, VP, vW2);
                     const bh = Math.max(1, (r.vol / maxV) * vH2);
-                    const volSig = getVolumeSignal(r);
-                    let c = volSig.color;
-                    let vDesc = volSig.label;
 
-                    r._vColor = c;
-                    r._vDesc = vDesc;
-
-                    vc.fillStyle = c;
+                    vc.fillStyle = r._vColor || '#6b7280';
                     vc.globalAlpha = 0.85;
                     vc.fillRect(x - bW / 2, VP.t + vH2 - bh, bW, bh);
-                    vc.globalAlpha = 1;
+                    vc.globalAlpha = 1.0;
                 });
 
                 // Draw 9 SMA for Volume: White, 50% opacity, dashed
@@ -11722,25 +11760,34 @@
                         vc.textBaseline = 'middle';
                         vc.fillText(volTxt, W - 4, dby);
 
-                        // Institutional Volume Tooltip
+                        // Institutional Volume & Delivery Tooltip
                         if (pCv._hoverIdx !== undefined && pCv._hoverIdx !== null) {
                             const hr = raw[pCv._hoverIdx];
-                            if (hr && hr._vDesc) {
-                                const descTxt = hr._vDesc;
-                                vc.font = '600 9px "Lexend",monospace';
-                                const dtW = vc.measureText(descTxt).width + 12;
-                                const isLeft = hx > W / 2;
-                                const bx = isLeft ? hx - dtW - 8 : hx + 8;
-                                const by = Math.max(VP.t + 2, hy - 10);
+                            if (hr) {
+                                let descTxt = hr._vDesc || '';
+                                if (isFs) {
+                                    const delTxt = (hr.delivPer !== undefined && hr.delivPer > 0)
+                                        ? `Vol: ${fmtV(hr.vol)} | Deliv: ${fmtV(hr.vol * hr.delivPer / 100)} (${hr.delivPer.toFixed(1)}%)`
+                                        : `Vol: ${fmtV(hr.vol)} | Deliv: N/A`;
+                                    descTxt = hr._vDesc ? `${hr._vDesc} | ${delTxt}` : delTxt;
+                                }
 
-                                vc.fillStyle = 'rgba(18, 18, 26, 0.9)';
-                                vc.beginPath(); vc.roundRect(bx, by, dtW, 18, 4); vc.fill();
-                                vc.strokeStyle = hr._vColor || 'rgba(255,255,255,0.2)';
-                                vc.lineWidth = 1; vc.stroke();
+                                if (descTxt) {
+                                    vc.font = '600 9px "Lexend",monospace';
+                                    const dtW = vc.measureText(descTxt).width + 12;
+                                    const isLeft = hx > W / 2;
+                                    const bx = isLeft ? hx - dtW - 8 : hx + 8;
+                                    const by = Math.max(VP.t + 2, hy - 10);
 
-                                vc.fillStyle = '#ffffff';
-                                vc.textAlign = 'center';
-                                vc.fillText(descTxt, bx + dtW / 2, by + 9);
+                                    vc.fillStyle = 'rgba(18, 18, 26, 0.9)';
+                                    vc.beginPath(); vc.roundRect(bx, by, dtW, 18, 4); vc.fill();
+                                    vc.strokeStyle = hr._vColor || 'rgba(255,255,255,0.2)';
+                                    vc.lineWidth = 1; vc.stroke();
+
+                                    vc.fillStyle = '#ffffff';
+                                    vc.textAlign = 'center';
+                                    vc.fillText(descTxt, bx + dtW / 2, by + 9);
+                                }
                             }
                         }
                     }
@@ -12106,6 +12153,11 @@
                             });
                             dealCv._hasHoverEvent = true;
                         }
+                    }
+                }
+                if (isFs) {
+                    if (typeof window.updateFsDeliveryAnalysis === 'function') {
+                        window.updateFsDeliveryAnalysis(raw);
                     }
                 }
             }
@@ -16658,6 +16710,17 @@
                 </div>
             </div>
 
+            <!-- Delivery Analysis -->
+            <div class="fs-section expanded" id="fs-sec-deliv">
+                <div class="fs-section-header" onclick="window.toggleFsSection('fs-sec-deliv')">
+                    <span class="fs-section-label">Delivery Analysis</span>
+                    <span class="fs-section-chevron">▼</span>
+                </div>
+                <div class="fs-section-content" id="fs-deliv-analysis-content" style="color:var(--text2); font-size:11px; display:flex; flex-direction:column; gap:8px;">
+                    Loading analysis...
+                </div>
+            </div>
+
         </div>
 
         <!-- Right Chart Area — edge-to-edge, zero padding -->
@@ -16668,6 +16731,28 @@
                 <div id="fs-chart-loading"
                     style="display:flex; justify-content:center; align-items:center; width:100%; height:100%; color:var(--text2); font-size:15px; position:absolute; top:0; left:0; background:var(--bg); z-index:10; letter-spacing:0.5px;">
                     Loading chart…</div>
+                <!-- Floating Info & Actions Overlay (top-left) -->
+                <div
+                    style="position: absolute; top: 12px; left: 12px; z-index: 12; display: flex; align-items: center; gap: 8px; pointer-events: none;">
+                    <!-- Mini Financial Card overlay -->
+                    <div id="fs-mini-financial-card"
+                        style="opacity: 1; display: none; grid-template-columns: repeat(2, 54px); gap: 4px; pointer-events: auto;">
+                    </div>
+                    <!-- F & H Buttons stacked vertically -->
+                    <div id="fs-fh-actions-left"
+                        style="display: flex; flex-direction: column; gap: 4px; pointer-events: auto;">
+                        <button id="fs-btn-fav" class="fav-toggle-btn"
+                            style="padding: 2px 6px; font-size: 10px; border-radius: 6px; min-width: 24px; height: 22px; justify-content: center; align-items: center;"
+                            onclick="window.fsToggleActiveFH('F')" title="Toggle Favorite">
+                            F
+                        </button>
+                        <button id="fs-btn-hold" class="fav-toggle-btn"
+                            style="padding: 2px 6px; font-size: 10px; border-radius: 6px; min-width: 24px; height: 22px; justify-content: center; align-items: center;"
+                            onclick="window.fsToggleActiveFH('H')" title="Toggle Holding">
+                            H
+                        </button>
+                    </div>
+                </div>
                 <canvas id="fs-chart-pcv" style="display:none;"></canvas>
                 <canvas id="fs-chart-vcv" style="display:none;"></canvas>
                 <!-- Drawing overlay -->
@@ -16858,8 +16943,10 @@
             window.openFullScreenChart = function () {
                 document.getElementById('fs-chart-modal').style.display = 'flex';
 
-                // Populate Group Select dynamically
+                // Populate Group Select dynamically, preserving previous selection if any
                 const groupSel = document.getElementById('fs-group-select');
+                const prevGroup = groupSel ? groupSel.value : null;
+
                 groupSel.innerHTML = `
                     <option value="all">All Tickers</option>
                     <option value="favorites">Favorites</option>
@@ -16875,6 +16962,10 @@
                         opt.textContent = idxName;
                         groupSel.appendChild(opt);
                     });
+                }
+
+                if (prevGroup && groupSel) {
+                    groupSel.value = prevGroup;
                 }
 
                 setTimeout(function () {
@@ -16910,6 +17001,84 @@
             window.closeFullScreenChart = function () {
                 window.stopFsReplay();
                 document.getElementById('fs-chart-modal').style.display = 'none';
+            };
+
+            window.fsToggleActiveFH = async function (type) {
+                const tk = document.getElementById('fs-ticker-select').value;
+                if (!tk) return;
+                await window.toggleRemoteFH(tk, type);
+                // Refresh list if we are currently filtering by favorites/holdings group
+                const group = document.getElementById('fs-group-select').value;
+                if (group === 'favorites' || group === 'holdings') {
+                    window.updateFSTickers(true);
+                }
+            };
+
+            window._fsDelivCache = {};
+            window.getFsWeeklyDelivMap = async function (ticker) {
+                const tk = String(ticker || '').trim().toUpperCase();
+                console.info('[SundarX] getFsWeeklyDelivMap called for ticker:', tk);
+                if (!tk) return {};
+                if (window._fsDelivCache[tk]) {
+                    console.info('[SundarX] Returning cached delivery data for:', tk);
+                    return window._fsDelivCache[tk];
+                }
+
+                try {
+                    const filename = 'weekly_deliv_per.parquet';
+                    if (!window._pqBufCache) window._pqBufCache = {};
+                    if (!window._pqBufCache[filename]) {
+                        console.info('[SundarX] Fetching weekly_deliv_per.parquet buffer over network...');
+                        const r = await fetch(filename);
+                        if (!r.ok) throw new Error('HTTP ' + r.status);
+                        window._pqBufCache[filename] = await r.arrayBuffer();
+                    }
+                    const { db, conn } = await window._getDuckDB();
+                    await db.registerFileBuffer(filename, new Uint8Array(window._pqBufCache[filename].slice(0)));
+                    console.info('[SundarX] Querying DuckDB for ticker:', tk);
+                    const result = await conn.query(`SELECT Week_Start, Deliv_Per FROM '${filename}' WHERE Ticker = '${tk}'`);
+
+                    const rows = result.toArray();
+                    console.info('[SundarX] DuckDB query returned rows count:', rows.length);
+
+                    const map = {};
+                    rows.forEach((row, idx) => {
+                        let dt = row.Week_Start;
+                        let dateObj = null;
+                        if (dt instanceof Date) {
+                            dateObj = dt;
+                        } else if (dt !== null && dt !== undefined) {
+                            if (typeof dt === 'bigint') {
+                                dateObj = new Date(Number(dt));
+                            } else if (typeof dt === 'number') {
+                                if (dt < 100000) {
+                                    dateObj = new Date(dt * 86400000);
+                                } else {
+                                    dateObj = new Date(dt);
+                                }
+                            } else {
+                                dateObj = new Date(dt);
+                            }
+                        }
+
+                        if (dateObj && !isNaN(dateObj.getTime())) {
+                            const y = dateObj.getUTCFullYear();
+                            const m = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+                            const d = String(dateObj.getUTCDate()).padStart(2, '0');
+                            const dateStr = `${y}-${m}-${d}`;
+                            map[dateStr] = Number(row.Deliv_Per);
+                            if (idx < 3) {
+                                console.info('[SundarX] Sample parsed row:', dateStr, '=>', row.Deliv_Per);
+                            }
+                        }
+                    });
+
+                    window._fsDelivCache[tk] = map;
+                    return map;
+                } catch (err) {
+                    console.error('[SundarX] Error loading delivery data:', err);
+                    return {};
+                }
             };
 
             window.updateFSTickers = function (preserveValue) {
@@ -17021,6 +17190,85 @@
                 }
             };
 
+            window.updateFsDeliveryAnalysis = function (raw) {
+                const contentEl = document.getElementById('fs-deliv-analysis-content');
+                if (!contentEl) return;
+
+                // Only perform analysis if we have delivery data
+                const validDeliv = raw.filter(r => r.delivPer !== undefined && r.delivPer > 0);
+                if (validDeliv.length === 0) {
+                    contentEl.innerHTML = `<div style="color:var(--text3); font-style:italic; text-align:center; padding:10px 0;">No delivery data available for this period.</div>`;
+                    return;
+                }
+
+                // 1. Overall Average Delivery %
+                const avgDeliv = validDeliv.reduce((sum, r) => sum + r.delivPer, 0) / validDeliv.length;
+
+                // 2. Accumulation vs Distribution
+                const greenWeeks = validDeliv.filter(r => r.close >= r.open);
+                const redWeeks = validDeliv.filter(r => r.close < r.open);
+
+                const avgGreenDeliv = greenWeeks.length ? (greenWeeks.reduce((sum, r) => sum + r.delivPer, 0) / greenWeeks.length) : 0;
+                const avgRedDeliv = redWeeks.length ? (redWeeks.reduce((sum, r) => sum + r.delivPer, 0) / redWeeks.length) : 0;
+                const bias = avgGreenDeliv - avgRedDeliv;
+
+                // 3. High Delivery Weeks (e.g. >= 50%)
+                const HIGH_THRESHOLD = 50;
+                const highWeeks = validDeliv.filter(r => r.delivPer >= HIGH_THRESHOLD);
+                const highWeeksCount = highWeeks.length;
+
+                // 4. Last 5 weeks sparkline/sequence
+                const last5 = validDeliv.slice(-5);
+                const sparkSeq = last5.map(r => {
+                    const pct = Math.round(r.delivPer);
+                    const isGreen = r.close >= r.open;
+                    const color = isGreen ? 'var(--pop-green)' : 'var(--pop-red)';
+                    return `<span style="color:${color}; font-weight:700;">${pct}%</span>`;
+                }).join(' → ');
+
+                // 5. Institutional Activity Level
+                let activityLevel = 'Normal';
+                let activityColor = 'var(--text2)';
+                if (avgDeliv >= 50 || highWeeksCount > validDeliv.length * 0.3) {
+                    activityLevel = 'Elevated Accumulation';
+                    activityColor = 'var(--pop-green)';
+                } else if (avgDeliv >= 40) {
+                    activityLevel = 'Moderate';
+                    activityColor = 'var(--pop-blue)';
+                } else {
+                    activityLevel = 'Low Interest';
+                    activityColor = 'var(--text3)';
+                }
+
+                // Render HTML
+                contentEl.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.03); padding-bottom:6px;">
+                        <span>Avg Delivery:</span>
+                        <span style="color:#ffffff; font-weight:700; font-size:12px;">${avgDeliv.toFixed(1)}%</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.03); padding-bottom:6px;">
+                        <span>Accumulation Bias:</span>
+                        <span style="color:${bias >= 0 ? 'var(--pop-green)' : 'var(--pop-red)'}; font-weight:700;">
+                            ${bias >= 0 ? '+' : ''}${bias.toFixed(1)}%
+                        </span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.03); padding-bottom:6px;">
+                        <span>High Deliv Weeks (>50%):</span>
+                        <span style="color:#ffffff; font-weight:700;">${highWeeksCount} / ${validDeliv.length}</span>
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:4px; border-bottom:1px solid rgba(255,255,255,0.03); padding-bottom:6px;">
+                        <span>Recent Delivery (Last 5w):</span>
+                        <div style="display:flex; justify-content:flex-start; align-items:center; gap:2px; font-size:10px; margin-top:2px;">
+                            ${sparkSeq}
+                        </div>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding-top:2px;">
+                        <span>Institutional Activity:</span>
+                        <span style="color:${activityColor}; font-weight:700; text-transform:uppercase; font-size:10px;">${activityLevel}</span>
+                    </div>
+                `;
+            };
+
             window.syncFSTickerListSelected = function () {
                 const tickerSel = document.getElementById('fs-ticker-select');
                 const listContainer = document.getElementById('fs-ticker-list');
@@ -17054,6 +17302,14 @@
                 const tf = document.getElementById('fs-duration-select').value;
                 if (!tk) return;
 
+                // Pre-fetch delivery percentage data if not cached yet
+                const tkUpper = tk.toUpperCase();
+                if (window.getFsWeeklyDelivMap && (!window._fsDelivCache || !window._fsDelivCache[tkUpper])) {
+                    window.getFsWeeklyDelivMap(tkUpper).then(() => {
+                        window.renderFullScreenChart();
+                    });
+                }
+
                 const wrap = document.getElementById('fs-chart-wrapper');
                 const loadEl = document.getElementById('fs-chart-loading');
                 const pCv = document.getElementById('fs-chart-pcv');
@@ -17071,6 +17327,40 @@
                     window._renderCardCandleChart(tk, tf, pCv, vCv, loadEl, wrap);
                 } else if (typeof drawChartCore === 'function') {
                     drawChartCore(tk, tf, pCv, vCv, loadEl, wrap);
+                }
+
+                // Update mini financial card in full chart
+                const cardEl = document.getElementById('fs-mini-financial-card');
+                if (cardEl) {
+                    const r = allData.find(d => String(d._ticker || '').toUpperCase() === tk.toUpperCase());
+                    if (r) {
+                        cardEl.innerHTML = `
+                            ${r['EBITDA Performance'] ? `<div class="iscore ${getChipColor('Performance', r['EBITDA Performance'])}" style="width:100%; box-sizing:border-box; margin:0;"><span class="iscore-label" style="font-size:7px; margin-bottom:0;">EBIT</span><span class="iscore-val" style="font-size:12px; font-weight:800;">${fmtWhole(r['EBITDA Performance'])}</span></div>` : ''}
+                            ${r['Revenue Performance'] ? `<div class="iscore ${getChipColor('Performance', r['Revenue Performance'])}" style="width:100%; box-sizing:border-box; margin:0;"><span class="iscore-label" style="font-size:7px; margin-bottom:0;">SALE</span><span class="iscore-val" style="font-size:12px; font-weight:800;">${fmtWhole(r['Revenue Performance'])}</span></div>` : ''}
+                            ${r['Net Profit Performance'] ? `<div class="iscore ${getChipColor('Performance', r['Net Profit Performance'])}" style="width:100%; box-sizing:border-box; margin:0;"><span class="iscore-label" style="font-size:7px; margin-bottom:0;">NP</span><span class="iscore-val" style="font-size:12px; font-weight:800;">${fmtWhole(r['Net Profit Performance'])}</span></div>` : ''}
+                            ${!isNaN(r._eps) ? `<div class="iscore ${getChipColor('EPS Rank', r._eps)}" style="width:100%; box-sizing:border-box; margin:0;"><span class="iscore-label" style="font-size:7px; margin-bottom:0;">EPS</span><span class="iscore-val" style="font-size:12px; font-weight:800;">${fmtWhole(r._eps)}</span></div>` : ''}
+                        `;
+                        cardEl.style.display = 'grid';
+                    } else {
+                        cardEl.style.display = 'none';
+                    }
+                }
+
+                // Update toggle classes on floating action buttons
+                const btnFav = document.getElementById('fs-btn-fav');
+                const btnHold = document.getElementById('fs-btn-hold');
+                if (btnFav && btnHold) {
+                    // Reset class names
+                    btnFav.className = `fav-toggle-btn fav-toggle-${tkUpper}`;
+                    btnHold.className = `fav-toggle-btn hold-toggle-${tkUpper}`;
+
+                    // Add active states if already in window._fhTickers
+                    if (window._fhTickers) {
+                        const isFav = window._fhTickers.F ? window._fhTickers.F.has(tkUpper) : false;
+                        const isHold = window._fhTickers.H ? window._fhTickers.H.has(tkUpper) : false;
+                        btnFav.classList.toggle('is-fav', isFav);
+                        btnHold.classList.toggle('is-hold', isHold);
+                    }
                 }
             };
 
