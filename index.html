@@ -11665,7 +11665,13 @@
                 const vH2 = VH - VP.t - VP.b;
 
                 let maxV = 1;
-                for (const r of raw) if (r.vol > maxV) maxV = r.vol;
+                let maxVClose = 1;
+                for (const r of raw) {
+                    if (r.vol > maxV) {
+                        maxV = r.vol;
+                        maxVClose = r.close || 1;
+                    }
+                }
 
                 vc.fillStyle = '#000000'; vc.fillRect(0, 0, W, VH);
 
@@ -11701,8 +11707,38 @@
                 // Volume right-side labels — full white bold, right-aligned
                 vc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 7.5px "Lexend",monospace'; vc.fillStyle = '#ffffff';
                 vc.textAlign = 'right'; vc.textBaseline = 'middle';
-                vc.fillText(fmtV(maxV), W - 4, VP.t + (isFs ? 6 : 4));
-                vc.fillText(fmtV(maxV * 0.5), W - 4, VP.t + vH2 * 0.5);
+                const volMultiplier = isFs ? maxVClose : 1;
+                vc.fillText(fmtV(maxV * volMultiplier), W - 4, VP.t + (isFs ? 6 : 4));
+                vc.fillText(fmtV(maxV * 0.5 * volMultiplier), W - 4, VP.t + vH2 * 0.5);
+
+                // Draw Volume MA label/badge on Y-axis (latest value or hovered value)
+                const maTargetR = (pCv._hoverIdx !== undefined && pCv._hoverIdx !== null) ? raw[pCv._hoverIdx] : raw[raw.length - 1];
+                if (maTargetR && maTargetR.volSma9 !== null && maTargetR.volSma9 !== undefined && !isNaN(maTargetR.volSma9)) {
+                    const maVal = maTargetR.volSma9 * volMultiplier;
+                    const maTxt = fmtV(maVal);
+                    const maY = VP.t + vH2 - (maTargetR.volSma9 / maxV) * vH2;
+                    
+                    vc.font = isFs ? 'bold 10px "Lexend",monospace' : 'bold 7px "Lexend",monospace';
+                    const badgeW = vc.measureText(maTxt).width + (isFs ? 8 : 6);
+                    const badgeH = isFs ? 14 : 9;
+                    const badgeOff = isFs ? 7 : 4.5;
+                    let dby = maY;
+                    if (dby - badgeOff < VP.t) dby = VP.t + badgeOff;
+                    if (dby + badgeOff > VH - VP.b) dby = VH - VP.b - badgeOff;
+
+                    vc.fillStyle = 'rgba(255, 255, 255, 0.15)'; // semi-transparent white background
+                    vc.fillRect(W - badgeW - 1, dby - badgeOff, badgeW, badgeH);
+                    vc.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                    vc.lineWidth = 0.8;
+                    vc.setLineDash([2, 2]);
+                    vc.strokeRect(W - badgeW - 1, dby - badgeOff, badgeW, badgeH);
+                    vc.setLineDash([]);
+
+                    vc.fillStyle = '#ffffff';
+                    vc.textAlign = 'right';
+                    vc.textBaseline = 'middle';
+                    vc.fillText(maTxt, W - 4, dby);
+                }
 
                 // "PERIOD" badge bottom-right of volume panel
                 const badgeTxt = period.toUpperCase();
@@ -11743,7 +11779,8 @@
                         vc.setLineDash([]);
 
                         // Volume badge on right-axis
-                        const volVal = maxV * (1 - (hy - VP.t) / vH2);
+                        const volMultiplier = isFs ? maxVClose : 1;
+                        const volVal = maxV * (1 - (hy - VP.t) / vH2) * volMultiplier;
                         const volTxt = fmtV(volVal);
                         vc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 7.5px "Lexend",monospace';
                         const badgeW = vc.measureText(volTxt).width + (isFs ? 8 : 6);
@@ -15984,47 +16021,107 @@
             position: relative;
             width: 100%;
             min-height: 200px;
-            max-height: 40vh;
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 8px;
+            max-height: 50vh;
+            background: transparent;
+            border: none;
+            border-radius: 0;
             overflow-y: auto;
-            scrollbar-width: thin;
-            scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+            scrollbar-width: none;
+            scroll-behavior: smooth;
             box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        #fs-ticker-list::-webkit-scrollbar {
+            display: none;
         }
 
         .fs-ticker-item {
-            padding: 7px 10px;
-            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            margin: 1px 6px;
+            border-radius: 6px;
+            font-size: 11.5px;
             font-weight: 500;
-            color: #e8e8ed;
+            color: #a1a1aa;
             cursor: pointer;
             user-select: none;
-            transition: background 0.15s, color 0.15s;
-            border-bottom: 1px dashed rgba(255, 255, 255, 0.03);
-        }
-
-        .fs-ticker-item:last-child {
-            border-bottom: none;
+            transition: background-color 0.25s cubic-bezier(0.25, 1, 0.5, 1), 
+                        color 0.25s cubic-bezier(0.25, 1, 0.5, 1), 
+                        border-left-width 0.25s cubic-bezier(0.25, 1, 0.5, 1),
+                        border-left-color 0.25s cubic-bezier(0.25, 1, 0.5, 1),
+                        padding-left 0.25s cubic-bezier(0.25, 1, 0.5, 1);
+            box-sizing: border-box;
+            border-left: 0px solid transparent;
         }
 
         .fs-ticker-item:hover {
-            background: rgba(255, 255, 255, 0.06);
+            background: rgba(255, 255, 255, 0.04);
             color: #fff;
         }
 
         .fs-ticker-item.selected {
-            background: #1d6fe8;
-            color: #fff;
-            font-weight: 600;
+            background: rgba(34, 211, 238, 0.12);
+            color: #22d3ee;
+            font-weight: 700;
+            border-left: 3px solid #22d3ee;
+            border-radius: 0 6px 6px 0;
+            padding-left: 9px;
         }
+
+        .fs-item-left {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1px;
+            min-width: 0;
+            flex: 1;
+        }
+
+        .fs-item-tk {
+            font-weight: 700;
+            font-size: 11.5px;
+            color: #e4e4e7;
+            letter-spacing: 0.3px;
+        }
+        
+        .fs-ticker-item.selected .fs-item-tk {
+            color: #22d3ee;
+        }
+
+        .fs-item-name {
+            font-size: 8px;
+            color: #71717a;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            width: 100%;
+            max-width: 100%;
+        }
+
+        .fs-list-rank {
+            font-size: 8px;
+            font-weight: 800;
+            padding: 1px 4px;
+            border-radius: 3px;
+            line-height: 1;
+            display: inline-block;
+        }
+        .fs-list-rank.green { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+        .fs-list-rank.blue { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+        .fs-list-rank.orange { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+        .fs-list-rank.red { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+        .fs-list-rank.gray { background: rgba(113, 113, 122, 0.15); color: #717172; }
 
         .fs-ticker-block {
             display: flex;
             flex-direction: column;
             gap: 4px;
-            padding: 0 14px 14px;
+            padding: 0;
         }
 
         /* Search Input Style */
@@ -16045,6 +16142,41 @@
         .fs-search-input:focus {
             border-color: rgba(29, 111, 232, 0.6);
             background: rgba(255, 255, 255, 0.08);
+        }
+
+        /* Period Pill buttons */
+        .fs-period-pills {
+            display: flex;
+            gap: 4px;
+            width: 100%;
+        }
+
+        .fs-pill {
+            flex: 1;
+            padding: 6px 0;
+            font-size: 10.5px;
+            font-family: 'Lexend', sans-serif;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.4);
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 6px;
+            cursor: pointer;
+            text-align: center;
+            outline: none;
+            transition: all 0.15s;
+        }
+
+        .fs-pill:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .fs-pill.active-pill {
+            color: #ffffff;
+            background: rgba(34, 211, 238, 0.2);
+            border-color: rgba(34, 211, 238, 0.65);
+            box-shadow: 0 0 6px rgba(34, 211, 238, 0.15);
         }
 
         /* Date drum trigger button */
@@ -16594,33 +16726,23 @@
                 </div>
             </div>
 
-            <!-- Group filter -->
-            <div class="fs-section">
-                <div class="fs-ctrl-row">
-                    <span class="fs-ctrl-label">Group</span>
-                    <div class="fs-sel-wrap">
-                        <select id="fs-group-select" class="fs-sel" onchange="updateFSTickers(false)"></select>
-                    </div>
+            <!-- Group & Period filters -->
+            <div class="fs-section" style="display: flex; flex-direction: column; gap: 8px; padding: 6px 14px 10px 14px;">
+                <div class="fs-sel-wrap" style="width: 100%;">
+                    <select id="fs-group-select" class="fs-sel" onchange="updateFSTickers(false)"></select>
                 </div>
-
-                <div class="fs-ctrl-row">
-                    <span class="fs-ctrl-label">Period</span>
-                    <div class="fs-sel-wrap">
-                        <select id="fs-duration-select" class="fs-sel" onchange="renderFullScreenChart()">
-                            <option value="6m">6 Months</option>
-                            <option value="1y">1 Year</option>
-                            <option value="2y">2 Years</option>
-                            <option value="3y" selected>3 Years</option>
-                            <option value="4y">4 Years</option>
-                            <option value="5y">5 Years</option>
-                        </select>
-                    </div>
+                <div class="fs-period-pills">
+                    <input type="hidden" id="fs-duration-select" value="3y">
+                    <button class="fs-pill" data-value="1y" onclick="window.selectFsDuration('1y')">1Y</button>
+                    <button class="fs-pill" data-value="2y" onclick="window.selectFsDuration('2y')">2Y</button>
+                    <button class="fs-pill active-pill" data-value="3y" onclick="window.selectFsDuration('3y')">3Y</button>
+                    <button class="fs-pill" data-value="4y" onclick="window.selectFsDuration('4y')">4Y</button>
+                    <button class="fs-pill" data-value="5y" onclick="window.selectFsDuration('5y')">5Y</button>
                 </div>
             </div>
 
             <!-- Ticker list -->
             <div class="fs-ticker-block">
-                <span class="fs-ctrl-label">Ticker</span>
                 <div id="fs-ticker-list"></div>
                 <select id="fs-ticker-select" style="display:none;"
                     onchange="window.syncFSTickerListSelected(); renderFullScreenChart()"></select>
@@ -16710,16 +16832,7 @@
                 </div>
             </div>
 
-            <!-- Delivery Analysis -->
-            <div class="fs-section expanded" id="fs-sec-deliv">
-                <div class="fs-section-header" onclick="window.toggleFsSection('fs-sec-deliv')">
-                    <span class="fs-section-label">Delivery Analysis</span>
-                    <span class="fs-section-chevron">▼</span>
-                </div>
-                <div class="fs-section-content" id="fs-deliv-analysis-content" style="color:var(--text2); font-size:11px; display:flex; flex-direction:column; gap:8px;">
-                    Loading analysis...
-                </div>
-            </div>
+
 
         </div>
 
@@ -16736,7 +16849,7 @@
                     style="position: absolute; top: 12px; left: 12px; z-index: 12; display: flex; align-items: center; gap: 8px; pointer-events: none;">
                     <!-- Mini Financial Card overlay -->
                     <div id="fs-mini-financial-card"
-                        style="opacity: 1; display: none; grid-template-columns: repeat(2, 54px); gap: 4px; pointer-events: auto;">
+                        style="position: relative; opacity: 1; display: none; grid-template-columns: repeat(2, 34px); gap: 4px; pointer-events: auto;">
                     </div>
                     <!-- F & H Buttons stacked vertically -->
                     <div id="fs-fh-actions-left"
@@ -16943,6 +17056,15 @@
             window.openFullScreenChart = function () {
                 document.getElementById('fs-chart-modal').style.display = 'flex';
 
+                // Sync period pills state to hidden input value
+                const durVal = document.getElementById('fs-duration-select')?.value || '3y';
+                const container = document.querySelector('.fs-period-pills');
+                if (container) {
+                    container.querySelectorAll('.fs-pill').forEach(btn => {
+                        btn.classList.toggle('active-pill', btn.getAttribute('data-value') === durVal);
+                    });
+                }
+
                 // Populate Group Select dynamically, preserving previous selection if any
                 const groupSel = document.getElementById('fs-group-select');
                 const prevGroup = groupSel ? groupSel.value : null;
@@ -17001,6 +17123,19 @@
             window.closeFullScreenChart = function () {
                 window.stopFsReplay();
                 document.getElementById('fs-chart-modal').style.display = 'none';
+            };
+
+            window.selectFsDuration = function (val) {
+                const input = document.getElementById('fs-duration-select');
+                if (input) input.value = val;
+                
+                const container = document.querySelector('.fs-period-pills');
+                if (container) {
+                    container.querySelectorAll('.fs-pill').forEach(btn => {
+                        btn.classList.toggle('active-pill', btn.getAttribute('data-value') === val);
+                    });
+                }
+                window.renderFullScreenChart();
             };
 
             window.fsToggleActiveFH = async function (type) {
@@ -17153,8 +17288,25 @@
                     if (listContainer) {
                         const item = document.createElement('div');
                         item.className = 'fs-ticker-item';
-                        item.textContent = tk;
                         item.setAttribute('data-value', tk);
+                        
+                        const r = (window.allData || []).find(d => String(d._ticker || '').toUpperCase() === tk.toUpperCase());
+                        const rawName = (window.tickerToName && window.tickerToName[tk]) || (r ? r._coName : '');
+                        const coNameFull = rawName || '';
+                        
+                        const sRnk = r ? parseFloat(r._sectorRank) : NaN;
+                        const sRnkCls = isNaN(sRnk) ? 'gray' : (sRnk <= 5 ? 'green' : (sRnk <= 10 ? 'blue' : (sRnk <= 15 ? 'orange' : 'red')));
+                        const sRnkDisp = isNaN(sRnk) ? '' : `#${Math.round(sRnk)}`;
+                        const sRnkBadge = sRnkDisp ? `<span class="fs-list-rank ${sRnkCls}">${sRnkDisp}</span>` : '';
+                        
+                        item.innerHTML = `
+                            <div class="fs-item-left">
+                                <span class="fs-item-tk">${tk}</span>
+                                ${coNameFull ? `<span class="fs-item-name" title="${escHtml(coNameFull)}">${coNameFull}</span>` : ''}
+                            </div>
+                            <div class="fs-item-right">${sRnkBadge}</div>
+                        `;
+
                         item.onclick = function () {
                             tickerSel.value = tk;
                             window.syncFSTickerListSelected();
@@ -17293,7 +17445,10 @@
                     const itemTop = targetItem.offsetTop;
                     const itemH = targetItem.clientHeight;
 
-                    listContainer.scrollTop = itemTop - (containerH / 2) + (itemH / 2);
+                    listContainer.scrollTo({
+                        top: itemTop - (containerH / 2) + (itemH / 2),
+                        behavior: 'smooth'
+                    });
                 }
             };
 
@@ -17302,16 +17457,18 @@
                 const tf = document.getElementById('fs-duration-select').value;
                 if (!tk) return;
 
+                const wrap = document.getElementById('fs-chart-wrapper');
+                const loadEl = document.getElementById('fs-chart-loading');
+
                 // Pre-fetch delivery percentage data if not cached yet
                 const tkUpper = tk.toUpperCase();
                 if (window.getFsWeeklyDelivMap && (!window._fsDelivCache || !window._fsDelivCache[tkUpper])) {
+                    if (loadEl) loadEl.style.display = 'flex';
                     window.getFsWeeklyDelivMap(tkUpper).then(() => {
                         window.renderFullScreenChart();
                     });
+                    return;
                 }
-
-                const wrap = document.getElementById('fs-chart-wrapper');
-                const loadEl = document.getElementById('fs-chart-loading');
                 const pCv = document.getElementById('fs-chart-pcv');
                 const vCv = document.getElementById('fs-chart-vcv');
 
@@ -17334,11 +17491,20 @@
                 if (cardEl) {
                     const r = allData.find(d => String(d._ticker || '').toUpperCase() === tk.toUpperCase());
                     if (r) {
+                        const sRnk = parseFloat(r._sectorRank);
+                        const sRnkCls = isNaN(sRnk) ? 'gray' : (sRnk <= 5 ? 'green' : (sRnk <= 10 ? 'blue' : (sRnk <= 15 ? 'orange' : 'red')));
+                        const sRnkDisp = isNaN(sRnk) ? '-' : Math.round(sRnk);
+
+                        const fsDf = (v) => { const l = String(v || '').length; return l <= 2 ? 15 : l === 3 ? 12 : 10; };
+
                         cardEl.innerHTML = `
-                            ${r['EBITDA Performance'] ? `<div class="iscore ${getChipColor('Performance', r['EBITDA Performance'])}" style="width:100%; box-sizing:border-box; margin:0;"><span class="iscore-label" style="font-size:7px; margin-bottom:0;">EBIT</span><span class="iscore-val" style="font-size:12px; font-weight:800;">${fmtWhole(r['EBITDA Performance'])}</span></div>` : ''}
-                            ${r['Revenue Performance'] ? `<div class="iscore ${getChipColor('Performance', r['Revenue Performance'])}" style="width:100%; box-sizing:border-box; margin:0;"><span class="iscore-label" style="font-size:7px; margin-bottom:0;">SALE</span><span class="iscore-val" style="font-size:12px; font-weight:800;">${fmtWhole(r['Revenue Performance'])}</span></div>` : ''}
-                            ${r['Net Profit Performance'] ? `<div class="iscore ${getChipColor('Performance', r['Net Profit Performance'])}" style="width:100%; box-sizing:border-box; margin:0;"><span class="iscore-label" style="font-size:7px; margin-bottom:0;">NP</span><span class="iscore-val" style="font-size:12px; font-weight:800;">${fmtWhole(r['Net Profit Performance'])}</span></div>` : ''}
-                            ${!isNaN(r._eps) ? `<div class="iscore ${getChipColor('EPS Rank', r._eps)}" style="width:100%; box-sizing:border-box; margin:0;"><span class="iscore-label" style="font-size:7px; margin-bottom:0;">EPS</span><span class="iscore-val" style="font-size:12px; font-weight:800;">${fmtWhole(r._eps)}</span></div>` : ''}
+                            ${r['EBITDA Performance'] ? `<div class="iscore ${getChipColor('Performance', r['EBITDA Performance'])}" style="width:34px; height:34px; min-width:0; padding:3px 4px; box-sizing:border-box; margin:0; justify-content:space-between; align-items:flex-start; overflow:hidden;"><span class="iscore-label" style="font-size:8px; margin-bottom:0; font-weight:800; line-height:1;">EBIT</span><span class="iscore-val" style="font-size:${fsDf(fmtWhole(r['EBITDA Performance']))}px; font-weight:800; line-height:1;">${fmtWhole(r['EBITDA Performance'])}</span></div>` : ''}
+                            ${r['Revenue Performance'] ? `<div class="iscore ${getChipColor('Performance', r['Revenue Performance'])}" style="width:34px; height:34px; min-width:0; padding:3px 4px; box-sizing:border-box; margin:0; justify-content:space-between; align-items:flex-end; overflow:hidden;"><span class="iscore-label" style="font-size:8px; margin-bottom:0; font-weight:800; line-height:1;">SALE</span><span class="iscore-val" style="font-size:${fsDf(fmtWhole(r['Revenue Performance']))}px; font-weight:800; line-height:1;">${fmtWhole(r['Revenue Performance'])}</span></div>` : ''}
+                            ${r['Net Profit Performance'] ? `<div class="iscore ${getChipColor('Performance', r['Net Profit Performance'])}" style="width:34px; height:34px; min-width:0; padding:3px 4px; box-sizing:border-box; margin:0; justify-content:space-between; align-items:flex-start; overflow:hidden;"><span class="iscore-label" style="font-size:8px; margin-bottom:0; font-weight:800; line-height:1;">NP</span><span class="iscore-val" style="font-size:${fsDf(fmtWhole(r['Net Profit Performance']))}px; font-weight:800; line-height:1;">${fmtWhole(r['Net Profit Performance'])}</span></div>` : ''}
+                            ${!isNaN(r._eps) ? `<div class="iscore ${getChipColor('EPS Rank', r._eps)}" style="width:34px; height:34px; min-width:0; padding:3px 4px; box-sizing:border-box; margin:0; justify-content:space-between; align-items:flex-end; overflow:hidden;"><span class="iscore-label" style="font-size:8px; margin-bottom:0; font-weight:800; line-height:1;">EPS</span><span class="iscore-val" style="font-size:${fsDf(fmtWhole(r._eps))}px; font-weight:800; line-height:1;">${fmtWhole(r._eps)}</span></div>` : ''}
+                            ${!isNaN(sRnk) ? `<div class="iscore ${sRnkCls}" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 24px; height: 24px; min-width: 0; box-sizing: border-box; margin: 0; display: flex; align-items: center; justify-content: center; padding: 0; border: 1.5px solid var(--bg); border-radius: 4px; z-index: 5; box-shadow: 0 1px 3px rgba(0,0,0,0.5);" title="Sector Rank">
+                                <span class="iscore-val" style="font-size: 13px; line-height: 1; margin: 0; font-weight: 800; color: #ffffff;">${sRnkDisp}</span>
+                            </div>` : ''}
                         `;
                         cardEl.style.display = 'grid';
                     } else {
