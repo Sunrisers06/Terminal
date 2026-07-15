@@ -11374,7 +11374,7 @@
 
                     canvas.addEventListener('touchstart', onTouch, { passive: true });
                     canvas.addEventListener('touchmove', onTouch, { passive: true });
-                    canvas.addEventListener('touchend', onMouseLeave, { passive: true });
+                    // canvas.addEventListener('touchend', onMouseLeave, { passive: true });
 
                     canvas._hasCrosshairEvent = true;
                 };
@@ -16580,6 +16580,8 @@
         #fs-chart-wrapper {
             touch-action: pan-y;
             cursor: grab;
+            user-select: none;
+            -webkit-user-select: none;
         }
 
         #fs-chart-wrapper.fs-panning {
