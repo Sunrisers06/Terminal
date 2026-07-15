@@ -5857,6 +5857,11 @@
                     SuperStar
                     <span class="tab-count" id="superstar-count">—</span>
                 </button>
+                <button class="sidebar-tab tab-breadth" id="tab-breadth-btn"
+                    onclick="switchSidebarTab('breadth')">
+                    <span class="tab-dot" style="background:#818cf8;box-shadow:0 0 6px rgba(129,140,248,0.6);"></span>
+                    Breadth
+                </button>
             </div>
             <div class="swipe-dots" id="swipe-dots">
                 <div class="swipe-dot insights-dot active" id="dot-insights"></div>
@@ -5864,6 +5869,7 @@
                 <div class="swipe-dot nsenews-dot" id="dot-nsenews"></div>
                 <div class="swipe-dot deals-dot" id="dot-deals"></div>
                 <div class="swipe-dot superstar-dot" id="dot-superstar"></div>
+                <div class="swipe-dot" id="dot-breadth" style="background:#818cf8;"></div>
             </div>
 
             <div class="news-half active-pane" id="insights-section">
@@ -6145,6 +6151,20 @@
             </div>
             <!-- ══ END SUPERSTAR BLOCK ══ -->
 
+            <!-- ══ BREADTH DASHBOARD SECTION ══ -->
+            <div class="news-half" id="breadth-section">
+                <div class="pane-toolbar" style="padding:6px 8px;gap:6px;">
+                    <span style="color:rgba(255,255,255,0.7);font-size:11px;font-weight:700;letter-spacing:0.5px;">📊 SECTOR &amp; INDUSTRY BREADTH</span>
+                    <button class="deal-refresh-btn" onclick="renderBreadthTab(window._breadthSort||'above10Pct',window._breadthDir||-1)" title="Refresh">↻</button>
+                </div>
+                <div class="deal-sub-pane active-sub-pane" style="overflow-y:auto;flex:1;">
+                    <div id="breadth-content" style="padding:8px;">
+                        <div style="color:rgba(255,255,255,0.4);text-align:center;padding:40px 20px;font-size:12px;">Breadth data will load after OHLCV data is ready…</div>
+                    </div>
+                </div>
+            </div>
+            <!-- ══ END BREADTH SECTION ══ -->
+
         </aside>
 
         <div id="sidebar-resizer" title="Drag to resize"></div>
@@ -6232,10 +6252,15 @@
                 <input type="number" id="min-revp" class="fi w90" placeholder="Min Sale" oninput="onSearchInput()">
                 <input type="number" id="min-npp" class="fi w90" placeholder="Min NP" oninput="onSearchInput()">
                 <input type="number" id="min-cfopat" class="fi w90" placeholder="Min CFO/P" oninput="onSearchInput()">
+                <input type="number" id="max-pivot-dist" class="fi w110" placeholder="Near Pivot %" title="Show stocks within X% of pivot breakout" oninput="onSearchInput()" min="0" step="0.5">
                 <select id="investor-filter" class="fi w130" onchange="doFilter()">
                     <option value="all">All Investors</option>
                     <option value="superstar">⭐ All SuperStars</option>
                 </select>
+                <label class="fi-checkbox" title="Show only stocks with Post-Earnings Announcement Drift setups">
+                    <input type="checkbox" id="pead-filter" onchange="doFilter()">
+                    <span>📊 PEAD</span>
+                </label>
                 <button class="clear-btn" onclick="window.resetAllAppFilters()">✖ Clear</button>
                 <select id="sort-select" class="fi sort-fi" onchange="doFilter()">
                     <option value="sno">Sort: Default</option>
@@ -6395,12 +6420,14 @@
                 const el = document.getElementById(id);
                 if (el) el.value = 'all';
             });
+            const peadFilter = document.getElementById('pead-filter');
+            if (peadFilter) peadFilter.checked = false;
             const idxFilter = document.getElementById('index-filter');
             if (idxFilter) {
                 idxFilter.value = Array.from(idxFilter.options).some(o => o.value === 'Nifty_ALL') ? 'Nifty_ALL' : 'all';
             }
 
-            ['min-mcap', 'min-eps', 'min-smr', 'min-dur', 'min-gwth', 'min-prof', 'min-cons', 'min-balsht', 'min-val', 'min-ebitp', 'min-revp', 'min-npp', 'min-cfopat'].forEach(id => {
+            ['min-mcap', 'min-eps', 'min-smr', 'min-dur', 'min-gwth', 'min-prof', 'min-cons', 'min-balsht', 'min-val', 'min-ebitp', 'min-revp', 'min-npp', 'min-cfopat', 'max-pivot-dist'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.value = '';
             });
@@ -7258,6 +7285,8 @@
               ${ssBadge}
               ${topRankBadge}
               ${dealBadge}
+              ${r._peadFlag ? `<span class="pead-badge" title="${r._peadDetails || 'Post-Earnings Drift setup'}">📊 PEAD</span>` : ''}
+              ${!isNaN(r._pivotDist) && r._pivotDist >= 0 && r._pivotDist <= 5 ? `<span class="pivot-proximity-badge" title="Within ${r._pivotDist.toFixed(1)}% of pivot">📍${r._pivotDist.toFixed(1)}%</span>` : ''}
               ${(window._urDataMap && window._urDataMap[String(r._ticker).toUpperCase()]) ? `<span class="ur-chip" title="Upcoming Result Date">📅 ${window._urDataMap[String(r._ticker).toUpperCase()].toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>` : ''}
 
             </div>
@@ -7781,36 +7810,40 @@
             const nsenewsPane = document.getElementById('nsenews-section');
             const dealsPane = document.getElementById('deal-block-section');
             const superstarPane = document.getElementById('superstar-block-section');
+            const breadthPane = document.getElementById('breadth-section');
             const insBtn = document.getElementById('tab-insights-btn');
             const newsBtn = document.getElementById('tab-news-btn');
             const nsenewsBtn = document.getElementById('tab-nsenews-btn');
             const dealsBtn = document.getElementById('tab-deals-btn');
             const superstarBtn = document.getElementById('tab-superstar-btn');
+            const breadthBtn = document.getElementById('tab-breadth-btn');
             const dotIns = document.getElementById('dot-insights');
             const dotNews = document.getElementById('dot-news');
             const dotNsenews = document.getElementById('dot-nsenews');
             const dotDeals = document.getElementById('dot-deals');
             const dotSuperstar = document.getElementById('dot-superstar');
+            const dotBreadth = document.getElementById('dot-breadth');
 
             if (tab === window._sidebarTab) return; // already on this tab
             const prevTab = window._sidebarTab;
             window._sidebarTab = tab;
 
-            // Tab order: insights=0, news=1, nsenews=2, deals=3, superstar=4
-            const tabOrder = { insights: 0, news: 1, nsenews: 2, deals: 3, superstar: 4 };
+            // Tab order: insights=0, news=1, nsenews=2, deals=3, superstar=4, breadth=5
+            const tabOrder = { insights: 0, news: 1, nsenews: 2, deals: 3, superstar: 4, breadth: 5 };
             if (!dir) dir = (tabOrder[tab] > tabOrder[prevTab]) ? 'right' : 'left';
             const animClass = dir === 'right' ? 'swipe-in-from-right' : 'swipe-in-from-left';
 
             // Hide all panes, deactivate all buttons/dots
-            [insightsPane, newsPane, nsenewsPane, dealsPane, superstarPane].forEach(p => p && p.classList.remove('active-pane'));
-            [insBtn, newsBtn, nsenewsBtn, dealsBtn, superstarBtn].forEach(b => b && b.classList.remove('active'));
-            [dotIns, dotNews, dotNsenews, dotDeals, dotSuperstar].forEach(d => d && d.classList.remove('active'));
+            [insightsPane, newsPane, nsenewsPane, dealsPane, superstarPane, breadthPane].forEach(p => p && p.classList.remove('active-pane'));
+            [insBtn, newsBtn, nsenewsBtn, dealsBtn, superstarBtn, breadthBtn].forEach(b => b && b.classList.remove('active'));
+            [dotIns, dotNews, dotNsenews, dotDeals, dotSuperstar, dotBreadth].forEach(d => d && d.classList.remove('active'));
 
             let activePane, activeBtn, activeDot;
             if (tab === 'insights') { activePane = insightsPane; activeBtn = insBtn; activeDot = dotIns; }
             else if (tab === 'news') { activePane = newsPane; activeBtn = newsBtn; activeDot = dotNews; }
             else if (tab === 'nsenews') { activePane = nsenewsPane; activeBtn = nsenewsBtn; activeDot = dotNsenews; }
             else if (tab === 'deals') { activePane = dealsPane; activeBtn = dealsBtn; activeDot = dotDeals; }
+            else if (tab === 'breadth') { activePane = breadthPane; activeBtn = breadthBtn; activeDot = dotBreadth; }
             else { activePane = superstarPane; activeBtn = superstarBtn; activeDot = dotSuperstar; }
 
             if (activePane) {
@@ -7828,6 +7861,10 @@
             // Lazy-load superstar data on first visit
             if (tab === 'superstar' && typeof window._superstarInit === 'function') {
                 window._superstarInit();
+            }
+            // Lazy-render breadth tab on first visit or re-render
+            if (tab === 'breadth' && typeof renderBreadthTab === 'function') {
+                renderBreadthTab(window._breadthSort || 'above10Pct', window._breadthDir || -1);
             }
         }
 
@@ -7879,9 +7916,11 @@
                         else if (window._sidebarTab === 'news') switchSidebarTab('nsenews', 'right');
                         else if (window._sidebarTab === 'nsenews') switchSidebarTab('deals', 'right');
                         else if (window._sidebarTab === 'deals') switchSidebarTab('superstar', 'right');
+                        else if (window._sidebarTab === 'superstar') switchSidebarTab('breadth', 'right');
                     } else {
                         // Swipe RIGHT → go back in tab order
-                        if (window._sidebarTab === 'superstar') switchSidebarTab('deals', 'left');
+                        if (window._sidebarTab === 'breadth') switchSidebarTab('superstar', 'left');
+                        else if (window._sidebarTab === 'superstar') switchSidebarTab('deals', 'left');
                         else if (window._sidebarTab === 'deals') switchSidebarTab('nsenews', 'left');
                         else if (window._sidebarTab === 'nsenews') switchSidebarTab('news', 'left');
                         else if (window._sidebarTab === 'news') switchSidebarTab('insights', 'left');
@@ -8064,6 +8103,8 @@
                 minCfopat: document.getElementById('min-cfopat'),
                 sortSelect: document.getElementById('sort-select'),
                 invFilter: document.getElementById('investor-filter'),
+                peadFilter: document.getElementById('pead-filter'),
+                maxPivotDist: document.getElementById('max-pivot-dist'),
                 globalClearBtn: document.getElementById('global-clear-btn'),
             };
             return _domCache;
@@ -8192,6 +8233,15 @@
                     const ssEntries = window.superStarMap[String(r._ticker).toUpperCase()] || [];
                     if (invQ === 'superstar') { if (!ssEntries.length) return false; }
                     else { if (!ssEntries.some(e => e.investor === invQ)) return false; }
+                }
+                // Proximity to Pivot filter
+                const maxPivotDist = parseFloat(dc.maxPivotDist ? dc.maxPivotDist.value : NaN);
+                if (!isNaN(maxPivotDist) && maxPivotDist >= 0) {
+                    if (isNaN(r._pivotDist) || r._pivotDist < 0 || r._pivotDist > maxPivotDist) return false;
+                }
+                // PEAD filter
+                if (dc.peadFilter && dc.peadFilter.checked) {
+                    if (!r._peadFlag) return false;
                 }
                 return true;
             });
@@ -8842,7 +8892,6 @@
 
                 allData = mergeAndPrecalc(res, tickerToName, scrMap);
                 window._peerAllData = allData; // expose for peer comparison popup
-
                 // ── Tech Score external data: build ticker map and attach to allData rows ──
                 window._techScoreMap = {};
                 if (epSalesT) {
@@ -8993,11 +9042,220 @@
                 });
             });
 
+            // ── Pivot Distance Calculation (for Proximity-to-Pivot screener filter) ──
+            const tickerRowMap = {};
+            allData.forEach(r => { tickerRowMap[String(r._ticker).toUpperCase()] = r; });
+
+            window._ohlcvTickers.forEach((arr, ticker) => {
+                const row = tickerRowMap[ticker];
+                if (!row || arr.length < 10) return;
+                const i = arr.length - 1;
+                const close = arr[i].close;
+
+                // Find highest high in last 50 bars (major pivot)
+                let majorPivotVal = 0;
+                let majorPivotIdx = -1;
+                const start = Math.max(0, i - 50);
+                for (let j = start; j <= i - 5; j++) {
+                    if (arr[j].high > majorPivotVal) {
+                        majorPivotVal = arr[j].high;
+                        majorPivotIdx = j;
+                    }
+                }
+                if (majorPivotIdx < 0 || majorPivotVal <= 0) { row._pivotDist = NaN; return; }
+
+                // Validate: no bar between pivot and now exceeded pivot by >2%
+                let validPivot = true;
+                for (let j = majorPivotIdx + 1; j <= i; j++) {
+                    if (arr[j].high > majorPivotVal * 1.02) { validPivot = false; break; }
+                }
+                if (!validPivot) { row._pivotDist = NaN; return; }
+
+                // How far is current close below pivot? Positive = approaching, negative = above
+                const dist = ((majorPivotVal - close) / close) * 100;
+                row._basePivot = majorPivotVal;
+                row._pivotDist = dist; // positive = below pivot, 0 = at pivot, negative = above
+            });
+
             console.log('[SundarX] OHLCV returns calculated. Sample:', allData[0]?._ticker,
                 '1M:', allData[0]?._ret1m?.toFixed(2),
                 '3M:', allData[0]?._ret3m?.toFixed(2),
                 '6M:', allData[0]?._ret6m?.toFixed(2),
                 '1Y:', allData[0]?._ret1y?.toFixed(2));
+
+            // Kick off breadth and PEAD calculations after returns and pivot are ready
+            calcSectorBreadth();
+            calcPEADFlags();
+        }
+
+        // ══════════════════════════════════════════════════════
+        //   SECTOR & INDUSTRY BREADTH  (Feature 3)
+        // ══════════════════════════════════════════════════════
+        function calcSectorBreadth() {
+            if (!window._ohlcvTickers || !allData.length) return;
+
+            const sectorMap = {}; // sector → {total,above10,above40,abovePivot}
+            const industryMap = {};
+
+            const addRow = (map, key, above10, above40, nearPivot) => {
+                if (!key) return;
+                if (!map[key]) map[key] = { total: 0, above10: 0, above40: 0, nearPivot: 0 };
+                map[key].total++;
+                if (above10) map[key].above10++;
+                if (above40) map[key].above40++;
+                if (nearPivot) map[key].nearPivot++;
+            };
+
+            allData.forEach(r => {
+                const arr = window._ohlcvTickers.get(String(r._ticker).toUpperCase());
+                if (!arr || arr.length < 10) return;
+                const last = arr[arr.length - 1];
+                const close = last.close;
+
+                // Compute 10W SMA (10 bars) and 40W SMA (40 bars)
+                let sum10 = 0, cnt10 = 0, sum40 = 0, cnt40 = 0;
+                for (let j = Math.max(0, arr.length - 10); j < arr.length; j++) {
+                    sum10 += arr[j].close; cnt10++;
+                }
+                for (let j = Math.max(0, arr.length - 40); j < arr.length; j++) {
+                    sum40 += arr[j].close; cnt40++;
+                }
+                const ma10w = cnt10 > 0 ? sum10 / cnt10 : null;
+                const ma40w = cnt40 >= 10 ? sum40 / cnt40 : null;
+
+                const above10 = ma10w && close > ma10w;
+                const above40 = ma40w && close > ma40w;
+                // Near pivot = within 0-5% below pivot
+                const nearPivot = !isNaN(r._pivotDist) && r._pivotDist >= 0 && r._pivotDist <= 5;
+
+                addRow(sectorMap, r._sec, above10, above40, nearPivot);
+                addRow(industryMap, r._ind, above10, above40, nearPivot);
+            });
+
+            window._breadthData = { sector: sectorMap, industry: industryMap };
+            renderBreadthTab();
+        }
+
+        function renderBreadthTab(sortKey = 'above10Pct', sortDir = -1) {
+            const pane = document.getElementById('breadth-content');
+            if (!pane) return;
+            const bd = window._breadthData;
+            if (!bd) { pane.innerHTML = '<div style="color:rgba(255,255,255,0.4);text-align:center;padding:20px;">Loading breadth data…</div>'; return; }
+
+            const fmtPct = (n, t) => t > 0 ? ((n / t) * 100).toFixed(0) + '%' : '—';
+            const barHtml = (n, t, color) => {
+                const pct = t > 0 ? Math.round((n / t) * 100) : 0;
+                const hsl = pct >= 60 ? '#00e676' : pct >= 35 ? '#facc15' : '#ff4d4f';
+                return `<div style="width:100%;height:5px;background:rgba(255,255,255,0.08);border-radius:3px;margin-top:2px;"><div style="width:${pct}%;height:5px;background:${color || hsl};border-radius:3px;transition:width 0.3s;"></div></div>`;
+            };
+
+            const buildTable = (map, title) => {
+                const rows = Object.entries(map).map(([name, d]) => ({
+                    name,
+                    total: d.total,
+                    above10: d.above10,
+                    above40: d.above40,
+                    nearPivot: d.nearPivot,
+                    above10Pct: d.total > 0 ? d.above10 / d.total : 0,
+                    above40Pct: d.total > 0 ? d.above40 / d.total : 0,
+                })).sort((a, b) => (b[sortKey] - a[sortKey]) * sortDir);
+
+                const headerArrow = (key) => sortKey === key ? (sortDir > 0 ? ' ▲' : ' ▼') : '';
+                const onSort = (key) => `window._breadthSort='${key}';window._breadthDir=(window._breadthSort==='${key}'?-(window._breadthDir||1):-1);renderBreadthTab(window._breadthSort,window._breadthDir);`;
+
+                return `<div class="breadth-section-title">${title}</div>
+                <table class="breadth-table">
+                    <thead><tr>
+                        <th onclick="${onSort('name')}" style="cursor:pointer;text-align:left;">Name${headerArrow('name')}</th>
+                        <th title="Total stocks">#</th>
+                        <th onclick="${onSort('above10Pct')}" style="cursor:pointer;" title="% above 10-week MA">10W%${headerArrow('above10Pct')}</th>
+                        <th onclick="${onSort('above40Pct')}" style="cursor:pointer;" title="% above 40-week MA">40W%${headerArrow('above40Pct')}</th>
+                        <th onclick="${onSort('nearPivot')}" style="cursor:pointer;" title="Stocks within 5% of pivot">Pivot${headerArrow('nearPivot')}</th>
+                    </tr></thead>
+                    <tbody>
+                    ${rows.map(r => {
+                        const p10 = Math.round(r.above10Pct * 100);
+                        const p40 = Math.round(r.above40Pct * 100);
+                        const c10 = p10 >= 60 ? '#00e676' : p10 >= 35 ? '#facc15' : '#ff4d4f';
+                        const c40 = p40 >= 60 ? '#00e676' : p40 >= 35 ? '#facc15' : '#ff4d4f';
+                        return `<tr onclick="setSectorFilter('${r.name.replace(/'/g, "\\'")}',event)" style="cursor:pointer;">
+                            <td class="breadth-name" title="${r.name}">${r.name}</td>
+                            <td style="text-align:center;color:rgba(255,255,255,0.5);">${r.total}</td>
+                            <td style="text-align:center;">
+                                <span style="color:${c10};font-weight:700;">${fmtPct(r.above10, r.total)}</span>
+                                ${barHtml(r.above10, r.total, c10)}
+                            </td>
+                            <td style="text-align:center;">
+                                <span style="color:${c40};font-weight:700;">${fmtPct(r.above40, r.total)}</span>
+                                ${barHtml(r.above40, r.total, c40)}
+                            </td>
+                            <td style="text-align:center;color:#facc15;font-weight:700;">${r.nearPivot || '—'}</td>
+                        </tr>`;
+                    }).join('')}
+                    </tbody>
+                </table>`;
+            };
+
+            pane.innerHTML = buildTable(bd.sector, '🏭 Sector Breadth') +
+                '<div style="margin-top:16px;"></div>' +
+                buildTable(bd.industry, '🔬 Industry Breadth');
+        }
+        window.renderBreadthTab = renderBreadthTab;
+
+        // ══════════════════════════════════════════════════════
+        //   PEAD FLAG CALCULATION  (Feature 4)
+        // ══════════════════════════════════════════════════════
+        function calcPEADFlags() {
+            if (!window._ohlcvTickers || !allData.length) return;
+
+            allData.forEach(r => {
+                r._peadFlag = false;
+                const arr = window._ohlcvTickers.get(String(r._ticker).toUpperCase());
+                if (!arr || arr.length < 25) return; // need enough history for 20-bar avg + 6 bars
+
+                const searchStart = Math.max(20, arr.length - 6);
+                
+                // Scan the last 6 weeks for a massive volume surge
+                for (let i = searchStart; i < arr.length; i++) {
+                    const surgeCandle = arr[i];
+                    if (surgeCandle.close <= surgeCandle.open) continue; // must be an up week
+
+                    // Calculate 20-week average volume prior to the surge week
+                    let sumVol = 0;
+                    for (let j = i - 20; j < i; j++) sumVol += arr[j].vol;
+                    const avgVol = sumVol / 20;
+                    if (avgVol === 0) continue;
+
+                    const volRatio = surgeCandle.vol / avgVol;
+                    if (volRatio < 2.0) continue; // need at least 200% of average volume
+
+                    // Check subsequent weeks (the "flag")
+                    const flagWeeks = arr.slice(i + 1);
+                    let tightness = 0;
+                    let isValidFlag = true;
+
+                    if (flagWeeks.length > 0) {
+                        const flagHigh = Math.max(...flagWeeks.map(x => x.high));
+                        const flagLow = Math.min(...flagWeeks.map(x => x.low));
+                        
+                        tightness = flagHigh > 0 ? ((flagHigh - flagLow) / flagHigh) * 100 : 100;
+                        
+                        // Flag is invalid if it's too loose, or if it dropped below the surge candle's open
+                        if (tightness > 12 || flagLow < surgeCandle.open) {
+                            isValidFlag = false;
+                        }
+                    } else {
+                        // If the surge is the very last week, it's a fresh surge (tightness is 0)
+                        tightness = 0;
+                    }
+
+                    if (isValidFlag) {
+                        r._peadFlag = true;
+                        r._peadDetails = `Vol Surge: ${(volRatio * 100).toFixed(0)}% | Tightness: ${flagWeeks.length ? tightness.toFixed(1) + '%' : 'Fresh break'}`;
+                        break; // found a valid setup, no need to check older weeks
+                    }
+                }
+            });
         }
 
         function fmtReturn(v) {
@@ -10818,7 +11076,12 @@
                             dealCv = document.createElement('canvas');
                             dealCv.className = 'card-chart-canvas-deal';
                             dealCv.style.cssText = 'display:block;cursor:crosshair;';
-                            vCv.parentNode.insertBefore(dealCv, indCv.nextSibling);
+                            const drawCv = vCv.parentNode.querySelector('#fs-draw-canvas');
+                            if (drawCv) {
+                                vCv.parentNode.insertBefore(dealCv, drawCv);
+                            } else {
+                                vCv.parentNode.appendChild(dealCv);
+                            }
                         }
                     }
                 }
@@ -10934,9 +11197,11 @@
                     fullProcessed = allRaw.map((r, i) => {
                         const t = r.date.getTime();
                         if (benchByDate.has(t)) lastBenchClose = benchByDate.get(t);
+                        const rsRatio = lastBenchClose > 0 ? r.close / lastBenchClose : 1;
                         return {
                             ...r,
                             benchClose: lastBenchClose,
+                            rsRatio,
                             ma10: s10full[i],
                             ma20: s20full[i],
                             ma30: s30full[i],
@@ -10951,6 +11216,18 @@
                             hDnV15: hDnV15full[i],
                             atr14: atr14full[i]
                         };
+                    });
+
+                    // ── Mansfield RS Oscillator — 52W SMA of ratio, centered at zero ──
+                    const rsRatios = fullProcessed.map(r => r.rsRatio);
+                    const rsSma52full = sma(rsRatios, 52);
+                    const rsSma10full = sma(rsRatios, 10);
+                    fullProcessed.forEach((r, i) => {
+                        const sma52 = rsSma52full[i];
+                        r.rsMansfield = (sma52 && sma52 > 0) ? ((r.rsRatio / sma52) - 1) * 100 : null;
+                        r.rsSma10 = rsSma10full[i] && rsSma52full[i]
+                            ? ((rsSma10full[i] / rsSma52full[i]) - 1) * 100
+                            : null;
                     });
 
                     window._chartCalcCache.set(_calcCacheKey, { fullProcessed, benchTicker, ticker: UC });
@@ -11167,10 +11444,10 @@
 
                 loadEl.style.opacity = '0';
                 setTimeout(() => { loadEl.style.display = 'none'; }, 200);
-                pCv.style.display = 'block'; vCv.style.display = 'block';
+                pCv.style.display = 'block';
                 if (indCv) indCv.style.display = 'block';
                 requestAnimationFrame(() => {
-                    pCv.style.opacity = '1'; vCv.style.opacity = '1';
+                    pCv.style.opacity = '1';
                     if (indCv) indCv.style.opacity = '1';
                 });
 
@@ -11183,35 +11460,56 @@
                 const isMobile = window.innerWidth < 600;
                 let W = widthEl ? (widthEl.offsetWidth || (isMobile ? 300 : 380)) : (isMobile ? 300 : 380);
 
-                let PH, VH, IH;
+                let PH, VH, IH, RSH;
+                const _rsCvEl = isFs ? document.getElementById('fs-chart-rscv') : null;
                 if (pCv.id === 'fs-chart-pcv') {
                     const parentH = (widthEl && widthEl.parentElement) ? widthEl.parentElement.clientHeight : (window.innerHeight - 40);
                     const hasDeals = dealCv && dealCv.style.display !== 'none';
                     const constantH = 10 + (hasDeals ? 22 : 0) + 15; // 15px margins/safety
                     const remH = Math.max(parentH - constantH, 300);
-                    PH = Math.round(remH * 0.74);
-                    VH = Math.round(remH * 0.12);
-                    IH = Math.round(remH * 0.14);
+                    PH = Math.round(remH * 0.79);  // absorbed VH and part of RSH
+                    VH = 0; // hide volume pane in full screen
+                    IH = Math.round(remH * 0.13);
+                    RSH = Math.round(remH * 0.08); // Reduced RS pane height
                 } else {
                     PH = Math.round(W * 0.62);   // ~8:5 ratio — taller, more chart real-estate
                     VH = Math.round(W * 0.14);   // volume panel ~14% of width
                     IH = Math.round(W * 0.18);   // indicators panel ~18% of width
+                    RSH = 0; // no RS pane on card charts
                 }
                 const DPR = pCv.id === 'fs-chart-pcv'
                     ? Math.min(window.devicePixelRatio || 1, 3)
                     : Math.min(window.devicePixelRatio || 1, 2);
 
                 pCv.style.width = W + 'px'; pCv.style.height = PH + 'px'; pCv.width = W * DPR; pCv.height = PH * DPR;
-                vCv.style.width = W + 'px'; vCv.style.height = VH + 'px'; vCv.width = W * DPR; vCv.height = VH * DPR;
+                
+                if (VH > 0) {
+                    vCv.style.display = 'block';
+                    vCv.style.width = W + 'px'; vCv.style.height = VH + 'px'; vCv.width = W * DPR; vCv.height = VH * DPR;
+                    requestAnimationFrame(() => { vCv.style.opacity = '1'; });
+                } else {
+                    vCv.style.display = 'none';
+                }
+                
                 if (indCv) {
                     indCv.style.width = W + 'px'; indCv.style.height = IH + 'px'; indCv.width = W * DPR; indCv.height = IH * DPR;
+                }
+                if (_rsCvEl && RSH > 0) {
+                    _rsCvEl.style.width = W + 'px'; _rsCvEl.style.height = RSH + 'px';
+                    _rsCvEl.width = W * DPR; _rsCvEl.height = RSH * DPR;
+                    _rsCvEl.style.display = 'block';
+                    requestAnimationFrame(() => { if (_rsCvEl) _rsCvEl.style.opacity = '1'; });
+                } else if (_rsCvEl) {
+                    _rsCvEl.style.display = 'none';
                 }
 
                 const pc = pCv.getContext('2d');
                 const vc = vCv.getContext('2d');
                 const ic = indCv ? indCv.getContext('2d') : null;
+                const rsc = (_rsCvEl && RSH > 0) ? _rsCvEl.getContext('2d') : null;
                 pc.scale(DPR, DPR); vc.scale(DPR, DPR);
                 if (ic) ic.scale(DPR, DPR);
+                if (rsc) rsc.scale(DPR, DPR);
 
                 // n is the visible candle count. X positions are cached from candle dates.
 
@@ -11315,9 +11613,11 @@
                 const wireCrosshair = (canvas) => {
                     if (!canvas || canvas._hasCrosshairEvent) return;
 
-                    const onMouseMove = (e) => {
+                    const onPointerMove = (e) => {
                         const state = pCv._chartState;
                         if (!state || !state.raw || state.n === 0) return;
+                        
+                        // Treat as pointer event (mouse or touch)
                         const coords = window._getRotatedCoords ? window._getRotatedCoords(e, canvas) : (() => {
                             const rect = canvas.getBoundingClientRect();
                             return { mx: e.clientX - rect.left, my: e.clientY - rect.top };
@@ -11325,7 +11625,6 @@
                         const mx = coords.mx;
                         const my = coords.my;
 
-                        // Calculate nearest index
                         let idx = state.indexFromX ? state.indexFromX(mx) : Math.round((mx - state.PP.l) / (state.pW / state.n) - 0.5);
                         idx = Math.max(0, Math.min(state.raw.length - 1, idx));
 
@@ -11337,7 +11636,7 @@
                         scheduleCrosshairDraw();
                     };
 
-                    const onMouseLeave = () => {
+                    const onPointerLeave = () => {
                         const state = pCv._chartState;
                         if (!state) return;
                         pCv._hoverX = null;
@@ -11347,34 +11646,10 @@
                         scheduleCrosshairDraw();
                     };
 
-                    canvas.addEventListener('mousemove', onMouseMove, { passive: true });
-                    canvas.addEventListener('mouseleave', onMouseLeave, { passive: true });
-
-                    // Touch support for mobile devices
-                    const onTouch = (e) => {
-                        const state = pCv._chartState;
-                        if (!state || !state.raw || state.n === 0 || e.touches.length === 0) return;
-                        const coords = window._getRotatedCoords ? window._getRotatedCoords(e, canvas) : (() => {
-                            const rect = canvas.getBoundingClientRect();
-                            return { mx: e.touches[0].clientX - rect.left, my: e.touches[0].clientY - rect.top };
-                        })();
-                        const mx = coords.mx;
-                        const my = coords.my;
-
-                        let idx = state.indexFromX ? state.indexFromX(mx) : Math.round((mx - state.PP.l) / (state.pW / state.n) - 0.5);
-                        idx = Math.max(0, Math.min(state.raw.length - 1, idx));
-
-                        pCv._hoverX = state.toX(idx);
-                        pCv._hoverY = my;
-                        pCv._hoverIdx = idx;
-                        pCv._hoverCanvas = canvas;
-
-                        scheduleCrosshairDraw();
-                    };
-
-                    canvas.addEventListener('touchstart', onTouch, { passive: true });
-                    canvas.addEventListener('touchmove', onTouch, { passive: true });
-                    // canvas.addEventListener('touchend', onMouseLeave, { passive: true });
+                    canvas.addEventListener('pointermove', onPointerMove, { passive: true });
+                    canvas.addEventListener('pointerdown', onPointerMove, { passive: true });
+                    canvas.addEventListener('pointerleave', onPointerLeave, { passive: true });
+                    canvas.addEventListener('pointercancel', onPointerLeave, { passive: true });
 
                     canvas._hasCrosshairEvent = true;
                 };
@@ -11612,29 +11887,54 @@
                     }
                 });
 
-                // ── Overlay: Delivery % inside Price Pane (bottom 15% height) ──
+                // ── Overlay: Volume inside Price Pane (bottom 15% height) ──
                 if (isFs) {
-                    raw.forEach((r, i) => {
-                        const dp = r.delivPer || 0;
-                        if (dp > 0) {
-                            const x = toX(i);
-                            const barH = (dp / 100) * (pH * 0.12); // proportional to 100% (max 15% of price pane height)
-                            const y = PP.t + pH - barH;
+                    let maxV = 1;
+                    let maxVClose = 1;
+                    for (const r of raw) {
+                        if (r.vol > maxV) { maxV = r.vol; maxVClose = r.close || 1; }
+                    }
+                    const volH = pH * 0.15;
+                    const volBaseY = PP.t + pH;
 
-                            const isHighDeliv = dp >= 50;
-                            pc.fillStyle = r._vColor || '#6b7280';
-                            pc.globalAlpha = isHighDeliv ? 0.95 : 0.65; // higher visibility for high delivery
-                            pc.fillRect(x - bW / 2, y, bW, barH);
+                    // Volume bars
+                    raw.forEach((r, i) => {
+                        const x = toX(i);
+                        const bh = Math.max(1, (r.vol / maxV) * volH);
+                        pc.fillStyle = r._vColor || '#6b7280';
+                        pc.globalAlpha = 0.85;
+                        pc.fillRect(x - bW / 2, volBaseY - bh, bW, bh);
+                        pc.globalAlpha = 1.0;
+                    });
+
+                    // Draw 9 SMA for Volume: White, 50% opacity, dashed
+                    pc.strokeStyle = 'rgba(255, 255, 255, 0.5)'; pc.lineWidth = 1.2; pc.setLineDash([4, 4]);
+                    pc.beginPath();
+                    let stVolSma = false;
+                    raw.forEach((r, i) => {
+                        if (r.volSma9 !== null && r.volSma9 !== undefined) {
+                            const x = toX(i);
+                            const y = volBaseY - (r.volSma9 / maxV) * volH;
+                            stVolSma ? pc.lineTo(x, y) : (pc.moveTo(x, y), stVolSma = true);
                         }
                     });
-                    pc.globalAlpha = 1.0;
+                    pc.stroke();
+                    pc.setLineDash([]);
 
-                    // Add a tiny legend label for Delivery Percentage
+                    // Volume right-side labels — right-aligned on the price pane's right axis
+                    pc.font = 'bold 9px "Lexend",monospace'; pc.fillStyle = '#ffffff';
+                    pc.textAlign = 'right'; pc.textBaseline = 'middle';
+                    const volMultiplier = maxVClose;
+                    
+                    // Draw max and mid volume labels on the right edge
+                    pc.fillText(fmtV(maxV * volMultiplier), W - 4, volBaseY - volH + 6);
+                    pc.fillText(fmtV(maxV * 0.5 * volMultiplier), W - 4, volBaseY - volH * 0.5);
+
+                    // Add a tiny legend label for Volume
                     pc.fillStyle = 'rgba(255, 255, 255, 0.4)';
-                    pc.font = 'bold 9px "Lexend",monospace';
                     pc.textAlign = 'left';
                     pc.textBaseline = 'top';
-                    pc.fillText('Deliv % Overlay', PP.l + 8, PP.t + pH - 15);
+                    pc.fillText('Vol / 9MA', PP.l + 8, volBaseY - volH - 12);
                 }
 
                 // ── Last close: dashed horizontal line + price tag ──
@@ -11833,6 +12133,59 @@
                             pc.fillText(infoTxt, PP.l + 4, PP.t + 2);
                             if (pCv._hoverCanvas === pCv) {
                                 drawPriceActionHoverPanel(pc, buildPriceActionAnalysis(raw), hx, W, PH, PP);
+                                
+                                // Volume Overlay Tooltips (if hovering in bottom 15% of full screen price pane)
+                                if (isFs && hy >= PP.t + pH * 0.85) {
+                                    // 1. Right-axis Volume Badge
+                                    let maxV = 1, maxVClose = 1;
+                                    for (const r of raw) { if (r.vol > maxV) { maxV = r.vol; maxVClose = r.close || 1; } }
+                                    const volH = pH * 0.15;
+                                    const volBaseY = PP.t + pH;
+                                    const volMultiplier = maxVClose;
+                                    const volVal = Math.max(0, maxV * (1 - (hy - (volBaseY - volH)) / volH) * volMultiplier);
+                                    
+                                    const volTxt = fmtV(volVal);
+                                    pc.font = 'bold 11px "Lexend",monospace';
+                                    const badgeW = pc.measureText(volTxt).width + 8;
+                                    pc.fillStyle = '#475569';
+                                    pc.fillRect(W - badgeW - 1, hy - 7.5, badgeW, 15);
+                                    pc.fillStyle = '#ffffff';
+                                    pc.textAlign = 'right';
+                                    pc.textBaseline = 'middle';
+                                    pc.fillText(volTxt, W - 4, hy);
+
+                                    // 2. Institutional Volume & Delivery Tooltip
+                                    const hr = ohlcCandle;
+                                    let descTxt = hr._vDesc || '';
+                                    const delTxt = (hr.delivPer !== undefined && hr.delivPer > 0)
+                                        ? `Vol: ${fmtV(hr.vol)} | Deliv: ${fmtV(hr.vol * hr.delivPer / 100)} (${hr.delivPer.toFixed(1)}%)`
+                                        : `Vol: ${fmtV(hr.vol)} | Deliv: N/A`;
+                                    descTxt = hr._vDesc ? `${hr._vDesc} | ${delTxt}` : delTxt;
+
+                                    if (descTxt) {
+                                        pc.font = '600 9px "Lexend",monospace';
+                                        const dtW = pc.measureText(descTxt).width + 12;
+                                        const isLeft = hx > W / 2;
+                                        const bx = isLeft ? hx - dtW - 8 : hx + 8;
+                                        const by = Math.max(PP.t + 2, hy - 20);
+
+                                        pc.fillStyle = 'rgba(18, 18, 26, 0.9)';
+                                        pc.beginPath(); 
+                                        if (pc.roundRect) {
+                                            pc.roundRect(bx, by, dtW, 18, 4);
+                                        } else {
+                                            pc.rect(bx, by, dtW, 18);
+                                        }
+                                        pc.fill();
+                                        pc.strokeStyle = hr._vColor || 'rgba(255,255,255,0.2)';
+                                        pc.lineWidth = 1; pc.stroke();
+
+                                        pc.fillStyle = '#ffffff';
+                                        pc.textAlign = 'center';
+                                        pc.textBaseline = 'middle';
+                                        pc.fillText(descTxt, bx + dtW / 2, by + 9);
+                                    }
+                                }
                             }
                         }
                     }
@@ -11842,7 +12195,8 @@
                 /* ════════════════════════════════════════
                    VOLUME CHART (bottom panel)
                 ════════════════════════════════════════ */
-                const VP = isFs ? { t: 4, b: 20, l: 8, r: 70 } : { t: 3, b: 14, l: 6, r: 48 };
+                if (!isFs) {
+                    const VP = { t: 3, b: 14, l: 6, r: 48 };
                 const vW2 = W - VP.l - VP.r;
                 const vH2 = VH - VP.t - VP.b;
 
@@ -12013,6 +12367,7 @@
 
                     vc.restore();
                 }
+                } // End if (!isFs)
 
                 /* ════════════════════════════════════════
                    INDICATORS PANEL (A/D and OBV)
@@ -12162,6 +12517,90 @@
                         }
 
                         ic.restore();
+                    }
+                }
+
+                /* ════════════════════════════════════════
+                   MANSFIELD RS OSCILLATOR PANE (full-screen only)
+                ════════════════════════════════════════ */
+                if (rsc && RSH > 0) {
+                    const RP = { t: 6, b: 8, l: 8, r: 70 };
+                    const rH = RSH - RP.t - RP.b;
+
+                    // Collect visible Mansfield RS values
+                    const rsVals = raw.map(r => r.rsMansfield).filter(v => v !== null);
+                    let rsMin = Math.min(...rsVals, 0);
+                    let rsMax = Math.max(...rsVals, 0);
+                    const rsPad = Math.max(0.5, (rsMax - rsMin) * 0.1);
+                    rsMin -= rsPad; rsMax += rsPad;
+                    const rsRange = rsMax - rsMin || 1;
+
+                    const toYRS = v => RP.t + rH * (1 - (v - rsMin) / rsRange);
+                    const zeroY = toYRS(0);
+
+                    // Background
+                    rsc.fillStyle = '#000000'; rsc.fillRect(0, 0, W, RSH);
+
+                    // Separator line at top
+                    rsc.strokeStyle = 'rgba(255,255,255,0.15)'; rsc.lineWidth = 0.8;
+                    rsc.beginPath(); rsc.moveTo(0, 0); rsc.lineTo(W, 0); rsc.stroke();
+
+                    // Zero line (dashed)
+                    rsc.strokeStyle = 'rgba(255,255,255,0.25)'; rsc.lineWidth = 0.6; rsc.setLineDash([4, 4]);
+                    rsc.beginPath(); rsc.moveTo(RP.l, zeroY); rsc.lineTo(W - RP.r, zeroY); rsc.stroke();
+                    rsc.setLineDash([]);
+
+                    // Histogram bars
+                    raw.forEach((r, i) => {
+                        const v = r.rsMansfield;
+                        if (v === null || v === undefined) return;
+                        const x = toX(i);
+                        const bTop = Math.min(zeroY, toYRS(v));
+                        const bBot = Math.max(zeroY, toYRS(v));
+                        const bH = Math.max(1, bBot - bTop);
+                        const bW2 = Math.max(1.5, Math.min(8, (W / n) * 0.55));
+                        rsc.fillStyle = v >= 0 ? 'rgba(0, 230, 118, 0.65)' : 'rgba(255, 77, 79, 0.65)';
+                        rsc.fillRect(x - bW2 / 2, bTop, bW2, bH);
+                    });
+
+                    // 10W signal line
+                    rsc.strokeStyle = '#facc15'; rsc.lineWidth = 1.2; rsc.lineJoin = 'round';
+                    rsc.beginPath();
+                    let stRS = false;
+                    raw.forEach((r, i) => {
+                        const v = r.rsSma10;
+                        if (v === null || v === undefined) { stRS = false; return; }
+                        const x = toX(i), y = toYRS(v);
+                        stRS ? rsc.lineTo(x, y) : (rsc.moveTo(x, y), stRS = true);
+                    });
+                    rsc.stroke();
+
+                    // Label
+                    rsc.font = 'bold 9px "Lexend",monospace';
+                    rsc.textAlign = 'left'; rsc.textBaseline = 'top';
+                    rsc.fillStyle = 'rgba(255,255,255,0.5)';
+                    rsc.fillText('MRS', RP.l + 2, RP.t + 1);
+
+                    // Current RS value label
+                    const hoverIdx = pCv._hoverIdx;
+                    const lastR = raw[raw.length - 1];
+                    const displayR = (hoverIdx !== undefined && hoverIdx !== null) ? raw[hoverIdx] : lastR;
+                    const rsVal = displayR && displayR.rsMansfield !== null ? displayR.rsMansfield : null;
+                    if (rsVal !== null) {
+                        const rsStr = (rsVal >= 0 ? '+' : '') + rsVal.toFixed(2);
+                        rsc.font = 'bold 9px "Lexend",monospace';
+                        rsc.textAlign = 'right'; rsc.textBaseline = 'middle';
+                        rsc.fillStyle = rsVal >= 0 ? '#00e676' : '#ff4d4f';
+                        rsc.fillText(rsStr, W - 4, toYRS(rsVal));
+                    }
+
+                    // Crosshair vertical line
+                    if (pCv._hoverX !== undefined && pCv._hoverX !== null) {
+                        rsc.save();
+                        rsc.strokeStyle = 'rgba(255,255,255,0.4)';
+                        rsc.lineWidth = 0.8; rsc.setLineDash([4, 4]);
+                        rsc.beginPath(); rsc.moveTo(pCv._hoverX, RP.t); rsc.lineTo(pCv._hoverX, RSH - RP.b); rsc.stroke();
+                        rsc.restore();
                     }
                 }
 
@@ -15128,6 +15567,107 @@
             box-shadow: 0 0 8px rgba(204, 255, 0, 0.40);
         }
 
+        .pead-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            height: 16px;
+            padding: 0 4px;
+            font-size: 8.5px;
+            font-weight: 800;
+            font-family: 'Lexend', sans-serif;
+            background: rgba(250, 204, 21, 0.15);
+            border: 1px solid rgba(250, 204, 21, 0.60);
+            color: #facc15;
+            border-radius: 3px;
+            letter-spacing: 0.02em;
+            line-height: 1;
+            flex-shrink: 0;
+            cursor: help;
+            user-select: none;
+            white-space: nowrap;
+            box-shadow: 0 0 8px rgba(250, 204, 21, 0.40);
+        }
+
+        .pivot-proximity-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            height: 16px;
+            padding: 0 4px;
+            font-size: 8.5px;
+            font-weight: 800;
+            font-family: 'Lexend', sans-serif;
+            background: rgba(168, 85, 247, 0.15);
+            border: 1px solid rgba(168, 85, 247, 0.60);
+            color: #a855f7;
+            border-radius: 3px;
+            letter-spacing: 0.02em;
+            line-height: 1;
+            flex-shrink: 0;
+            cursor: help;
+            user-select: none;
+            white-space: nowrap;
+            box-shadow: 0 0 8px rgba(168, 85, 247, 0.40);
+        }
+
+        .tab-breadth.active {
+            background: rgba(129, 140, 248, 0.1) !important;
+            color: #818cf8 !important;
+            border-bottom: 2px solid #818cf8 !important;
+        }
+
+        .breadth-section-title {
+            color: rgba(255,255,255,0.9);
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 4px;
+        }
+
+        .breadth-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11.5px;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .breadth-table th {
+            color: rgba(255,255,255,0.6);
+            font-weight: 600;
+            text-transform: uppercase;
+            padding: 6px 4px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            user-select: none;
+        }
+
+        .breadth-table th:hover {
+            color: #fff;
+            background: rgba(255,255,255,0.05);
+        }
+
+        .breadth-table td {
+            padding: 8px 4px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            vertical-align: middle;
+        }
+
+        .breadth-table tr:hover td {
+            background: rgba(255,255,255,0.04);
+        }
+
+        .breadth-name {
+            font-weight: 600;
+            color: #e2e8f0;
+            max-width: 120px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
         /* ── Surveillance Flags column (right side, next to tech-score-box) ── */
         .surv-flags-col {
             display: flex;
@@ -16020,6 +16560,28 @@
         #fs-chart-modal select:focus {
             border-color: rgba(29, 111, 232, 0.6) !important;
             outline: none;
+        }
+
+        #fs-chart-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+            z-index: 10000;
+            flex-direction: column;
+            color: #fff;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            touch-action: none;
+            pointer-events: none;
+        }
+
+        #fs-chart-modal > * {
+            pointer-events: auto;
         }
 
         #fs-chart-modal label {
@@ -17052,6 +17614,7 @@
                 </div>
                 <canvas id="fs-chart-pcv" style="display:none;"></canvas>
                 <canvas id="fs-chart-vcv" style="display:none;"></canvas>
+                <canvas id="fs-chart-rscv" style="display:none;"></canvas>
                 <!-- Drawing overlay -->
                 <canvas id="fs-draw-canvas"></canvas>
                 <!-- Transparent navigation buttons -->
@@ -18687,7 +19250,7 @@
                     carryPx = 0;
                     lastX = getChartX(e);
                     wrap.classList.add('fs-panning');
-                    try { wrap.setPointerCapture(e.pointerId); } catch (err) { }
+                    // Removed setPointerCapture to allow events to reach canvases for crosshair
                     e.preventDefault();
                 });
 
@@ -18714,7 +19277,7 @@
                     dragActive = false;
                     carryPx = 0;
                     wrap.classList.remove('fs-panning');
-                    try { wrap.releasePointerCapture(e.pointerId); } catch (err) { }
+                    // Removed releasePointerCapture
                 };
 
                 wrap.addEventListener('pointerup', stopDrag);
