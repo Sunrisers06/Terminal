@@ -18572,13 +18572,15 @@
                 }, { passive: false });
 
                 // ── Mousemove: show live preview for in-progress trend ──
-                canvas.addEventListener('mousemove', function (e) {
+                function onPreviewMove(e) {
                     if (!_fsDrawPending || window._fsDrawMode !== 'trend') return;
                     const coords = _getCoords(e);
                     _fsDrawPending.x2 = coords.mx;
                     _fsDrawPending.y2 = coords.my;
                     _fsPaintDrawings();
-                });
+                }
+                canvas.addEventListener('mousemove', onPreviewMove);
+                canvas.addEventListener('touchmove', onPreviewMove, { passive: true });
 
                 // ── Right-click: cancel current drawing / deactivate mode ──
                 canvas.addEventListener('contextmenu', function (e) {
@@ -18730,7 +18732,10 @@
             window._getRotatedCoords = function (e, canvas) {
                 const rect = canvas.getBoundingClientRect();
                 let clientX = e.clientX, clientY = e.clientY;
-                if (e.touches && e.touches.length > 0) {
+                if (e.changedTouches && e.changedTouches.length > 0) {
+                    clientX = e.changedTouches[0].clientX;
+                    clientY = e.changedTouches[0].clientY;
+                } else if (e.touches && e.touches.length > 0) {
                     clientX = e.touches[0].clientX;
                     clientY = e.touches[0].clientY;
                 }
