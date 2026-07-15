@@ -11538,37 +11538,100 @@
                 pc.strokeStyle = 'rgba(255,255,255,0.15)'; pc.lineWidth = 0.8; pc.setLineDash([]);
                 pc.beginPath(); pc.moveTo(0, PH - 1); pc.lineTo(W, PH - 1); pc.stroke();
 
-                // ── Date labels at bottom — white/light gray, last one right-aligned ──
+                // ── Date labels at bottom — TradingView style: scan for date boundaries ──
                 pc.textBaseline = 'top';
-                const step = Math.max(1, Math.floor(n / 4));
 
-                const fmtChartDate = d => {
+                const fmtChartDate = dateVal => {
+                    const d = dateVal instanceof Date ? dateVal : new Date(dateVal);
+                    if (!d || isNaN(d.getTime())) return '';
                     const mos = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
                     if (pCv.id === 'fs-chart-pcv') {
-                        return d.getDate() + ' ' + mos[d.getMonth()] + ' \'' + String(d.getFullYear()).slice(-2);
+                        return d.getDate() + ' ' + mos[d.getMonth()] + ' ' + d.getFullYear();
                     }
-                    return d.getDate() + ' ' + mos[d.getMonth()];
+                    return d.getDate() + ' ' + mos[d.getMonth()] + " '" + String(d.getFullYear()).slice(-2);
                 };
 
-                raw.forEach((r, i) => {
-                    const isLast = (i === raw.length - 1);
-                    if (!isLast && (i % step !== 0 || (raw.length - 1 - i) < Math.max(2, step * 0.6))) return;
+                {
+                    const _mos = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-                    let displayDate = r.date;
-                    const label = fmtChartDate(displayDate);
-
-                    if (isLast) {
-                        pc.font = isFs ? 'bold 12px "Lexend",monospace' : 'bold 8.5px "Lexend",monospace';
-                        pc.fillStyle = '#ffffff';
-                        pc.textAlign = 'right';
-                        pc.fillText(label, W - PP.r, PH - PP.b + (isFs ? 6 : 4));
-                    } else {
-                        pc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 7.5px "Lexend",monospace';
-                        pc.fillStyle = '#e2e8f0';
-                        pc.textAlign = 'center';
-                        pc.fillText(label, toX(i), PH - PP.b + (isFs ? 6 : 4));
+                    // Determine visible date span to pick tick granularity (months)
+                    const _d0 = raw[0] ? (raw[0].date instanceof Date ? raw[0].date : new Date(raw[0].date)) : null;
+                    const _d1 = raw[raw.length - 1] ? (raw[raw.length - 1].date instanceof Date ? raw[raw.length - 1].date : new Date(raw[raw.length - 1].date)) : null;
+                    let tickMonths = 1;
+                    if (_d0 && _d1 && !isNaN(_d0) && !isNaN(_d1)) {
+                        const span = (_d1.getFullYear() - _d0.getFullYear()) * 12 + (_d1.getMonth() - _d0.getMonth());
+                        if (span > 60) tickMonths = 12;      // > 5 years  → yearly
+                        else if (span > 36) tickMonths = 6;  // > 3 years  → semi-annual
+                        else if (span > 18) tickMonths = 3;  // > 18 months → quarterly
+                        else if (span > 9) tickMonths = 2;  // > 9 months  → bi-monthly
+                        else tickMonths = 1;  // ≤ 9 months  → monthly
                     }
-                });
+
+                    // Minimum pixel gap between labels to prevent overlap
+                    const minPxGap = isFs ? 60 : 36;
+                    let lastLabelX = -Infinity;
+                    let lastTickYear = null;
+                    let lastTickYM = -1; // yr*12+mo, to skip duplicate candles in same month
+
+                    raw.forEach((r, i) => {
+                        try {
+                            const d = r.date instanceof Date ? r.date : new Date(r.date);
+                            if (!d || isNaN(d.getTime())) return;
+
+                            const yr = d.getFullYear();
+                            const mo = d.getMonth(); // 0-based
+
+                            // Only fire at month boundaries aligned to tickMonths
+                            if (mo % tickMonths !== 0) return;
+
+                            // Only the FIRST candle in that boundary month
+                            const ymKey = yr * 12 + mo;
+                            if (ymKey === lastTickYM) return;
+                            lastTickYM = ymKey;
+
+                            const x = toX(i);
+
+                            // Don't overlap previous label
+                            if (x - lastLabelX < minPxGap) return;
+
+                            // Don't draw too close to right edge (last-candle label handles that)
+                            if (x > W - PP.r - minPxGap * 0.5) return;
+
+                            // Label: year on year change (or if Jan), month name otherwise
+                            let label;
+                            if (yr !== lastTickYear && lastTickYear !== null) {
+                                label = String(yr);
+                            } else if (mo === 0) {
+                                label = String(yr);
+                            } else {
+                                label = _mos[mo];
+                            }
+                            lastTickYear = yr;
+                            lastLabelX = x;
+
+                            pc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 7.5px "Lexend",monospace';
+                            pc.fillStyle = '#e2e8f0';
+                            pc.textAlign = 'center';
+                            pc.fillText(label, x, PH - PP.b + (isFs ? 6 : 4));
+                        } catch (e) {
+                            console.error('Error drawing X-axis date label:', e);
+                        }
+                    });
+
+                    // Always draw the last candle's month at the right edge
+                    if (raw.length > 0) {
+                        try {
+                            const lastD = raw[raw.length - 1].date instanceof Date ? raw[raw.length - 1].date : new Date(raw[raw.length - 1].date);
+                            if (lastD && !isNaN(lastD.getTime())) {
+                                const lastLabel = _mos[lastD.getMonth()];
+                                pc.font = isFs ? 'bold 12px "Lexend",monospace' : 'bold 8.5px "Lexend",monospace';
+                                pc.fillStyle = '#ffffff';
+                                pc.textAlign = 'right';
+                                pc.fillText(lastLabel, W - PP.r, PH - PP.b + (isFs ? 6 : 4));
+                            }
+                        } catch (e) { /* ignore */ }
+                    }
+                }
 
                 // Draw crosshair if hovering
                 if (pCv._hoverX !== undefined && pCv._hoverX !== null) {
@@ -11717,7 +11780,7 @@
                     const maVal = maTargetR.volSma9 * volMultiplier;
                     const maTxt = fmtV(maVal);
                     const maY = VP.t + vH2 - (maTargetR.volSma9 / maxV) * vH2;
-                    
+
                     vc.font = isFs ? 'bold 10px "Lexend",monospace' : 'bold 7px "Lexend",monospace';
                     const badgeW = vc.measureText(maTxt).width + (isFs ? 8 : 6);
                     const badgeH = isFs ? 14 : 9;
@@ -16033,6 +16096,7 @@
             flex-direction: column;
             gap: 2px;
         }
+
         #fs-ticker-list::-webkit-scrollbar {
             display: none;
         }
@@ -16049,11 +16113,11 @@
             color: #a1a1aa;
             cursor: pointer;
             user-select: none;
-            transition: background-color 0.25s cubic-bezier(0.25, 1, 0.5, 1), 
-                        color 0.25s cubic-bezier(0.25, 1, 0.5, 1), 
-                        border-left-width 0.25s cubic-bezier(0.25, 1, 0.5, 1),
-                        border-left-color 0.25s cubic-bezier(0.25, 1, 0.5, 1),
-                        padding-left 0.25s cubic-bezier(0.25, 1, 0.5, 1);
+            transition: background-color 0.25s cubic-bezier(0.25, 1, 0.5, 1),
+                color 0.25s cubic-bezier(0.25, 1, 0.5, 1),
+                border-left-width 0.25s cubic-bezier(0.25, 1, 0.5, 1),
+                border-left-color 0.25s cubic-bezier(0.25, 1, 0.5, 1),
+                padding-left 0.25s cubic-bezier(0.25, 1, 0.5, 1);
             box-sizing: border-box;
             border-left: 0px solid transparent;
         }
@@ -16087,7 +16151,7 @@
             color: #e4e4e7;
             letter-spacing: 0.3px;
         }
-        
+
         .fs-ticker-item.selected .fs-item-tk {
             color: #22d3ee;
         }
@@ -16111,11 +16175,31 @@
             line-height: 1;
             display: inline-block;
         }
-        .fs-list-rank.green { background: rgba(16, 185, 129, 0.15); color: #10b981; }
-        .fs-list-rank.blue { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
-        .fs-list-rank.orange { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
-        .fs-list-rank.red { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
-        .fs-list-rank.gray { background: rgba(113, 113, 122, 0.15); color: #717172; }
+
+        .fs-list-rank.green {
+            background: rgba(16, 185, 129, 0.15);
+            color: #10b981;
+        }
+
+        .fs-list-rank.blue {
+            background: rgba(59, 130, 246, 0.15);
+            color: #3b82f6;
+        }
+
+        .fs-list-rank.orange {
+            background: rgba(245, 158, 11, 0.15);
+            color: #f59e0b;
+        }
+
+        .fs-list-rank.red {
+            background: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+        }
+
+        .fs-list-rank.gray {
+            background: rgba(113, 113, 122, 0.15);
+            color: #717172;
+        }
 
         .fs-ticker-block {
             display: flex;
@@ -16727,7 +16811,8 @@
             </div>
 
             <!-- Group & Period filters -->
-            <div class="fs-section" style="display: flex; flex-direction: column; gap: 8px; padding: 6px 14px 10px 14px;">
+            <div class="fs-section"
+                style="display: flex; flex-direction: column; gap: 8px; padding: 6px 14px 10px 14px;">
                 <div class="fs-sel-wrap" style="width: 100%;">
                     <select id="fs-group-select" class="fs-sel" onchange="updateFSTickers(false)"></select>
                 </div>
@@ -16735,7 +16820,8 @@
                     <input type="hidden" id="fs-duration-select" value="3y">
                     <button class="fs-pill" data-value="1y" onclick="window.selectFsDuration('1y')">1Y</button>
                     <button class="fs-pill" data-value="2y" onclick="window.selectFsDuration('2y')">2Y</button>
-                    <button class="fs-pill active-pill" data-value="3y" onclick="window.selectFsDuration('3y')">3Y</button>
+                    <button class="fs-pill active-pill" data-value="3y"
+                        onclick="window.selectFsDuration('3y')">3Y</button>
                     <button class="fs-pill" data-value="4y" onclick="window.selectFsDuration('4y')">4Y</button>
                     <button class="fs-pill" data-value="5y" onclick="window.selectFsDuration('5y')">5Y</button>
                 </div>
@@ -17128,7 +17214,7 @@
             window.selectFsDuration = function (val) {
                 const input = document.getElementById('fs-duration-select');
                 if (input) input.value = val;
-                
+
                 const container = document.querySelector('.fs-period-pills');
                 if (container) {
                     container.querySelectorAll('.fs-pill').forEach(btn => {
@@ -17289,16 +17375,16 @@
                         const item = document.createElement('div');
                         item.className = 'fs-ticker-item';
                         item.setAttribute('data-value', tk);
-                        
+
                         const r = (window.allData || []).find(d => String(d._ticker || '').toUpperCase() === tk.toUpperCase());
                         const rawName = (window.tickerToName && window.tickerToName[tk]) || (r ? r._coName : '');
                         const coNameFull = rawName || '';
-                        
+
                         const sRnk = r ? parseFloat(r._sectorRank) : NaN;
                         const sRnkCls = isNaN(sRnk) ? 'gray' : (sRnk <= 5 ? 'green' : (sRnk <= 10 ? 'blue' : (sRnk <= 15 ? 'orange' : 'red')));
                         const sRnkDisp = isNaN(sRnk) ? '' : `#${Math.round(sRnk)}`;
                         const sRnkBadge = sRnkDisp ? `<span class="fs-list-rank ${sRnkCls}">${sRnkDisp}</span>` : '';
-                        
+
                         item.innerHTML = `
                             <div class="fs-item-left">
                                 <span class="fs-item-tk">${tk}</span>
