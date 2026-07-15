@@ -10968,6 +10968,124 @@
                         trimIdx--;
                     }
                     currentData = currentData.slice(0, trimIdx + 1);
+                    // ── Sub-candle animation: replace last candle with partial version ──
+                    if (window._fsReplay.partialCandle && currentData.length > 0) {
+                        const lastFull = currentData[currentData.length - 1];
+                        const pc = window._fsReplay.partialCandle;
+                        // Only inject if it matches the current last candle date
+                        if (pc.date.getTime() === lastFull.date.getTime()) {
+                            const lastIdx = currentData.length - 1;
+                            const merged = { ...lastFull, ...pc };
+
+                            // Recalculate indicators dynamically for the last index (lastIdx)
+                            // 1. MAs (ma10, ma20, ma30, ma40)
+                            const getSma = (period, currentVal) => {
+                                if (currentData.length < period) return null;
+                                let sum = 0;
+                                for (let i = lastIdx - period + 1; i < lastIdx; i++) {
+                                    sum += currentData[i].close;
+                                }
+                                return (sum + currentVal) / period;
+                            };
+                            merged.ma10 = getSma(10, merged.close);
+                            merged.ma20 = getSma(20, merged.close);
+                            merged.ma30 = getSma(30, merged.close);
+                            merged.ma40 = getSma(40, merged.close);
+
+                            // 2. Volume SMAs (volSma9, volSma50)
+                            const getVolSma = (period, currentVal) => {
+                                if (currentData.length < period) return null;
+                                let sum = 0;
+                                for (let i = lastIdx - period + 1; i < lastIdx; i++) {
+                                    sum += currentData[i].vol;
+                                }
+                                return (sum + currentVal) / period;
+                            };
+                            merged.volSma9 = getVolSma(9, merged.vol);
+                            merged.volSma50 = getVolSma(50, merged.vol);
+
+                            // 3. A/D (Accumulation/Distribution)
+                            const prevAd = lastIdx > 0 ? currentData[lastIdx - 1].ad : 0;
+                            let mfm = 0;
+                            const range = merged.high - merged.low;
+                            if (range > 0) {
+                                mfm = ((merged.close - merged.low) - (merged.high - merged.close)) / range;
+                            }
+                            merged.ad = prevAd + mfm * merged.vol;
+
+                            // 4. A/D 9 SMA (adSma)
+                            const getAdSma = (period, currentVal) => {
+                                if (currentData.length < period) return null;
+                                let sum = 0;
+                                for (let i = lastIdx - period + 1; i < lastIdx; i++) {
+                                    sum += currentData[i].ad;
+                                }
+                                return (sum + currentVal) / period;
+                            };
+                            merged.adSma = getAdSma(9, merged.ad);
+
+                            // 5. OBV (On Balance Volume)
+                            const prevObv = lastIdx > 0 ? currentData[lastIdx - 1].obv : 0;
+                            const prevClose = lastIdx > 0 ? currentData[lastIdx - 1].close : merged.open;
+                            let obvVal = prevObv;
+                            if (merged.close > prevClose) {
+                                obvVal = prevObv + merged.vol;
+                            } else if (merged.close < prevClose) {
+                                obvVal = prevObv - merged.vol;
+                            }
+                            merged.obv = obvVal;
+
+                            // 6. OBV 9 SMA (obvSma)
+                            const getObvSma = (period, currentVal) => {
+                                if (currentData.length < period) return null;
+                                let sum = 0;
+                                for (let i = lastIdx - period + 1; i < lastIdx; i++) {
+                                    sum += currentData[i].obv;
+                                }
+                                return (sum + currentVal) / period;
+                            };
+                            merged.obvSma = getObvSma(9, merged.obv);
+
+                            // 7. ATR 14
+                            const getAtr14 = (period, currentPriceVal) => {
+                                if (currentData.length < period) return null;
+                                // Calculate current TR
+                                const pcVal = lastIdx > 0 ? currentData[lastIdx - 1].close : currentPriceVal;
+                                const trVal = Math.max(merged.high - merged.low, Math.abs(merged.high - pcVal), Math.abs(merged.low - pcVal));
+                                // Sum previous TRs
+                                let sum = 0;
+                                for (let i = lastIdx - period + 1; i < lastIdx; i++) {
+                                    // TR for index i
+                                    const prevPc = i > 0 ? currentData[i - 1].close : currentData[i].open;
+                                    const prevTr = Math.max(currentData[i].high - currentData[i].low, Math.abs(currentData[i].high - prevPc), Math.abs(currentData[i].low - prevPc));
+                                    sum += prevTr;
+                                }
+                                return (sum + trVal) / period;
+                            };
+                            merged.atr14 = getAtr14(14, merged.close);
+
+                            // 8. hUpV15 and hDnV15
+                            let maxUp = 0, maxDn = 0;
+                            const start15 = Math.max(0, lastIdx - 15 + 1);
+                            for (let j = start15; j < lastIdx; j++) {
+                                const rj = currentData[j];
+                                if (rj.close > rj.open) {
+                                    if (rj.vol > maxUp) maxUp = rj.vol;
+                                } else if (rj.close < rj.open) {
+                                    if (rj.vol > maxDn) maxDn = rj.vol;
+                                }
+                            }
+                            if (merged.close > merged.open) {
+                                if (merged.vol > maxUp) maxUp = merged.vol;
+                            } else if (merged.close < merged.open) {
+                                if (merged.vol > maxDn) maxDn = merged.vol;
+                            }
+                            merged.hUpV15 = maxUp;
+                            merged.hDnV15 = maxDn;
+
+                            currentData = currentData.slice(0, -1).concat([merged]);
+                        }
+                    }
                 }
 
                 if (!currentData.length) {
@@ -11268,83 +11386,6 @@
                 // Background — pure dark black
                 pc.fillStyle = '#000000'; pc.fillRect(0, 0, W, PH);
 
-                // ── Horizontal dashed grid lines with RIGHT-aligned price labels ──
-                const nGridLines = 5;
-                pc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 8px "Lexend",monospace'; pc.textAlign = 'right'; pc.textBaseline = 'middle';
-                for (let g = 0; g <= nGridLines; g++) {
-                    const frac = g / nGridLines;
-                    const val = Math.exp(logMax - frac * logR);
-                    const y = PP.t + pH * frac;
-                    // Dashed grid line
-                    pc.strokeStyle = 'rgba(255,255,255,0.08)';
-                    pc.lineWidth = 0.6;
-                    pc.setLineDash([3, 4]);
-                    pc.beginPath(); pc.moveTo(PP.l, y); pc.lineTo(W - PP.r, y); pc.stroke();
-                    pc.setLineDash([]);
-                    // Price label — full white bold, right-aligned flush to right edge
-                    pc.fillStyle = '#ffffff';
-                    pc.fillText(fmtP(val), W - 4, y);
-                }
-
-                // ── MA lines ──
-                // MA10: Gold Bold line
-                pc.strokeStyle = '#ffd700'; pc.lineWidth = 2.0; pc.lineJoin = 'round'; pc.lineCap = 'round'; pc.setLineDash([]);
-                pc.beginPath(); let st = false;
-                raw.forEach((r, i) => {
-                    if (!r.ma10) return;
-                    const x = toX(i), y = toY(r.ma10);
-                    st ? pc.lineTo(x, y) : (pc.moveTo(x, y), st = true);
-                }); pc.stroke();
-
-                // MA20: Blue line
-                pc.strokeStyle = '#2563eb'; pc.lineWidth = 1.2; pc.lineJoin = 'round'; pc.lineCap = 'round'; pc.setLineDash([]);
-                pc.beginPath(); st = false;
-                raw.forEach((r, i) => {
-                    if (!r.ma20) return;
-                    const x = toX(i), y = toY(r.ma20);
-                    st ? pc.lineTo(x, y) : (pc.moveTo(x, y), st = true);
-                }); pc.stroke();
-
-                // MA30: Lavender line
-                pc.strokeStyle = '#8b5cf6'; pc.lineWidth = 1.2; pc.lineJoin = 'round'; pc.lineCap = 'round'; pc.setLineDash([]);
-                pc.beginPath(); st = false;
-                raw.forEach((r, i) => {
-                    if (!r.ma30) return;
-                    const x = toX(i), y = toY(r.ma30);
-                    st ? pc.lineTo(x, y) : (pc.moveTo(x, y), st = true);
-                }); pc.stroke();
-
-                // MA40: Pink Bold line
-                pc.strokeStyle = '#ec4899'; pc.lineWidth = 2.0; pc.lineJoin = 'round'; pc.lineCap = 'round'; pc.setLineDash([]);
-                pc.beginPath(); st = false;
-                raw.forEach((r, i) => {
-                    if (!r.ma40) return;
-                    const x = toX(i), y = toY(r.ma40);
-                    st ? pc.lineTo(x, y) : (pc.moveTo(x, y), st = true);
-                }); pc.stroke();
-
-                // ── Index Line ──
-                if (raw.length > 0) {
-                    // Index Line (Low Opacity Gray/Blue)
-                    pc.strokeStyle = 'rgba(148, 163, 184, 0.4)'; pc.lineWidth = 1.2; pc.lineJoin = 'round'; pc.lineCap = 'round'; pc.setLineDash([]);
-                    pc.beginPath();
-                    raw.forEach((r, i) => {
-                        const val = (r.benchClose || 1) * benchScale;
-                        const x = toX(i), y = toY(val);
-                        i === 0 ? pc.moveTo(x, y) : pc.lineTo(x, y);
-                    });
-                    pc.stroke();
-
-                    // Index Label at the end of the line
-                    const lastR = raw[raw.length - 1];
-                    const lastVal = (lastR.benchClose || 1) * benchScale;
-                    pc.fillStyle = 'rgba(148, 163, 184, 0.7)';
-                    pc.font = 'bold 8px "Lexend",monospace';
-                    pc.textAlign = 'right';
-                    pc.textBaseline = 'bottom';
-                    pc.fillText(benchTicker, toX(raw.length - 1), toY(lastVal) - 2);
-                }
-
                 // ── Dim Volume Profile — uses ALL available history, mapped onto visible price range ──
                 {
                     const VP_BINS = 40;
@@ -11352,9 +11393,10 @@
                     const VP_ALPHA = 0.3;       // dim but visible behind candles
                     const VP_POC_ALPHA = 0.6;   // Point of Control slightly brighter
 
-                    // ── Build a full-history price range for bin mapping (independent of visible window) ──
+                    // ── Build a price range for bin mapping (using truncated data in replay, full history otherwise) ──
+                    const vpDataSource = (window._fsReplay && window._fsReplay.active) ? currentData : allRaw;
                     let vpLogMin = Infinity, vpLogMax = -Infinity;
-                    allRaw.forEach(r => {
+                    vpDataSource.forEach(r => {
                         if (r.low > 0 && Math.log(r.low) < vpLogMin) vpLogMin = Math.log(r.low);
                         if (r.high > 0 && Math.log(r.high) > vpLogMax) vpLogMax = Math.log(r.high);
                     });
@@ -11363,11 +11405,11 @@
                     }
                     const vpLogR = vpLogMax - vpLogMin;
 
-                    // Build bins from ALL available rows (full history)
+                    // Build bins from the appropriate source
                     const bullBins = new Float64Array(VP_BINS);
                     const bearBins = new Float64Array(VP_BINS);
 
-                    allRaw.forEach(r => {
+                    vpDataSource.forEach(r => {
                         if (!r.vol || r.high <= r.low) return;
                         const isBull = r.close >= r.open;
                         const logLo = Math.log(Math.max(r.low, 0.01));
@@ -11462,6 +11504,83 @@
 
                     pc.globalAlpha = 1;
                     pc.restore();
+                }
+
+                // ── Horizontal dashed grid lines with RIGHT-aligned price labels ──
+                const nGridLines = 5;
+                pc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 8px "Lexend",monospace'; pc.textAlign = 'right'; pc.textBaseline = 'middle';
+                for (let g = 0; g <= nGridLines; g++) {
+                    const frac = g / nGridLines;
+                    const val = Math.exp(logMax - frac * logR);
+                    const y = PP.t + pH * frac;
+                    // Dashed grid line
+                    pc.strokeStyle = 'rgba(255,255,255,0.08)';
+                    pc.lineWidth = 0.6;
+                    pc.setLineDash([3, 4]);
+                    pc.beginPath(); pc.moveTo(PP.l, y); pc.lineTo(W - PP.r, y); pc.stroke();
+                    pc.setLineDash([]);
+                    // Price label — full white bold, right-aligned flush to right edge
+                    pc.fillStyle = '#ffffff';
+                    pc.fillText(fmtP(val), W - 4, y);
+                }
+
+                // ── MA lines ──
+                // MA10: Gold Bold line
+                pc.strokeStyle = '#ffd700'; pc.lineWidth = 2.0; pc.lineJoin = 'round'; pc.lineCap = 'round'; pc.setLineDash([]);
+                pc.beginPath(); let st = false;
+                raw.forEach((r, i) => {
+                    if (!r.ma10) return;
+                    const x = toX(i), y = toY(r.ma10);
+                    st ? pc.lineTo(x, y) : (pc.moveTo(x, y), st = true);
+                }); pc.stroke();
+
+                // MA20: Blue line
+                pc.strokeStyle = '#2563eb'; pc.lineWidth = 1.2; pc.lineJoin = 'round'; pc.lineCap = 'round'; pc.setLineDash([]);
+                pc.beginPath(); st = false;
+                raw.forEach((r, i) => {
+                    if (!r.ma20) return;
+                    const x = toX(i), y = toY(r.ma20);
+                    st ? pc.lineTo(x, y) : (pc.moveTo(x, y), st = true);
+                }); pc.stroke();
+
+                // MA30: Lavender line
+                pc.strokeStyle = '#8b5cf6'; pc.lineWidth = 1.2; pc.lineJoin = 'round'; pc.lineCap = 'round'; pc.setLineDash([]);
+                pc.beginPath(); st = false;
+                raw.forEach((r, i) => {
+                    if (!r.ma30) return;
+                    const x = toX(i), y = toY(r.ma30);
+                    st ? pc.lineTo(x, y) : (pc.moveTo(x, y), st = true);
+                }); pc.stroke();
+
+                // MA40: Pink Bold line
+                pc.strokeStyle = '#ec4899'; pc.lineWidth = 2.0; pc.lineJoin = 'round'; pc.lineCap = 'round'; pc.setLineDash([]);
+                pc.beginPath(); st = false;
+                raw.forEach((r, i) => {
+                    if (!r.ma40) return;
+                    const x = toX(i), y = toY(r.ma40);
+                    st ? pc.lineTo(x, y) : (pc.moveTo(x, y), st = true);
+                }); pc.stroke();
+
+                // ── Index Line ──
+                if (raw.length > 0) {
+                    // Index Line (Low Opacity Gray/Blue)
+                    pc.strokeStyle = 'rgba(148, 163, 184, 0.4)'; pc.lineWidth = 1.2; pc.lineJoin = 'round'; pc.lineCap = 'round'; pc.setLineDash([]);
+                    pc.beginPath();
+                    raw.forEach((r, i) => {
+                        const val = (r.benchClose || 1) * benchScale;
+                        const x = toX(i), y = toY(val);
+                        i === 0 ? pc.moveTo(x, y) : pc.lineTo(x, y);
+                    });
+                    pc.stroke();
+
+                    // Index Label at the end of the line
+                    const lastR = raw[raw.length - 1];
+                    const lastVal = (lastR.benchClose || 1) * benchScale;
+                    pc.fillStyle = 'rgba(148, 163, 184, 0.7)';
+                    pc.font = 'bold 8px "Lexend",monospace';
+                    pc.textAlign = 'right';
+                    pc.textBaseline = 'bottom';
+                    pc.fillText(benchTicker, toX(raw.length - 1), toY(lastVal) - 2);
                 }
 
                 // ── Candles: all white, up hollow, down solid ──
@@ -13458,15 +13577,20 @@
                         keyMap[wc] = found || null;
                     });
 
-                    const rows = rawRows.map(raw => {
+                    const rows = [];
+                    for (let i = 0; i < rawRows.length; i++) {
+                        const raw = rawRows[i];
                         const row = {};
-                        wantedCols.forEach(wc => {
+                        let hasData = false;
+                        for (let j = 0; j < wantedCols.length; j++) {
+                            const wc = wantedCols[j];
                             const pk = keyMap[wc];
-                            row[wc] = pk ? String(raw[pk] || '').trim() : '';
-                        });
-                        row._tok = wantedCols.map(wc => row[wc]).join(' ').toLowerCase();
-                        return row;
-                    }).filter(r => wantedCols.some(wc => r[wc])); // Skip empty rows
+                            const val = pk ? String(raw[pk] || '').trim() : '';
+                            row[wc] = val;
+                            if (val) hasData = true;
+                        }
+                        if (hasData) rows.push(row);
+                    }
 
                     _data[sub] = rows;
                     console.log(`[DealBlock] ${sub}: ${rows.length} rows loaded (fast parquet to objects)`);
@@ -13491,51 +13615,11 @@
                 const refreshBtn = document.getElementById('deal-refresh-btn');
                 if (refreshBtn) { refreshBtn.classList.add('spinning'); refreshBtn.disabled = true; }
 
-                // ── Try IDB cache first (skip on forced refresh) ──
-                let loadedFromCache = false;
-                if (!isRefresh && window._idbCache) {
-                    try {
-                        const db = await window._idbCache.openDB();
-                        const rec = await window._idbCache.idbGet(db, 'deal_csvs_v1');
-                        if (rec && rec.ts && (Date.now() - rec.ts < 24 * 60 * 60 * 1000)) {
-                            let json = null;
-                            if (rec.compressed && rec.data && window._idbCache) {
-                                json = await window._idbCache.decompress(rec.data);
-                            } else if (rec.json) { json = rec.json; }
-                            if (json) {
-                                const cached = JSON.parse(json);
-                                ['insider', 'bulk', 'block', 'sast'].forEach(sub => { if (cached[sub]) _data[sub] = cached[sub]; });
-                                loadedFromCache = true;
-                                console.info('[DealBlock] Loaded from IDB cache ⚡');
-                            }
-                        }
-                    } catch (e) { console.warn('[DealBlock] IDB read failed, fetching from network:', e.message); }
-                }
+                // Show loading across all sub-sections
+                ['insider', 'bulk', 'block', 'sast'].forEach(sub => setSubLoading(sub, `⏳ Loading ${sub} trades…`));
 
-                if (!loadedFromCache) {
-                    // Show loading across all sub-sections
-                    ['insider', 'bulk', 'block', 'sast'].forEach(sub => setSubLoading(sub, `⏳ Loading ${sub} trades…`));
-
-                    // Fetch all four independently and in parallel
-                    await Promise.all(['insider', 'bulk', 'block', 'sast'].map(sub => loadOneSub(sub)));
-
-                    // Save to IDB async (non-blocking)
-                    if (window._idbCache) {
-                        (async () => {
-                            try {
-                                const payload = { insider: _data.insider, bulk: _data.bulk, block: _data.block, sast: _data.sast };
-                                const json = JSON.stringify(payload);
-                                const buf = await window._idbCache.compress(json);
-                                const record = buf
-                                    ? { ts: Date.now(), compressed: true, data: buf }
-                                    : { ts: Date.now(), compressed: false, json };
-                                const db = await window._idbCache.openDB();
-                                await window._idbCache.idbSet(db, 'deal_csvs_v1', record);
-                                console.info('[DealBlock] IDB cache saved ⚡');
-                            } catch (e) { console.warn('[DealBlock] IDB save failed (non-critical):', e.message); }
-                        })();
-                    }
-                }
+                // Fetch all four independently and in parallel
+                await Promise.all(['insider', 'bulk', 'block', 'sast'].map(sub => loadOneSub(sub)));
 
                 // Expose for chart strip usage and deal count badges
                 window._dealData = _data;
@@ -13616,6 +13700,8 @@
                     ? overrideQ.toLowerCase()
                     : (document.getElementById('search-input') ? document.getElementById('search-input').value.trim().toLowerCase() : '');
                 const mainParts = mainRaw ? mainRaw.split('|').map(s => s.trim()).filter(Boolean) : [];
+                
+                const wantedCols = COLS[sub];
 
                 _filtered[sub] = _data[sub].filter(row => {
                     // Ticker filter from main search box — EXACT match only
@@ -13624,7 +13710,10 @@
                         if (!mainParts.some(p => ticker === p.trim().toLowerCase())) return false;
                     }
                     // Deal-pane search bar filter
-                    if (q && !row._tok.includes(q)) return false;
+                    if (q) {
+                        if (row._tok === undefined) row._tok = wantedCols.map(wc => row[wc]).join(' ').toLowerCase();
+                        if (!row._tok.includes(q)) return false;
+                    }
                     return true;
                 });
             }
@@ -16862,6 +16951,8 @@
                         <div class="fs-sel-wrap">
                             <select id="fs-replay-speed" class="fs-sel" onchange="window.changeFsReplaySpeed()"
                                 style="font-size:11px;">
+                                <option value="3000">1 Candle / 3 sec</option>
+                                <option value="2000">1 Candle / 2 sec</option>
                                 <option value="1000" selected>1 Candle / sec</option>
                                 <option value="500">2 Candle / sec</option>
                                 <option value="333">3 Candle / sec</option>
@@ -16914,6 +17005,11 @@
                         <button id="fs-draw-trend-btn" class="fs-draw-btn" onclick="window.fsDrawMode('trend')"
                             title="Trend Line">↗ Trend</button>
                     </div>
+                    <button id="fs-quick-trend-btn" class="fs-draw-btn"
+                        style="width:100%; margin-top:4px; font-size:10px; background:rgba(99,179,237,0.10); border-color:rgba(99,179,237,0.35); color:#63b3ed; letter-spacing:0.03em;"
+                        onclick="window.fsToggleQuickTrend()"
+                        title="Click chart to anchor point 1, click again to draw trendline with return %, click once more to clear">📐
+                        Quick Trendline</button>
                     <button class="fs-draw-clear" onclick="window.fsClearDrawings()">🗑 Clear All</button>
                 </div>
             </div>
@@ -17628,11 +17724,104 @@
                 return null;
             }
 
+            // ── Realistic candle formation animation ─────────────────────────────────
+            // Simulates a live price path so the candle forms exactly like on a real
+            // trading terminal: the animated "close" IS the current price tick, and
+            // the high/low grow dynamically as price sweeps through them.
+            //
+            //  Bullish path: Open → Low (dip) → High (surge) → Close
+            //  Bearish path: Open → High (spike) → Low (collapse) → Close
+            //
+            // The price follows smooth eased segments between each waypoint.
+            function _fsAnimateCandle(candle, durationMs) {
+                if (!candle) return;
+                const isBull = candle.close >= candle.open;
+                const o = candle.open, h = candle.high, l = candle.low, c = candle.close;
+
+                // Waypoints: [t_fraction, price] — price path the candle "trades through"
+                // Bullish: dip to low first, then surge to high, then pull back to close
+                // Bearish: spike to high first, then collapse to low, then recover to close
+                const waypoints = isBull
+                    ? [[0, o], [0.28, l], [0.72, h], [1, c]]   // bull path
+                    : [[0, o], [0.28, h], [0.72, l], [1, c]];  // bear path
+
+                let startTime = null;
+
+                // Smooth cubic ease-in-out for natural price feel
+                function ease(t) { return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t; }
+
+                // Get interpolated price at time t ∈ [0,1] along waypoints
+                function priceAt(t) {
+                    for (let i = 0; i < waypoints.length - 1; i++) {
+                        const [t0, p0] = waypoints[i];
+                        const [t1, p1] = waypoints[i + 1];
+                        if (t <= t1) {
+                            const seg = (t - t0) / (t1 - t0);
+                            return p0 + (p1 - p0) * ease(Math.max(0, Math.min(1, seg)));
+                        }
+                    }
+                    return c;
+                }
+
+                function frame(ts) {
+                    if (window._fsReplay.paused || !window._fsReplay.active) {
+                        window._fsReplay.partialCandle = null;
+                        window.renderFullScreenChart();
+                        return;
+                    }
+                    if (!startTime) startTime = ts;
+                    const t = Math.min(1, (ts - startTime) / durationMs);
+
+                    // Current "last traded price" — this IS the candle close at this moment
+                    const currentPrice = priceAt(t);
+
+                    // High and low grow naturally as price sweeps through them
+                    // We need to track the running extremes along the path up to t
+                    let runHigh = o, runLow = o;
+                    const steps = 40; // Sample path up to t for accurate hi/lo
+                    for (let i = 0; i <= steps; i++) {
+                        const pt = (t * i) / steps;
+                        const p = priceAt(pt);
+                        if (p > runHigh) runHigh = p;
+                        if (p < runLow) runLow = p;
+                    }
+                    // Also clamp to real candle extremes (safety)
+                    runHigh = Math.min(runHigh, h);
+                    runLow = Math.max(runLow, l);
+
+                    window._fsReplay.partialCandle = {
+                        date: candle.date,
+                        open: o,
+                        close: currentPrice,   // live "current price"
+                        high: runHigh,          // dynamically growing high wick
+                        low: runLow,            // dynamically growing low wick
+                        vol: Math.round(candle.vol * t) // dynamically growing volume
+                    };
+
+                    window.renderFullScreenChart();
+
+                    if (t < 1) {
+                        window._fsReplay._animRaf = requestAnimationFrame(frame);
+                    } else {
+                        // Snap to final completed candle
+                        window._fsReplay.partialCandle = null;
+                        window.renderFullScreenChart();
+                    }
+                }
+
+                // Cancel any previous animation
+                if (window._fsReplay._animRaf) cancelAnimationFrame(window._fsReplay._animRaf);
+                window._fsReplay.partialCandle = null;
+                window._fsReplay._animRaf = requestAnimationFrame(frame);
+            }
+
             function _fsReplayTick() {
                 if (window._fsReplay.paused || !window._fsReplay.active) return;
                 const statusEl = document.getElementById('fs-replay-status');
 
                 const arr = _fsGetReplayArray();
+                let nextCandle = null;
+
                 if (!arr) {
                     window._fsReplay.currentMaxDate += 86400000;
                 } else {
@@ -17645,12 +17834,11 @@
                     }
                     if (idx < arr.length - 1) {
                         window._fsReplay.currentMaxDate = arr[idx + 1].date.getTime();
+                        nextCandle = arr[idx + 1]; // The candle now being "revealed"
                     } else {
                         window._fsReplay.currentMaxDate += 86400000;
                     }
                 }
-
-                window.renderFullScreenChart();
 
                 if (statusEl) {
                     const d = new Date(window._fsReplay.currentMaxDate);
@@ -17658,8 +17846,25 @@
                 }
 
                 if (window._fsReplay.currentMaxDate >= window._fsReplay.endDate) {
+                    window._fsReplay.partialCandle = null;
                     window.stopFsReplay(true);
                     if (statusEl) statusEl.textContent = 'Done ✔';
+                    return;
+                }
+
+                // Determine animation duration: use ~80% of the tick interval so
+                // the candle fully forms before the next tick fires.
+                const speedSel = document.getElementById('fs-replay-speed');
+                const tickMs = speedSel ? (parseInt(speedSel.value) || 1000) : 1000;
+                const animMs = tickMs * 0.82; // leave ~18% gap between candles
+
+                if (nextCandle && animMs >= 100) {
+                    // Only animate if we have enough time (≥ 100ms)
+                    _fsAnimateCandle(nextCandle, animMs);
+                } else {
+                    // Fast replay (≥5 candles/sec): skip sub-candle animation
+                    window._fsReplay.partialCandle = null;
+                    window.renderFullScreenChart();
                 }
             }
 
@@ -17738,6 +17943,9 @@
 
             window.stopFsReplay = function (keepActive = false) {
                 if (window._fsReplay.timer) { clearInterval(window._fsReplay.timer); window._fsReplay.timer = null; }
+                // Cancel any running sub-candle animation
+                if (window._fsReplay._animRaf) { cancelAnimationFrame(window._fsReplay._animRaf); window._fsReplay._animRaf = null; }
+                window._fsReplay.partialCandle = null;
                 window._fsReplay.paused = false;
                 if (!keepActive) {
                     window._fsReplay.active = false;
@@ -17964,28 +18172,89 @@
             window._fsDrawMode = null;     // 'hline' | 'trend' | null
             let _fsDrawPending = null;     // in-progress trend line
 
+            // ── Quick Trendline state ──
+            // state: 0=idle, 1=first point placed
+            window._fsQTrend = { active: false, state: 0, p1: null };
+            window._fsQLines = [];  // completed trendlines with return%
+
             window.fsDrawMode = function (mode) {
                 const canvas = document.getElementById('fs-draw-canvas');
                 const hBtn = document.getElementById('fs-draw-hline-btn');
                 const tBtn = document.getElementById('fs-draw-trend-btn');
+                const qtBtn = document.getElementById('fs-quick-trend-btn');
                 if (window._fsDrawMode === mode) {
                     window._fsDrawMode = null;
                     if (canvas) canvas.classList.remove('drawing');
-                    [hBtn, tBtn].forEach(b => b && b.classList.remove('active'));
+                    [hBtn, tBtn, qtBtn].forEach(b => b && b.classList.remove('active'));
                 } else {
+                    // Deactivate quick trendline if switching to another mode
+                    if (window._fsQTrend.active) {
+                        window._fsQTrend.active = false;
+                        window._fsQTrend.state = 0;
+                        window._fsQTrend.p1 = null;
+                        if (qtBtn) { qtBtn.classList.remove('active'); qtBtn.textContent = '📐 Quick Trendline'; }
+                    }
                     window._fsDrawMode = mode;
                     if (canvas) canvas.classList.add('drawing');
-                    [hBtn, tBtn].forEach(b => b && b.classList.remove('active'));
+                    [hBtn, tBtn, qtBtn].forEach(b => b && b.classList.remove('active'));
                     if (mode === 'hline' && hBtn) hBtn.classList.add('active');
                     if (mode === 'trend' && tBtn) tBtn.classList.add('active');
                 }
                 _fsPaintDrawings();
             };
 
-            window.fsClearDrawings = function () {
-                window._fsDrawings = [];
+            // ── Toggle Quick Trendline mode ──
+            window.fsToggleQuickTrend = function () {
+                const canvas = document.getElementById('fs-draw-canvas');
+                const qtBtn = document.getElementById('fs-quick-trend-btn');
+                const hBtn = document.getElementById('fs-draw-hline-btn');
+                const tBtn = document.getElementById('fs-draw-trend-btn');
+
+                const wasActive = window._fsQTrend.active;
+                // Deactivate other draw modes
+                window._fsDrawMode = null;
+                [hBtn, tBtn].forEach(b => b && b.classList.remove('active'));
+                _fsDrawPending = null;
+
+                if (wasActive) {
+                    // Turn off
+                    window._fsQTrend.active = false;
+                    window._fsQTrend.state = 0;
+                    window._fsQTrend.p1 = null;
+                    if (canvas) canvas.classList.remove('drawing');
+                    if (qtBtn) { qtBtn.classList.remove('active'); qtBtn.textContent = '📐 Quick Trendline'; }
+                } else {
+                    // Turn on
+                    window._fsQTrend.active = true;
+                    window._fsQTrend.state = 0;
+                    window._fsQTrend.p1 = null;
+                    if (canvas) canvas.classList.add('drawing');
+                    if (qtBtn) { qtBtn.classList.add('active'); qtBtn.textContent = '📐 Click to Anchor…'; }
+                }
                 _fsPaintDrawings();
             };
+
+            window.fsClearDrawings = function () {
+                window._fsDrawings = [];
+                window._fsQLines = [];
+                window._fsQTrend.state = 0;
+                window._fsQTrend.p1 = null;
+                const qtBtn = document.getElementById('fs-quick-trend-btn');
+                if (qtBtn && window._fsQTrend.active) qtBtn.textContent = '📐 Click to Anchor…';
+                _fsPaintDrawings();
+            };
+
+            // Helper: map canvas Y back to price using chart state
+            function _fsYToPrice(y) {
+                const pCv = document.getElementById('fs-chart-pcv');
+                if (!pCv || !pCv._chartState) return null;
+                const st = pCv._chartState;
+                const pH = st.PH - st.PP.t - st.PP.b;
+                if (pH <= 0) return null;
+                const frac = (y - st.PP.t) / pH;
+                const price = Math.exp(Math.log(st.pMax) - frac * st.logR);
+                return isFinite(price) && price > 0 ? price : null;
+            }
 
             function _fsPaintDrawings() {
                 const canvas = document.getElementById('fs-draw-canvas');
@@ -17999,31 +18268,37 @@
                 const ctx = canvas.getContext('2d');
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 ctx.save();
+
+                // ── Render standard drawings (hline / trend) ──
                 ctx.setLineDash([5, 4]);
-                ctx.lineWidth = 1.5;
+                ctx.lineWidth = 2.0; // Thicker lines for better visibility
                 for (const d of window._fsDrawings) {
                     if (d.type === 'hline') {
-                        ctx.strokeStyle = 'rgba(245,158,11,0.7)';
+                        ctx.strokeStyle = '#ff5c00'; // Bright neon orange for Levels
                         ctx.beginPath();
                         ctx.moveTo(0, d.y);
                         ctx.lineTo(canvas.width, d.y);
                         ctx.stroke();
-                        // Price label
                         ctx.setLineDash([]);
-                        ctx.font = 'bold 9px monospace';
-                        ctx.fillStyle = 'rgba(245,158,11,0.85)';
-                        ctx.fillText(d.label || '', canvas.width - 4, d.y - 3);
+                        ctx.font = 'bold 10px monospace';
+                        ctx.fillStyle = '#ff5c00';
+
+                        // Add high contrast text outline/shadow for label readability
+                        ctx.shadowColor = '#000000';
+                        ctx.shadowBlur = 4;
                         ctx.textAlign = 'right';
+                        ctx.fillText(d.label || '', canvas.width - 4, d.y - 4);
+                        ctx.shadowBlur = 0; // Reset shadow
+
                         ctx.setLineDash([5, 4]);
                     } else if (d.type === 'trend') {
-                        ctx.strokeStyle = 'rgba(99,179,237,0.75)';
+                        ctx.strokeStyle = '#00ffff'; // Bright electric cyan for Trends
                         ctx.setLineDash([]);
                         ctx.beginPath();
                         ctx.moveTo(d.x1, d.y1);
                         ctx.lineTo(d.x2, d.y2);
                         ctx.stroke();
-                        // Extend line slightly
-                        ctx.strokeStyle = 'rgba(99,179,237,0.25)';
+                        ctx.strokeStyle = 'rgba(0, 255, 255, 0.35)'; // Cyan extension line
                         ctx.setLineDash([3, 6]);
                         const dx = d.x2 - d.x1, dy = d.y2 - d.y1;
                         if (dx !== 0) {
@@ -18037,11 +18312,152 @@
                         ctx.setLineDash([5, 4]);
                     }
                 }
-                // Draw in-progress line
+
+                // ── Render Quick Trendlines with return % badges ──
+                ctx.setLineDash([]);
+                for (const ql of (window._fsQLines || [])) {
+                    const isUp = ql.retPct >= 0;
+                    const lineColor = isUp ? '#00e676' : '#ff4d4f'; // Brighter solid colors
+                    const bgColor = '#0a0a0c'; // Solid near-black background to block candles/grids
+                    const bdColor = isUp ? '#00e676' : '#ff4d4f'; // Border matches trendline color
+                    const txtColor = isUp ? '#00e676' : '#ff4d4f';
+
+                    // Draw anchor dots
+                    ctx.fillStyle = lineColor;
+                    ctx.beginPath(); ctx.arc(ql.x1, ql.y1, 5, 0, Math.PI * 2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(ql.x2, ql.y2, 5, 0, Math.PI * 2); ctx.fill();
+
+                    // Draw main trendline
+                    ctx.strokeStyle = lineColor;
+                    ctx.lineWidth = 2.5; // Thicker line for high quality look
+                    ctx.beginPath();
+                    ctx.moveTo(ql.x1, ql.y1);
+                    ctx.lineTo(ql.x2, ql.y2);
+                    ctx.stroke();
+
+                    // Draw extended ghost line
+                    const dx = ql.x2 - ql.x1, dy = ql.y2 - ql.y1;
+                    if (Math.abs(dx) > 0.5) {
+                        ctx.strokeStyle = isUp ? 'rgba(0,230,118,0.25)' : 'rgba(255,77,79,0.25)';
+                        ctx.lineWidth = 1.2;
+                        ctx.setLineDash([4, 6]);
+                        const extX = ql.x2 > ql.x1 ? canvas.width : 0;
+                        const extY = ql.y2 + (dy / dx) * (extX - ql.x2);
+                        ctx.beginPath();
+                        ctx.moveTo(ql.x2, ql.y2);
+                        ctx.lineTo(extX, extY);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    }
+
+                    // Return % badge at midpoint
+                    const midX = (ql.x1 + ql.x2) / 2;
+                    const midY = (ql.y1 + ql.y2) / 2;
+                    const retTxt = (isUp ? '▲ +' : '▼ ') + ql.retPct.toFixed(2) + '%';
+                    ctx.font = 'bold 12px "Lexend",monospace';
+                    const tw = ctx.measureText(retTxt).width;
+                    const bW = tw + 16, bH = 22, bR = 6;
+                    const bx = midX - bW / 2, by = midY - bH / 2 - (dy < 0 ? 16 : -16);
+
+                    // Badge shadow
+                    ctx.shadowColor = 'rgba(0,0,0,0.6)';
+                    ctx.shadowBlur = 8;
+                    ctx.shadowOffsetX = 0;
+                    ctx.shadowOffsetY = 2;
+
+                    // Badge background (Solid)
+                    ctx.fillStyle = bgColor;
+                    ctx.beginPath();
+                    ctx.roundRect(bx, by, bW, bH, bR);
+                    ctx.fill();
+
+                    // Reset shadow for border and text
+                    ctx.shadowBlur = 0;
+                    ctx.shadowOffsetY = 0;
+
+                    // Badge border
+                    ctx.strokeStyle = bdColor;
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.roundRect(bx, by, bW, bH, bR);
+                    ctx.stroke();
+
+                    // Badge text
+                    ctx.fillStyle = txtColor;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(retTxt, midX, by + bH / 2);
+
+                    // Price labels at endpoints with high-contrast background pill
+                    ctx.font = 'bold 9px "Lexend",monospace';
+                    if (ql.price1 != null) {
+                        const p1Txt = ql.price1 >= 1000 ? ql.price1.toFixed(0) : ql.price1.toFixed(2);
+                        const twP = ctx.measureText(p1Txt).width;
+                        const align = ql.x1 < canvas.width / 2 ? 'left' : 'right';
+                        const px = ql.x1 + (align === 'left' ? 8 : -twP - 8);
+                        const py = ql.y1 - 15;
+
+                        ctx.fillStyle = 'rgba(10, 10, 12, 0.85)';
+                        ctx.beginPath();
+                        ctx.roundRect(px - 4, py - 2, twP + 8, 13, 3);
+                        ctx.fill();
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+                        ctx.lineWidth = 0.8;
+                        ctx.stroke();
+
+                        ctx.fillStyle = '#ffffff';
+                        ctx.textAlign = 'left';
+                        ctx.textBaseline = 'top';
+                        ctx.fillText(p1Txt, px, py - 1);
+                    }
+                    if (ql.price2 != null) {
+                        const p2Txt = ql.price2 >= 1000 ? ql.price2.toFixed(0) : ql.price2.toFixed(2);
+                        const twP = ctx.measureText(p2Txt).width;
+                        const align = ql.x2 < canvas.width / 2 ? 'left' : 'right';
+                        const px = ql.x2 + (align === 'left' ? 8 : -twP - 8);
+                        const py = ql.y2 - 15;
+
+                        ctx.fillStyle = 'rgba(10, 10, 12, 0.85)';
+                        ctx.beginPath();
+                        ctx.roundRect(px - 4, py - 2, twP + 8, 13, 3);
+                        ctx.fill();
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+                        ctx.lineWidth = 0.8;
+                        ctx.stroke();
+
+                        ctx.fillStyle = '#ffffff';
+                        ctx.textAlign = 'left';
+                        ctx.textBaseline = 'top';
+                        ctx.fillText(p2Txt, px, py - 1);
+                    }
+                    ctx.lineWidth = 1.5;
+                }
+
+                // ── Render Quick Trendline first anchor point (pending) ──
+                if (window._fsQTrend.active && window._fsQTrend.state === 1 && window._fsQTrend.p1) {
+                    const p1 = window._fsQTrend.p1;
+                    ctx.setLineDash([3, 4]);
+                    ctx.strokeStyle = 'rgba(99,179,237,0.60)';
+                    ctx.lineWidth = 1.0;
+                    // Crosshair marker at anchor
+                    ctx.beginPath(); ctx.moveTo(p1.x - 12, p1.y); ctx.lineTo(p1.x + 12, p1.y); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(p1.x, p1.y - 12); ctx.lineTo(p1.x, p1.y + 12); ctx.stroke();
+                    ctx.setLineDash([]);
+                    ctx.fillStyle = '#63b3ed';
+                    ctx.beginPath(); ctx.arc(p1.x, p1.y, 4.5, 0, Math.PI * 2); ctx.fill();
+                    // "Anchor set" label
+                    ctx.font = 'bold 10px "Lexend",monospace';
+                    ctx.fillStyle = 'rgba(99,179,237,0.85)';
+                    ctx.textAlign = p1.x > canvas.width / 2 ? 'right' : 'left';
+                    ctx.textBaseline = 'top';
+                    ctx.fillText('📍 Click 2nd point', p1.x + (ctx.textAlign === 'left' ? 12 : -12), p1.y + 8);
+                }
+
+                // Draw in-progress standard trend line
                 if (_fsDrawPending && _fsDrawPending.x2 != null) {
-                    ctx.strokeStyle = 'rgba(99,179,237,0.5)';
+                    ctx.strokeStyle = 'rgba(0, 255, 255, 0.60)';
                     ctx.setLineDash([4, 4]);
-                    ctx.lineWidth = 1.2;
+                    ctx.lineWidth = 1.5;
                     ctx.beginPath();
                     ctx.moveTo(_fsDrawPending.x1, _fsDrawPending.y1);
                     ctx.lineTo(_fsDrawPending.x2, _fsDrawPending.y2);
@@ -18054,31 +18470,68 @@
                 const canvas = document.getElementById('fs-draw-canvas');
                 if (!canvas) return;
 
-                canvas.addEventListener('click', function (e) {
-                    if (!window._fsDrawMode) return;
-                    const coords = window._getRotatedCoords ? window._getRotatedCoords(e, canvas) : (() => {
+                // ── Unified coords helper ──
+                function _getCoords(e) {
+                    return window._getRotatedCoords ? window._getRotatedCoords(e, canvas) : (() => {
                         const rect = canvas.getBoundingClientRect();
-                        return { mx: e.clientX - rect.left, my: e.clientY - rect.top };
+                        const src = e.changedTouches ? e.changedTouches[0] : e;
+                        return { mx: src.clientX - rect.left, my: src.clientY - rect.top };
                     })();
-                    const x = coords.mx;
-                    const y = coords.my;
+                }
+
+                // ── Handle a tapped/clicked point on the canvas ──
+                function _handleCanvasPoint(x, y) {
+                    // Quick Trendline mode takes priority
+                    if (window._fsQTrend && window._fsQTrend.active) {
+                        const qtBtn = document.getElementById('fs-quick-trend-btn');
+                        const state = window._fsQTrend.state;
+
+                        if (state === 0) {
+                            // ── Click 1: Set anchor ──
+                            const price1 = _fsYToPrice(y);
+                            window._fsQTrend.p1 = { x, y, price: price1 };
+                            window._fsQTrend.state = 1;
+                            if (qtBtn) qtBtn.textContent = '📐 Click 2nd Point…';
+                            _fsPaintDrawings();
+
+                        } else if (state === 1) {
+                            // ── Click 2: Draw trendline with return % ──
+                            const p1 = window._fsQTrend.p1;
+                            const price1 = p1.price;
+                            const price2 = _fsYToPrice(y);
+                            let retPct = 0;
+                            if (price1 && price2 && price1 > 0) {
+                                retPct = ((price2 - price1) / price1) * 100;
+                            }
+                            window._fsQLines.push({
+                                x1: p1.x, y1: p1.y,
+                                x2: x, y2: y,
+                                price1, price2, retPct
+                            });
+                            window._fsQTrend.state = 0;
+                            window._fsQTrend.p1 = null;
+                            if (qtBtn) qtBtn.textContent = '📐 Click to Anchor…';
+                            _fsPaintDrawings();
+                        }
+                        return;
+                    }
+
+                    // Standard draw modes
+                    if (!window._fsDrawMode) return;
 
                     if (window._fsDrawMode === 'hline') {
-                        // Get price label from chart state
                         const pCv = document.getElementById('fs-chart-pcv');
                         let label = '';
                         if (pCv && pCv._chartState) {
                             const st = pCv._chartState;
-                            // Reverse-map y to price (log scale)
-                            const logMin = Math.log(st.pMin || 1);
-                            const logR = st.logR || 1;
                             const pH = st.PH - st.PP.t - st.PP.b;
                             const frac = (y - st.PP.t) / pH;
-                            const price = Math.exp(Math.log(st.pMax || 1) - frac * logR);
+                            const price = Math.exp(Math.log(st.pMax || 1) - frac * (st.logR || 1));
                             label = isFinite(price) ? price.toFixed(1) : '';
                         }
                         window._fsDrawings.push({ type: 'hline', y, label });
                         _fsPaintDrawings();
+
                     } else if (window._fsDrawMode === 'trend') {
                         if (!_fsDrawPending) {
                             _fsDrawPending = { x1: x, y1: y, x2: null, y2: null };
@@ -18088,24 +18541,55 @@
                             _fsPaintDrawings();
                         }
                     }
+                }
+
+                // ── Mouse click ──
+                canvas.addEventListener('click', function (e) {
+                    if (!window._fsDrawMode && !(window._fsQTrend && window._fsQTrend.active)) return;
+                    const coords = _getCoords(e);
+                    _handleCanvasPoint(coords.mx, coords.my);
                 });
 
+                // ── Touch tap (iPad / mobile) ──
+                let _touchStartX = 0, _touchStartY = 0;
+                canvas.addEventListener('touchstart', function (e) {
+                    if (!window._fsDrawMode && !(window._fsQTrend && window._fsQTrend.active)) return;
+                    const coords = _getCoords(e);
+                    _touchStartX = coords.mx;
+                    _touchStartY = coords.my;
+                }, { passive: true });
+
+                canvas.addEventListener('touchend', function (e) {
+                    if (!window._fsDrawMode && !(window._fsQTrend && window._fsQTrend.active)) return;
+                    // Only treat as tap if finger didn't move much (< 10px)
+                    const coords = _getCoords(e);
+                    const dx = coords.mx - _touchStartX, dy = coords.my - _touchStartY;
+                    if (Math.hypot(dx, dy) > 10) return;
+                    e.preventDefault();
+                    _handleCanvasPoint(coords.mx, coords.my);
+                }, { passive: false });
+
+                // ── Mousemove: show live preview for in-progress trend ──
                 canvas.addEventListener('mousemove', function (e) {
                     if (!_fsDrawPending || window._fsDrawMode !== 'trend') return;
-                    const coords = window._getRotatedCoords ? window._getRotatedCoords(e, canvas) : (() => {
-                        const rect = canvas.getBoundingClientRect();
-                        return { mx: e.clientX - rect.left, my: e.clientY - rect.top };
-                    })();
+                    const coords = _getCoords(e);
                     _fsDrawPending.x2 = coords.mx;
                     _fsDrawPending.y2 = coords.my;
                     _fsPaintDrawings();
                 });
 
+                // ── Right-click: cancel current drawing / deactivate mode ──
                 canvas.addEventListener('contextmenu', function (e) {
                     e.preventDefault();
-                    // Right-click cancels current drawing
                     _fsDrawPending = null;
                     window._fsDrawMode = null;
+                    // Also cancel quick trendline pending point
+                    if (window._fsQTrend && window._fsQTrend.active) {
+                        window._fsQTrend.state = 0;
+                        window._fsQTrend.p1 = null;
+                        const qtBtn = document.getElementById('fs-quick-trend-btn');
+                        if (qtBtn) qtBtn.textContent = '📐 Click to Anchor…';
+                    }
                     canvas.classList.remove('drawing');
                     document.getElementById('fs-draw-hline-btn')?.classList.remove('active');
                     document.getElementById('fs-draw-trend-btn')?.classList.remove('active');
@@ -18189,7 +18673,7 @@
                 wrap.addEventListener('pointerdown', function (e) {
                     const modal = document.getElementById('fs-chart-modal');
                     if (!modal || modal.style.display !== 'flex') return;
-                    if (e.button !== 0 || window._fsDrawMode) return;
+                    if (e.button !== 0 || window._fsDrawMode || (window._fsQTrend && window._fsQTrend.active)) return;
                     if (e.target && e.target.closest && e.target.closest('button, input, select')) return;
 
                     const state = pCv._chartState;
