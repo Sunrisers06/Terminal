@@ -4814,83 +4814,182 @@
             background: var(--surface3);
         }
 
-        #superstar-analytics-popup {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 320px;
-            background: rgba(15, 15, 20, 0.85);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            z-index: 300000;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-            display: none;
-            flex-direction: column;
-            overflow: hidden;
-            font-family: 'Lexend', sans-serif;
+        /* ══════════════════════════════════════════════════════
+   SUPERSTAR REDESIGN STYLES
+══════════════════════════════════════════════════════ */
+
+        .ss-select {
+            background: rgba(255, 255, 255, 0.05) !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            color: var(--text2) !important;
+            border-radius: 4px;
+            font-size: 10px;
         }
 
-        #superstar-analytics-popup.visible {
+        .ss-analytics-strip {
             display: flex;
+            flex-shrink: 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            background: rgba(0, 0, 0, 0.18);
         }
 
-        .sa-header {
+        .ss-stat-chip {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 6px 4px;
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
+            gap: 2px;
+        }
+
+        .ss-stat-chip:last-child {
+            border-right: none;
+        }
+
+        .ss-stat-val {
+            font-size: 13px;
+            font-weight: 800;
+            line-height: 1;
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .ss-stat-lbl {
+            font-size: 9px;
+            color: rgba(255, 255, 255, 0.4);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            font-weight: 600;
+        }
+
+        .ss-conviction-strip {
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            padding: 12px 16px;
-            background: rgba(255, 255, 255, 0.03);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-            font-size: 13px;
-            font-weight: 600;
-            color: #fff;
+            padding: 6px 8px;
+            background: rgba(245, 158, 11, 0.05);
+            border-bottom: 1px solid rgba(245, 158, 11, 0.1);
+            gap: 8px;
+            flex-shrink: 0;
         }
 
-        .sa-close {
-            cursor: pointer;
-            color: var(--text2);
-            font-size: 14px;
-        }
-
-        .sa-close:hover {
-            color: #fff;
-        }
-
-        .sa-body {
-            padding: 16px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .sa-card {
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            border-radius: 8px;
-            padding: 12px;
-        }
-
-        .sa-card-title {
-            font-size: 10px;
+        .ss-conv-label {
+            font-size: 9.5px;
+            font-weight: 800;
+            color: #f59e0b;
             text-transform: uppercase;
-            color: var(--text3);
-            letter-spacing: 0.05em;
-            margin-bottom: 4px;
+            letter-spacing: 0.5px;
         }
 
-        .sa-card-val {
-            font-size: 14px;
-            font-weight: 700;
-            color: var(--pop-green);
+        .ss-conv-items {
+            display: flex;
+            gap: 6px;
+            flex: 1;
+            overflow-x: auto;
         }
 
-        .sa-card-sub {
-            font-size: 11px;
-            color: var(--text2);
-            margin-top: 2px;
+        .ss-conv-chip {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 9.5px;
+            color: #fff;
+            white-space: nowrap;
+        }
+
+        /* Card Row Styling */
+        .ss-table thead th {
+            background: rgba(10, 10, 16, 0.97);
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 9px;
+            padding: 7px 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .ss-table tbody td {
+            padding: 8px;
+            vertical-align: middle;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+        }
+
+        .ss-inv-cell {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .ss-inv-avatar {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            font-weight: 800;
+            color: #fff;
+            flex-shrink: 0;
+        }
+
+        .ss-inv-name {
+            font-size: 10.5px;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.85);
+            max-width: 100px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .ss-hold-bar-wrap {
+            width: 100%;
+            max-width: 50px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            margin-top: 3px;
+            overflow: hidden;
+            margin-left: auto;
+        }
+
+        .ss-hold-bar {
+            height: 100%;
+            background: #818cf8;
+            border-radius: 2px;
+        }
+
+        .ss-chg-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            font-size: 9.5px;
+            font-weight: 800;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .ss-chg-pos {
+            background: rgba(0, 230, 118, 0.12);
+            color: #00e676;
+            border: 1px solid rgba(0, 230, 118, 0.25);
+        }
+
+        .ss-chg-neg {
+            background: rgba(255, 77, 79, 0.12);
+            color: #ff4d4f;
+            border: 1px solid rgba(255, 77, 79, 0.25);
+        }
+
+        .ss-chg-new {
+            background: rgba(245, 158, 11, 0.12);
+            color: #f59e0b;
+            border: 1px solid rgba(245, 158, 11, 0.25);
+        }
+
+        .ss-chg-neu {
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 10px;
         }
 
         /* Parameter pills */
@@ -5857,8 +5956,7 @@
                     SuperStar
                     <span class="tab-count" id="superstar-count">—</span>
                 </button>
-                <button class="sidebar-tab tab-breadth" id="tab-breadth-btn"
-                    onclick="switchSidebarTab('breadth')">
+                <button class="sidebar-tab tab-breadth" id="tab-breadth-btn" onclick="switchSidebarTab('breadth')">
                     <span class="tab-dot" style="background:#818cf8;box-shadow:0 0 6px rgba(129,140,248,0.6);"></span>
                     Breadth
                 </button>
@@ -5912,22 +6010,30 @@
             </div>
 
             <div class="news-half" id="nsenews-section">
-                <div class="pane-toolbar">
-                    <div class="pane-search-wrap">
-                        <input class="pane-search" id="nsenews-search" placeholder="Filter NSE news…"
-                            oninput="filterPaneSearch('nsenews')">
-                    </div>
-                    <div class="font-size-controls">
+                <!-- NSE NEWS TOOLBAR -->
+                <div class="deal-global-toolbar" style="flex-wrap:wrap;gap:5px;">
+                    <div style="flex:1;"></div>
+                    <button class="deal-refresh-btn" onclick="refreshNSENewsData(this)"
+                        title="Refresh NSE News">↻</button>
+                    <button class="fs-btn" onclick="toggleNewsFS('nsenews-section', this)" title="Fullscreen">⛶</button>
+                </div>
+
+                <!-- FILTER ROW -->
+                <div
+                    style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:rgba(0,0,0,0.15);border-bottom:1px solid rgba(255,255,255,0.06);flex-shrink:0;flex-wrap:wrap;">
+                    <input class="pane-search" id="nsenews-search" placeholder="🔍 Search ticker or keyword…"
+                        oninput="filterPaneSearch('nsenews')" style="flex:1;min-width:100px;">
+                    <div class="font-size-controls" style="margin-left:auto;">
                         <button class="font-sz-btn font-sz-dec" onclick="adjustNewsFontSize(-1)"
                             title="Decrease font size">A</button>
                         <button class="font-sz-btn font-sz-inc" onclick="adjustNewsFontSize(1)"
                             title="Increase font size">A</button>
                     </div>
-                    <button class="deal-refresh-btn" onclick="refreshNSENewsData(this)"
-                        title="Refresh NSE News">↻</button>
-                    <button class="fs-btn" onclick="toggleNewsFS('nsenews-section', this)" title="Fullscreen">⛶</button>
                 </div>
-                <div class="news-list" id="nsenews-list"></div>
+
+
+
+                <div class="news-list" id="nsenews-list" style="padding:10px; gap:8px;"></div>
             </div>
 
             <!-- ══ DEAL BLOCK SECTION (3rd pane) ══ -->
@@ -6085,63 +6191,87 @@
             <!-- ══ SUPERSTAR BLOCK SECTION (4th pane) ══ -->
             <div class="news-half" id="superstar-block-section">
                 <div class="deal-block-wrapper">
-                    <!-- GLOBAL SUPERSTAR SEARCH -->
-                    <div class="deal-global-toolbar">
-                        <div class="pane-search-wrap" style="flex:1; display:flex; gap:8px;">
-                            <input class="pane-search" id="superstar-search" placeholder="Search investor…"
-                                oninput="filterSuperstarBlock()" style="flex:1;">
-                            <select id="superstar-inv-filter" class="fi" style="width:120px; padding:4px;"
-                                onchange="filterSuperstarBlock()">
-                                <option value="all">All Investors</option>
-                            </select>
-                            <select id="superstar-chg-filter" class="fi" style="width:90px; padding:4px;"
-                                onchange="filterSuperstarBlock()">
-                                <option value="all">All</option>
-                                <option value="new">New</option>
-                                <option value="pos">Positive</option>
-                                <option value="neg">Negative</option>
-                            </select>
-                        </div>
-                        <div class="font-size-controls">
-                            <button class="font-sz-btn font-sz-dec" onclick="adjustDealFontSize(-1)"
-                                title="Decrease font size">A</button>
-                            <button class="font-sz-btn font-sz-inc" onclick="adjustDealFontSize(1)"
-                                title="Increase font size">A</button>
-                        </div>
-                        <button class="deal-refresh-btn" onclick="toggleSuperstarWidth()"
-                            title="Toggle Row Width">↔</button>
+
+                    <!-- GLOBAL SUPERSTAR TOOLBAR -->
+                    <div class="deal-global-toolbar" style="flex-wrap:wrap;gap:5px;">
+                        <span style="color:rgba(255,255,255,0.7);font-size:11px;font-weight:700;letter-spacing:0.4px;">⭐
+                            SUPERSTAR INVESTORS</span>
+                        <div style="flex:1;"></div>
                         <button class="deal-refresh-btn" onclick="refreshSuperstarData()"
                             title="Refresh Data">↻</button>
-                        <button class="deal-refresh-btn" id="superstar-analytics-btn" onclick="showSuperstarAnalytics()"
-                            title="SuperStar Analytics">📊</button>
                         <button class="fs-btn" onclick="toggleNewsFS('superstar-block-section', this)"
                             title="Fullscreen">⛶</button>
                     </div>
 
+                    <!-- FILTER ROW -->
+                    <div
+                        style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:rgba(0,0,0,0.15);border-bottom:1px solid rgba(255,255,255,0.06);flex-shrink:0;flex-wrap:wrap;">
+                        <input class="pane-search" id="superstar-search" placeholder="🔍 Search investor or ticker…"
+                            oninput="filterSuperstarBlock()" style="flex:1;min-width:100px;">
+                        <select id="superstar-inv-filter" class="fi ss-select" onchange="filterSuperstarBlock()">
+                            <option value="all">All Investors</option>
+                        </select>
+                        <select id="superstar-chg-filter" class="fi ss-select" onchange="filterSuperstarBlock()">
+                            <option value="all">All Changes</option>
+                            <option value="new">🆕 New</option>
+                            <option value="pos">📈 Added</option>
+                            <option value="neg">📉 Reduced</option>
+                        </select>
+                    </div>
 
+                    <!-- INLINE ANALYTICS STRIP -->
+                    <div class="ss-analytics-strip" id="ss-analytics">
+                        <div class="ss-stat-chip">
+                            <div class="ss-stat-val" id="ssa-total-holdings">—</div>
+                            <div class="ss-stat-lbl">Holdings</div>
+                        </div>
+                        <div class="ss-stat-chip">
+                            <div class="ss-stat-val" id="ssa-investors">—</div>
+                            <div class="ss-stat-lbl">Investors</div>
+                        </div>
+                        <div class="ss-stat-chip">
+                            <div class="ss-stat-val" style="color:#00e676" id="ssa-new-adds">—</div>
+                            <div class="ss-stat-lbl">🆕 New</div>
+                        </div>
+                        <div class="ss-stat-chip">
+                            <div class="ss-stat-val" style="color:#00e676" id="ssa-increased">—</div>
+                            <div class="ss-stat-lbl">📈 Added</div>
+                        </div>
+                        <div class="ss-stat-chip">
+                            <div class="ss-stat-val" style="color:#ff4d4f" id="ssa-decreased">—</div>
+                            <div class="ss-stat-lbl">📉 Reduced</div>
+                        </div>
+                    </div>
+
+                    <!-- TOP CONVICTION STRIP -->
+                    <div class="ss-conviction-strip" id="ss-conviction-strip" style="display:none;">
+                        <div class="ss-conv-label">🏆 Top Conviction:</div>
+                        <div class="ss-conv-items" id="ss-conv-items"></div>
+                    </div>
+
+                    <!-- TABLE -->
                     <div class="deal-sub-pane active-sub-pane" id="superstar-sub-pane">
                         <div class="deal-table-wrap">
-                            <table class="deal-table" id="superstar-table">
+                            <table class="deal-table ss-table" id="superstar-table">
                                 <thead>
                                     <tr>
-                                        <th onclick="sortSuperstar('Investor')" style="cursor:pointer">Investor <span
-                                                class="sort-icon"></span></th>
-                                        <th onclick="sortSuperstar('Ticker')" style="cursor:pointer">Ticker <span
-                                                class="sort-icon"></span></th>
-                                        <th onclick="sortSuperstar('Holding_%')" style="cursor:pointer">Hold% <span
-                                                class="sort-icon"></span></th>
-                                        <th onclick="sortSuperstar('Change_%')" style="cursor:pointer">Chg% <span
-                                                class="sort-icon"></span></th>
+                                        <th onclick="sortSuperstar('Investor')" style="cursor:pointer;text-align:left;">
+                                            ⭐ Investor</th>
+                                        <th onclick="sortSuperstar('Ticker')" style="cursor:pointer;text-align:left;">
+                                            Ticker</th>
+                                        <th onclick="sortSuperstar('Holding_%')"
+                                            style="cursor:pointer;text-align:right;">Hold%</th>
+                                        <th onclick="sortSuperstar('Change_%')"
+                                            style="cursor:pointer;text-align:right;">Chg%</th>
                                     </tr>
                                 </thead>
                                 <tbody id="superstar-tbody">
                                     <tr>
-                                        <td colspan="4" class="deal-loading">Loading SuperStar data…</td>
+                                        <td colspan="4" class="deal-loading">⭐ Loading SuperStar data…</td>
                                     </tr>
                                 </tbody>
                             </table>
-                            <div class="deal-load-more-wrap" id="superstar-load-more-wrap"
-                                style="display:none; margin-top: 10px; text-align: center;">
+                            <div class="deal-load-more-wrap" id="superstar-load-more-wrap" style="display:none;">
                                 <button class="deal-load-more-btn" onclick="loadNextSuperstarPage()">Load Next
                                     100</button>
                             </div>
@@ -6149,17 +6279,23 @@
                     </div>
                 </div>
             </div>
-            <!-- ══ END SUPERSTAR BLOCK ══ -->
 
             <!-- ══ BREADTH DASHBOARD SECTION ══ -->
+
             <div class="news-half" id="breadth-section">
                 <div class="pane-toolbar" style="padding:6px 8px;gap:6px;">
-                    <span style="color:rgba(255,255,255,0.7);font-size:11px;font-weight:700;letter-spacing:0.5px;">📊 SECTOR &amp; INDUSTRY BREADTH</span>
-                    <button class="deal-refresh-btn" onclick="renderBreadthTab(window._breadthSort||'above10Pct',window._breadthDir||-1)" title="Refresh">↻</button>
+                    <span style="color:rgba(255,255,255,0.7);font-size:11px;font-weight:700;letter-spacing:0.5px;">📊
+                        SECTOR &amp; INDUSTRY BREADTH</span>
+                    <div style="flex:1;"></div>
+                    <button class="fs-btn" onclick="toggleNewsFS('breadth-section', this)" title="Fullscreen">⛶</button>
+                    <button class="deal-refresh-btn"
+                        onclick="renderBreadthTab(window._breadthSort||'above10Pct',window._breadthDir||-1)"
+                        title="Refresh">↻</button>
                 </div>
                 <div class="deal-sub-pane active-sub-pane" style="overflow-y:auto;flex:1;">
                     <div id="breadth-content" style="padding:8px;">
-                        <div style="color:rgba(255,255,255,0.4);text-align:center;padding:40px 20px;font-size:12px;">Breadth data will load after OHLCV data is ready…</div>
+                        <div style="color:rgba(255,255,255,0.4);text-align:center;padding:40px 20px;font-size:12px;">
+                            Breadth data will load after OHLCV data is ready…</div>
                     </div>
                 </div>
             </div>
@@ -6252,7 +6388,8 @@
                 <input type="number" id="min-revp" class="fi w90" placeholder="Min Sale" oninput="onSearchInput()">
                 <input type="number" id="min-npp" class="fi w90" placeholder="Min NP" oninput="onSearchInput()">
                 <input type="number" id="min-cfopat" class="fi w90" placeholder="Min CFO/P" oninput="onSearchInput()">
-                <input type="number" id="max-pivot-dist" class="fi w110" placeholder="Near Pivot %" title="Show stocks within X% of pivot breakout" oninput="onSearchInput()" min="0" step="0.5">
+                <input type="number" id="max-pivot-dist" class="fi w110" placeholder="Near Pivot %"
+                    title="Show stocks within X% of pivot breakout" oninput="onSearchInput()" min="0" step="0.5">
                 <select id="investor-filter" class="fi w130" onchange="doFilter()">
                     <option value="all">All Investors</option>
                     <option value="superstar">⭐ All SuperStars</option>
@@ -6260,6 +6397,10 @@
                 <label class="fi-checkbox" title="Show only stocks with Post-Earnings Announcement Drift setups">
                     <input type="checkbox" id="pead-filter" onchange="doFilter()">
                     <span>📊 PEAD</span>
+                </label>
+                <label class="fi-checkbox" title="Show only stocks with Volatility Contraction Pattern (VCP) forming">
+                    <input type="checkbox" id="vcp-filter" onchange="doFilter()">
+                    <span>📈 VCP</span>
                 </label>
                 <button class="clear-btn" onclick="window.resetAllAppFilters()">✖ Clear</button>
                 <select id="sort-select" class="fi sort-fi" onchange="doFilter()">
@@ -6422,6 +6563,8 @@
             });
             const peadFilter = document.getElementById('pead-filter');
             if (peadFilter) peadFilter.checked = false;
+            const vcpFilter = document.getElementById('vcp-filter');
+            if (vcpFilter) vcpFilter.checked = false;
             const idxFilter = document.getElementById('index-filter');
             if (idxFilter) {
                 idxFilter.value = Array.from(idxFilter.options).some(o => o.value === 'Nifty_ALL') ? 'Nifty_ALL' : 'all';
@@ -7286,6 +7429,7 @@
               ${topRankBadge}
               ${dealBadge}
               ${r._peadFlag ? `<span class="pead-badge" title="${r._peadDetails || 'Post-Earnings Drift setup'}">📊 PEAD</span>` : ''}
+              ${r._vcpFlag ? `<span class="vcp-badge" title="${r._vcpDetails || 'Volatility Contraction Pattern'}">📈 VCP</span>` : ''}
               ${!isNaN(r._pivotDist) && r._pivotDist >= 0 && r._pivotDist <= 5 ? `<span class="pivot-proximity-badge" title="Within ${r._pivotDist.toFixed(1)}% of pivot">📍${r._pivotDist.toFixed(1)}%</span>` : ''}
               ${(window._urDataMap && window._urDataMap[String(r._ticker).toUpperCase()]) ? `<span class="ur-chip" title="Upcoming Result Date">📅 ${window._urDataMap[String(r._ticker).toUpperCase()].toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>` : ''}
 
@@ -7675,15 +7819,40 @@
         }
 
         function buildNseNewsItem(n) {
-            return `<div class="news-item">
-    <div class="news-date">
-      ${n.ticker ? `<span class="insight-tag tag-buy">${escHtml(n.ticker)}</span>` : ''}
-      <span>${escHtml(n.date || '—')}</span>
+            const dateObj = n.timestamp ? new Date(n.timestamp) : new Date();
+            const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const dateStr = dateObj.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+
+            return `<div class="news-item" style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05); border-radius:8px; padding:10px; margin-bottom:8px; display:flex; flex-direction:column; gap:6px;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="display:flex; align-items:center; gap:8px;">
+            ${n.ticker ? `<span style="background:rgba(96,165,250,0.15); color:#60a5fa; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:800; border:1px solid rgba(96,165,250,0.3); cursor:pointer;" onclick="searchStock('${n.ticker}')">${escHtml(n.ticker)}</span>` : ''}
+            <span style="color:var(--text2); font-size:10px;">${timeStr} • ${dateStr}</span>
+        </div>
     </div>
-    <div style="margin-top: 4px;">
-        ${n.url ? `<a class="news-link" href="${n.url}" target="_blank" rel="noopener" style="font-size: 13px; margin-top: 2px; display: inline-block;">${escHtml(n.summary)}</a>` : `<span class="news-text" style="font-size: 13px; margin-top: 2px; display: inline-block;">${escHtml(n.summary)}</span>`}
+    <div style="margin-top: 2px;">
+        ${n.url ? `<a class="news-link" href="${n.url}" target="_blank" rel="noopener" style="font-size: 12px; color:#fff; line-height:1.4;">${escHtml(n.summary)}</a>` : `<span class="news-text" style="font-size: 12px; color:#fff; line-height:1.4;">${escHtml(n.summary)}</span>`}
     </div>
   </div>`;
+        }
+
+        function computeNseNewsAnalytics() {
+            if (!filteredNseNewsData || filteredNseNewsData.length === 0) return;
+
+            const uniqueTickers = new Set(filteredNseNewsData.map(n => n.ticker).filter(Boolean)).size;
+
+            const today = new Date();
+            const todayStr = today.toDateString();
+            const todayNewsCount = filteredNseNewsData.filter(n => {
+                if (!n.timestamp) return false;
+                return new Date(n.timestamp).toDateString() === todayStr;
+            }).length;
+
+            const el = id => { const e = document.getElementById(id); return e ? e : { textContent: '' }; };
+
+            el('nsea-total-news').textContent = filteredNseNewsData.length.toLocaleString();
+            el('nsea-unique-tickers').textContent = uniqueTickers.toLocaleString();
+            el('nsea-today-news').textContent = todayNewsCount.toLocaleString();
         }
 
         function renderNseNews() {
@@ -7702,6 +7871,8 @@
                 html += `<div id="nsenews-more-wrap" class="news-more-wrap"><button class="news-more-btn" onclick="loadMoreNseNews()">Load next ${Math.min(NEWS_CHUNK, rem)} →</button></div>`;
             }
             container.innerHTML = html;
+
+            computeNseNewsAnalytics();
         }
 
         function loadMoreNseNews() {
@@ -8104,6 +8275,7 @@
                 sortSelect: document.getElementById('sort-select'),
                 invFilter: document.getElementById('investor-filter'),
                 peadFilter: document.getElementById('pead-filter'),
+                vcpFilter: document.getElementById('vcp-filter'),
                 maxPivotDist: document.getElementById('max-pivot-dist'),
                 globalClearBtn: document.getElementById('global-clear-btn'),
             };
@@ -8242,6 +8414,11 @@
                 // PEAD filter
                 if (dc.peadFilter && dc.peadFilter.checked) {
                     if (!r._peadFlag) return false;
+                }
+                
+                // VCP filter
+                if (dc.vcpFilter && dc.vcpFilter.checked) {
+                    if (!r._vcpFlag) return false;
                 }
                 return true;
             });
@@ -9086,6 +9263,7 @@
             // Kick off breadth and PEAD calculations after returns and pivot are ready
             calcSectorBreadth();
             calcPEADFlags();
+            calcVCPFlags();
         }
 
         // ══════════════════════════════════════════════════════
@@ -9094,17 +9272,40 @@
         function calcSectorBreadth() {
             if (!window._ohlcvTickers || !allData.length) return;
 
-            const sectorMap = {}; // sector → {total,above10,above40,abovePivot}
+            const sectorMap = {};
             const industryMap = {};
 
-            const addRow = (map, key, above10, above40, nearPivot) => {
+            const initBucket = () => ({
+                total: 0, above10: 0, above40: 0, nearPivot: 0,
+                bullish: 0, neutral: 0, bearish: 0,
+                ret1m: [], ret3m: [], ret1y: [],
+                eps: [], techScore: [], mcap: [], str: [], tech52w: [],
+                tickers: []
+            });
+
+            const addRow = (map, key, data) => {
                 if (!key) return;
-                if (!map[key]) map[key] = { total: 0, above10: 0, above40: 0, nearPivot: 0 };
-                map[key].total++;
-                if (above10) map[key].above10++;
-                if (above40) map[key].above40++;
-                if (nearPivot) map[key].nearPivot++;
+                if (!map[key]) map[key] = initBucket();
+                const b = map[key];
+                b.total++;
+                if (data.above10) b.above10++;
+                if (data.above40) b.above40++;
+                if (data.nearPivot) b.nearPivot++;
+                if (data.above10 && data.above40) b.bullish++;
+                else if (!data.above10 && !data.above40) b.bearish++;
+                else b.neutral++;
+                if (!isNaN(data.ret1m)) b.ret1m.push(data.ret1m);
+                if (!isNaN(data.ret3m)) b.ret3m.push(data.ret3m);
+                if (!isNaN(data.ret1y)) b.ret1y.push(data.ret1y);
+                if (!isNaN(data.eps)) b.eps.push(data.eps);
+                if (!isNaN(data.techScore)) b.techScore.push(data.techScore);
+                if (!isNaN(data.mcap) && data.mcap > 0) b.mcap.push(data.mcap);
+                if (!isNaN(data.str)) b.str.push(data.str);
+                if (!isNaN(data.tech52w)) b.tech52w.push(data.tech52w);
+                b.tickers.push({ ticker: data.ticker, name: data.name, ret1m: data.ret1m, ret3m: data.ret3m, ret1y: data.ret1y, techScore: data.techScore, eps: data.eps, above10: data.above10, above40: data.above40 });
             };
+
+            const avg = arr => arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : NaN;
 
             allData.forEach(r => {
                 const arr = window._ohlcvTickers.get(String(r._ticker).toUpperCase());
@@ -9112,93 +9313,234 @@
                 const last = arr[arr.length - 1];
                 const close = last.close;
 
-                // Compute 10W SMA (10 bars) and 40W SMA (40 bars)
                 let sum10 = 0, cnt10 = 0, sum40 = 0, cnt40 = 0;
-                for (let j = Math.max(0, arr.length - 10); j < arr.length; j++) {
-                    sum10 += arr[j].close; cnt10++;
-                }
-                for (let j = Math.max(0, arr.length - 40); j < arr.length; j++) {
-                    sum40 += arr[j].close; cnt40++;
-                }
+                for (let j = Math.max(0, arr.length - 10); j < arr.length; j++) { sum10 += arr[j].close; cnt10++; }
+                for (let j = Math.max(0, arr.length - 40); j < arr.length; j++) { sum40 += arr[j].close; cnt40++; }
                 const ma10w = cnt10 > 0 ? sum10 / cnt10 : null;
                 const ma40w = cnt40 >= 10 ? sum40 / cnt40 : null;
-
-                const above10 = ma10w && close > ma10w;
-                const above40 = ma40w && close > ma40w;
-                // Near pivot = within 0-5% below pivot
+                const above10 = !!(ma10w && close > ma10w);
+                const above40 = !!(ma40w && close > ma40w);
                 const nearPivot = !isNaN(r._pivotDist) && r._pivotDist >= 0 && r._pivotDist <= 5;
 
-                addRow(sectorMap, r._sec, above10, above40, nearPivot);
-                addRow(industryMap, r._ind, above10, above40, nearPivot);
+                const data = {
+                    ticker: r._ticker, name: r._coName,
+                    above10, above40, nearPivot,
+                    ret1m: r._ret1m, ret3m: r._ret3m, ret1y: r._ret1y,
+                    eps: r._eps, techScore: parseFloat(r._techScore),
+                    mcap: r._mcap, str: r._str,
+                    tech52w: parseFloat(r._tech52w)
+                };
+                addRow(sectorMap, r._sec, data);
+                addRow(industryMap, r._ind, data);
+            });
+
+            // Post-process: compute averages and momentum score
+            [sectorMap, industryMap].forEach(map => {
+                Object.values(map).forEach(b => {
+                    b.avgRet1m = avg(b.ret1m);
+                    b.avgRet3m = avg(b.ret3m);
+                    b.avgRet1y = avg(b.ret1y);
+                    b.avgEps = avg(b.eps);
+                    b.avgTech = avg(b.techScore);
+                    b.totalMcap = b.mcap.reduce((s, v) => s + v, 0);
+                    b.avgStr = avg(b.str);
+                    b.avg52w = avg(b.tech52w);
+                    b.above10Pct = b.total > 0 ? b.above10 / b.total : 0;
+                    b.above40Pct = b.total > 0 ? b.above40 / b.total : 0;
+                    // Momentum score 0-100: weighted breadth + return signal
+                    const breadthScore = (b.above10Pct * 40 + b.above40Pct * 30);
+                    const retScore = !isNaN(b.avgRet3m) ? Math.min(30, Math.max(0, (b.avgRet3m + 20) / 60 * 30)) : 15;
+                    b.momentum = Math.round(breadthScore + retScore);
+                    // Sort tickers by techScore desc
+                    b.tickers.sort((a, z) => (isNaN(z.techScore) ? -1 : isNaN(a.techScore) ? 1 : z.techScore - a.techScore));
+                });
             });
 
             window._breadthData = { sector: sectorMap, industry: industryMap };
             renderBreadthTab();
         }
 
-        function renderBreadthTab(sortKey = 'above10Pct', sortDir = -1) {
+        // ── Breadth view state ──
+        window._breadthView = window._breadthView || 'table';
+        window._breadthTab = window._breadthTab || 'sector';
+        window._breadthExpanded = window._breadthExpanded || {};
+
+        function renderBreadthTab(sortKey, sortDir) {
+            sortKey = sortKey || window._breadthSort || 'momentum';
+            sortDir = (sortDir !== undefined) ? sortDir : ((window._breadthDir !== undefined) ? window._breadthDir : -1);
+            window._breadthSort = sortKey;
+            window._breadthDir = sortDir;
+
             const pane = document.getElementById('breadth-content');
             if (!pane) return;
             const bd = window._breadthData;
             if (!bd) { pane.innerHTML = '<div style="color:rgba(255,255,255,0.4);text-align:center;padding:20px;">Loading breadth data…</div>'; return; }
 
-            const fmtPct = (n, t) => t > 0 ? ((n / t) * 100).toFixed(0) + '%' : '—';
-            const barHtml = (n, t, color) => {
-                const pct = t > 0 ? Math.round((n / t) * 100) : 0;
-                const hsl = pct >= 60 ? '#00e676' : pct >= 35 ? '#facc15' : '#ff4d4f';
-                return `<div style="width:100%;height:5px;background:rgba(255,255,255,0.08);border-radius:3px;margin-top:2px;"><div style="width:${pct}%;height:5px;background:${color || hsl};border-radius:3px;transition:width 0.3s;"></div></div>`;
-            };
+            const view = window._breadthView;
+            const activeTab = window._breadthTab;
+            const map = activeTab === 'sector' ? bd.sector : bd.industry;
 
-            const buildTable = (map, title) => {
-                const rows = Object.entries(map).map(([name, d]) => ({
-                    name,
-                    total: d.total,
-                    above10: d.above10,
-                    above40: d.above40,
-                    nearPivot: d.nearPivot,
-                    above10Pct: d.total > 0 ? d.above10 / d.total : 0,
-                    above40Pct: d.total > 0 ? d.above40 / d.total : 0,
-                })).sort((a, b) => (b[sortKey] - a[sortKey]) * sortDir);
+            const fmtRet = v => isNaN(v) ? '—' : (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+            const retColor = v => isNaN(v) ? 'rgba(255,255,255,0.35)' : v >= 10 ? '#00e676' : v >= 0 ? '#a3e635' : v >= -10 ? '#facc15' : '#ff4d4f';
+            const pctColor = p => p >= 65 ? '#00e676' : p >= 45 ? '#a3e635' : p >= 30 ? '#facc15' : '#ff4d4f';
+            const fmtMcap = v => (!v || isNaN(v)) ? '—' : v >= 100000 ? (v / 100000).toFixed(1) + 'L Cr' : v >= 1000 ? (v / 1000).toFixed(1) + 'K Cr' : Math.round(v) + '';
+            const miniBar = (pct, color) => `<div style="width:100%;height:4px;background:rgba(255,255,255,0.08);border-radius:2px;margin-top:2px;"><div style="width:${Math.max(0, Math.min(100, pct))}%;height:4px;background:${color};border-radius:2px;"></div></div>`;
+            const momGrad = m => m >= 70 ? 'linear-gradient(135deg,#00e676,#00b88a)' : m >= 50 ? 'linear-gradient(135deg,#a3e635,#65a30d)' : m >= 35 ? 'linear-gradient(135deg,#facc15,#ca8a04)' : 'linear-gradient(135deg,#ff4d4f,#b91c1c)';
 
-                const headerArrow = (key) => sortKey === key ? (sortDir > 0 ? ' ▲' : ' ▼') : '';
-                const onSort = (key) => `window._breadthSort='${key}';window._breadthDir=(window._breadthSort==='${key}'?-(window._breadthDir||1):-1);renderBreadthTab(window._breadthSort,window._breadthDir);`;
+            const rows = Object.entries(map).map(([name, d]) => ({ name, ...d }))
+                .sort((a, b) => {
+                    let va = a[sortKey], vb = b[sortKey];
+                    if (isNaN(va)) va = sortDir < 0 ? -Infinity : Infinity;
+                    if (isNaN(vb)) vb = sortDir < 0 ? -Infinity : Infinity;
+                    return (vb - va) * sortDir;
+                });
 
-                return `<div class="breadth-section-title">${title}</div>
-                <table class="breadth-table">
+            const hdr = key => sortKey === key ? (sortDir > 0 ? ' ▲' : ' ▼') : '';
+            const onSrt = key => `window._breadthSort='${key}';window._breadthDir=(window._breadthSort==='${key}'?-(window._breadthDir||-1):-1);renderBreadthTab(window._breadthSort,window._breadthDir);`;
+
+            // ── Toolbar ──
+            const toolbar = `<div class="breadth-toolbar">
+                <div class="breadth-subtabs">
+                    <button class="breadth-subtab${activeTab === 'sector' ? ' active' : ''}" onclick="window._breadthTab='sector';renderBreadthTab();">🏭 Sector</button>
+                    <button class="breadth-subtab${activeTab === 'industry' ? ' active' : ''}" onclick="window._breadthTab='industry';renderBreadthTab();">🔬 Industry</button>
+                </div>
+                <div class="breadth-viewbtns">
+                    <button class="breadth-viewbtn${view === 'table' ? ' active' : ''}" onclick="window._breadthView='table';renderBreadthTab();" title="Table View">☰</button>
+                    <button class="breadth-viewbtn${view === 'heatmap' ? ' active' : ''}" onclick="window._breadthView='heatmap';renderBreadthTab();" title="Heatmap View">⬛</button>
+                </div>
+            </div>`;
+
+            // ── Summary strip ──
+            const totStk = rows.reduce((s, r) => s + r.total, 0);
+            const totBull = rows.reduce((s, r) => s + r.bullish, 0);
+            const totBear = rows.reduce((s, r) => s + r.bearish, 0);
+            const bullPct = totStk > 0 ? Math.round(totBull / totStk * 100) : 0;
+            const bearPct = totStk > 0 ? Math.round(totBear / totStk * 100) : 0;
+            const allR1m = rows.flatMap(r => r.ret1m.filter(v => !isNaN(v)));
+            const allR3m = rows.flatMap(r => r.ret3m.filter(v => !isNaN(v)));
+            const mktR1m = allR1m.length ? allR1m.reduce((s, v) => s + v, 0) / allR1m.length : NaN;
+            const mktR3m = allR3m.length ? allR3m.reduce((s, v) => s + v, 0) / allR3m.length : NaN;
+
+            const summaryStrip = `<div class="breadth-summary-strip">
+                <div class="breadth-stat-chip">
+                    <div class="bsc-val" style="color:${pctColor(bullPct)}">${bullPct}%</div>
+                    <div class="bsc-lbl">Bullish</div>
+                </div>
+                <div class="breadth-stat-chip">
+                    <div class="bsc-val" style="color:#ff4d4f">${bearPct}%</div>
+                    <div class="bsc-lbl">Bearish</div>
+                </div>
+                <div class="breadth-stat-chip">
+                    <div class="bsc-val" style="color:${retColor(mktR1m)}">${fmtRet(mktR1m)}</div>
+                    <div class="bsc-lbl">Avg 1M</div>
+                </div>
+                <div class="breadth-stat-chip">
+                    <div class="bsc-val" style="color:${retColor(mktR3m)}">${fmtRet(mktR3m)}</div>
+                    <div class="bsc-lbl">Avg 3M</div>
+                </div>
+                <div class="breadth-stat-chip">
+                    <div class="bsc-val" style="color:rgba(255,255,255,0.8)">${rows.length}</div>
+                    <div class="bsc-lbl">${activeTab === 'sector' ? 'Sectors' : 'Industries'}</div>
+                </div>
+            </div>`;
+
+            let content = '';
+
+            const filterFn = activeTab === 'sector' ? 'setSectorFilter' : 'setIndustryFilter';
+
+            if (view === 'heatmap') {
+                // ── HEATMAP VIEW ──
+                content = `<div class="breadth-heatmap">${rows.map(r => {
+                    const p10 = Math.round(r.above10Pct * 100);
+                    const bg = p10 >= 65 ? 'rgba(0,230,118,0.15)' : p10 >= 45 ? 'rgba(163,230,53,0.12)' : p10 >= 30 ? 'rgba(250,204,21,0.13)' : 'rgba(255,77,79,0.13)';
+                    const brd = p10 >= 65 ? 'rgba(0,230,118,0.4)' : p10 >= 45 ? 'rgba(163,230,53,0.35)' : p10 >= 30 ? 'rgba(250,204,21,0.35)' : 'rgba(255,77,79,0.35)';
+                    const retC = retColor(r.avgRet3m);
+                    const short = r.name.length > 14 ? r.name.slice(0, 13) + '\u2026' : r.name;
+                    const safeN = r.name.replace(/'/g, '\\u0027');
+                    return `<div class="breadth-heatmap-tile" style="background:${bg};border-color:${brd};" onclick="${filterFn}('${safeN}',event)" title="${r.name} | 10W: ${p10}% | 3M Avg: ${fmtRet(r.avgRet3m)} | Stocks: ${r.total}">
+                        <div class="bht-name">${short}</div>
+                        <div class="bht-pct" style="color:${pctColor(p10)}">${p10}%</div>
+                        <div class="bht-ret" style="color:${retC}">${fmtRet(r.avgRet3m)}</div>
+                        <div class="bht-momentum" style="background:${momGrad(r.momentum)}">${r.momentum}</div>
+                        ${miniBar(p10, pctColor(p10))}
+                    </div>`;
+                }).join('')}</div>`;
+            } else {
+                // ── TABLE VIEW ──
+                content = `<table class="breadth-table breadth-table-rich">
                     <thead><tr>
-                        <th onclick="${onSort('name')}" style="cursor:pointer;text-align:left;">Name${headerArrow('name')}</th>
-                        <th title="Total stocks">#</th>
-                        <th onclick="${onSort('above10Pct')}" style="cursor:pointer;" title="% above 10-week MA">10W%${headerArrow('above10Pct')}</th>
-                        <th onclick="${onSort('above40Pct')}" style="cursor:pointer;" title="% above 40-week MA">40W%${headerArrow('above40Pct')}</th>
-                        <th onclick="${onSort('nearPivot')}" style="cursor:pointer;" title="Stocks within 5% of pivot">Pivot${headerArrow('nearPivot')}</th>
+                        <th onclick="${onSrt('name')}" style="cursor:pointer;text-align:left;">Name${hdr('name')}</th>
+                        <th onclick="${onSrt('total')}" style="cursor:pointer;" title="Total stocks">#${hdr('total')}</th>
+                        <th onclick="${onSrt('above10Pct')}" style="cursor:pointer;" title="% above 10-week MA">10W${hdr('above10Pct')}</th>
+                        <th onclick="${onSrt('above40Pct')}" style="cursor:pointer;" title="% above 40-week MA">40W${hdr('above40Pct')}</th>
+                        <th onclick="${onSrt('avgRet1m')}" style="cursor:pointer;" title="Avg 1-Month Return">1M${hdr('avgRet1m')}</th>
+                        <th onclick="${onSrt('avgRet3m')}" style="cursor:pointer;" title="Avg 3-Month Return">3M${hdr('avgRet3m')}</th>
+                        <th onclick="${onSrt('avgRet1y')}" style="cursor:pointer;" title="Avg 1-Year Return">1Y${hdr('avgRet1y')}</th>
+                        <th onclick="${onSrt('nearPivot')}" style="cursor:pointer;" title="Stocks near pivot">Pivot${hdr('nearPivot')}</th>
+                        <th onclick="${onSrt('avgTech')}" style="cursor:pointer;" title="Avg Tech Score">Tech${hdr('avgTech')}</th>
+                        <th onclick="${onSrt('momentum')}" style="cursor:pointer;" title="Momentum Score">Mom${hdr('momentum')}</th>
                     </tr></thead>
                     <tbody>
                     ${rows.map(r => {
-                        const p10 = Math.round(r.above10Pct * 100);
-                        const p40 = Math.round(r.above40Pct * 100);
-                        const c10 = p10 >= 60 ? '#00e676' : p10 >= 35 ? '#facc15' : '#ff4d4f';
-                        const c40 = p40 >= 60 ? '#00e676' : p40 >= 35 ? '#facc15' : '#ff4d4f';
-                        return `<tr onclick="setSectorFilter('${r.name.replace(/'/g, "\\'")}',event)" style="cursor:pointer;">
-                            <td class="breadth-name" title="${r.name}">${r.name}</td>
+                    const p10 = Math.round(r.above10Pct * 100);
+                    const p40 = Math.round(r.above40Pct * 100);
+                    const c10 = pctColor(p10);
+                    const c40 = pctColor(p40);
+                    const expKey = activeTab + '_' + r.name;
+                    const isExp = !!window._breadthExpanded[expKey];
+                    const safeN = r.name.replace(/'/g, '\\u0027');
+                    const avgTechFmt = isNaN(r.avgTech) ? '—' : r.avgTech.toFixed(0);
+                    const techC = isNaN(r.avgTech) ? 'rgba(255,255,255,0.4)' : r.avgTech >= 70 ? '#00e676' : r.avgTech >= 50 ? '#facc15' : '#ff4d4f';
+
+                    // Expanded detail row
+                    const expandRow = isExp ? `<tr class="breadth-expand-row">
+                            <td colspan="10">
+                                <div class="breadth-expand-content">
+                                    <div class="breadth-expand-stats">
+                                        <div class="bes-item"><span class="bes-lbl">🟢 Bullish</span><span class="bes-val" style="color:#00e676">${r.bullish} (${r.total > 0 ? Math.round(r.bullish / r.total * 100) : 0}%)</span></div>
+                                        <div class="bes-item"><span class="bes-lbl">🟡 Mixed</span><span class="bes-val" style="color:#facc15">${r.neutral}</span></div>
+                                        <div class="bes-item"><span class="bes-lbl">🔴 Bearish</span><span class="bes-val" style="color:#ff4d4f">${r.bearish} (${r.total > 0 ? Math.round(r.bearish / r.total * 100) : 0}%)</span></div>
+                                        <div class="bes-item"><span class="bes-lbl">📍 Pivot</span><span class="bes-val" style="color:#facc15">${r.nearPivot}</span></div>
+                                        <div class="bes-item"><span class="bes-lbl">💼 MCap</span><span class="bes-val">${fmtMcap(r.totalMcap)}</span></div>
+                                        <div class="bes-item"><span class="bes-lbl">📈 Avg 1Y</span><span class="bes-val" style="color:${retColor(r.avgRet1y)}">${fmtRet(r.avgRet1y)}</span></div>
+                                        <div class="bes-item"><span class="bes-lbl">📊 Avg EPS</span><span class="bes-val">${isNaN(r.avgEps) ? '—' : r.avgEps.toFixed(0)}</span></div>
+                                        <div class="bes-item"><span class="bes-lbl">🔭 Avg 52W</span><span class="bes-val">${isNaN(r.avg52w) ? '—' : r.avg52w.toFixed(0) + '%'}</span></div>
+                                    </div>
+                                    <div class="breadth-topstocks-label">Top Stocks by Tech Score:</div>
+                                    <div class="breadth-topstocks">${r.tickers.slice(0, 10).map(t => {
+                        const fa = t.above10 && t.above40 ? '🟢' : (!t.above10 && !t.above40) ? '🔴' : '🟡';
+                        return `<span class="btop-chip-lg" onclick="event.stopPropagation(); ${filterFn}('${safeN}',event);" title="${t.name}">${fa} <b>${t.ticker}</b> <span style="color:${retColor(t.ret3m)};">${fmtRet(t.ret3m)}</span></span>`;
+                    }).join('')}</div>
+                                </div>
+                            </td>
+                        </tr>` : '';
+
+                    return `<tr class="breadth-main-row" onclick="window._breadthExpanded['${expKey}']=!window._breadthExpanded['${expKey}'];renderBreadthTab();" style="cursor:pointer;">
+                            <td class="breadth-name" title="${r.name}"><span class="breadth-expand-icon">${isExp ? '▼' : '▶'}</span>${r.name}</td>
                             <td style="text-align:center;color:rgba(255,255,255,0.5);">${r.total}</td>
                             <td style="text-align:center;">
-                                <span style="color:${c10};font-weight:700;">${fmtPct(r.above10, r.total)}</span>
-                                ${barHtml(r.above10, r.total, c10)}
+                                <span style="color:${c10};font-weight:700;font-size:11px;">${p10}%</span>
+                                ${miniBar(p10, c10)}
                             </td>
                             <td style="text-align:center;">
-                                <span style="color:${c40};font-weight:700;">${fmtPct(r.above40, r.total)}</span>
-                                ${barHtml(r.above40, r.total, c40)}
+                                <span style="color:${c40};font-weight:700;font-size:11px;">${p40}%</span>
+                                ${miniBar(p40, c40)}
                             </td>
+                            <td style="text-align:center;font-size:11px;font-weight:600;color:${retColor(r.avgRet1m)};">${fmtRet(r.avgRet1m)}</td>
+                            <td style="text-align:center;font-size:11px;font-weight:600;color:${retColor(r.avgRet3m)};">${fmtRet(r.avgRet3m)}</td>
+                            <td style="text-align:center;font-size:11px;font-weight:600;color:${retColor(r.avgRet1y)};">${fmtRet(r.avgRet1y)}</td>
                             <td style="text-align:center;color:#facc15;font-weight:700;">${r.nearPivot || '—'}</td>
-                        </tr>`;
-                    }).join('')}
+                            <td style="text-align:center;font-size:11px;font-weight:700;color:${techC};">${avgTechFmt}</td>
+                            <td style="text-align:center;">
+                                <div class="breadth-momentum-badge" style="background:${momGrad(r.momentum)};">${r.momentum}</div>
+                            </td>
+                        </tr>${expandRow}`;
+                }).join('')}
                     </tbody>
                 </table>`;
-            };
+            }
 
-            pane.innerHTML = buildTable(bd.sector, '🏭 Sector Breadth') +
-                '<div style="margin-top:16px;"></div>' +
-                buildTable(bd.industry, '🔬 Industry Breadth');
+            pane.innerHTML = toolbar + summaryStrip + `<div style="padding:0 4px 8px;">` + content + `</div>`;
         }
         window.renderBreadthTab = renderBreadthTab;
 
@@ -9214,7 +9556,7 @@
                 if (!arr || arr.length < 25) return; // need enough history for 20-bar avg + 6 bars
 
                 const searchStart = Math.max(20, arr.length - 6);
-                
+
                 // Scan the last 6 weeks for a massive volume surge
                 for (let i = searchStart; i < arr.length; i++) {
                     const surgeCandle = arr[i];
@@ -9237,9 +9579,9 @@
                     if (flagWeeks.length > 0) {
                         const flagHigh = Math.max(...flagWeeks.map(x => x.high));
                         const flagLow = Math.min(...flagWeeks.map(x => x.low));
-                        
+
                         tightness = flagHigh > 0 ? ((flagHigh - flagLow) / flagHigh) * 100 : 100;
-                        
+
                         // Flag is invalid if it's too loose, or if it dropped below the surge candle's open
                         if (tightness > 12 || flagLow < surgeCandle.open) {
                             isValidFlag = false;
@@ -9255,6 +9597,52 @@
                         break; // found a valid setup, no need to check older weeks
                     }
                 }
+            });
+        }
+
+        //   VCP FLAG CALCULATION
+        // ══════════════════════════════════════════════════════
+        function calcVCPFlags() {
+            if (!window._ohlcvTickers || !allData.length) return;
+
+            allData.forEach(r => {
+                r._vcpFlag = false;
+                const arr = window._ohlcvTickers.get(String(r._ticker).toUpperCase());
+                if (!arr || arr.length < 30) return; 
+
+                // Analyze the last 26 weeks for a base
+                const baseBars = arr.slice(-26, -3); // the base building phase
+                const tightBars = arr.slice(-3); // the contraction phase (last 3 weeks)
+
+                const baseHigh = Math.max(...baseBars.map(x => x.high));
+                const baseLow = Math.min(...baseBars.map(x => x.low));
+                const baseDepth = (baseHigh - baseLow) / baseHigh;
+
+                // Base depth should be between 10% and 40%
+                if (baseDepth < 0.10 || baseDepth > 0.40) return;
+
+                const tightHigh = Math.max(...tightBars.map(x => x.high));
+                const tightLow = Math.min(...tightBars.map(x => x.low));
+                const tightness = (tightHigh - tightLow) / tightHigh;
+
+                // Tightness in the last 3 weeks should be <= 6%
+                if (tightness > 0.06) return;
+
+                // Price should be in the upper portion of the base (within 15% of baseHigh)
+                const currentPrice = arr[arr.length - 1].close;
+                if (currentPrice < baseHigh * 0.85) return;
+
+                // Volume contraction check: avg vol of tight bars should be less than avg vol of base bars
+                let baseVol = 0, tightVol = 0;
+                baseBars.forEach(x => baseVol += x.vol);
+                tightBars.forEach(x => tightVol += x.vol);
+                const avgBaseVol = baseVol / baseBars.length;
+                const avgTightVol = tightVol / tightBars.length;
+
+                if (avgTightVol > avgBaseVol * 0.9) return; // Volume should dry up by at least 10%
+
+                r._vcpFlag = true;
+                r._vcpDetails = `Depth: ${(baseDepth * 100).toFixed(1)}% | Tightness: ${(tightness * 100).toFixed(1)}%`;
             });
         }
 
@@ -10924,6 +11312,7 @@
                     lines: outLines
                 };
             }
+            window._fsBuildPriceActionAnalysis = buildPriceActionAnalysis;
 
             function fitCanvasText(ctx, text, maxW) {
                 if (ctx.measureText(text).width <= maxW) return text;
@@ -11482,7 +11871,7 @@
                     : Math.min(window.devicePixelRatio || 1, 2);
 
                 pCv.style.width = W + 'px'; pCv.style.height = PH + 'px'; pCv.width = W * DPR; pCv.height = PH * DPR;
-                
+
                 if (VH > 0) {
                     vCv.style.display = 'block';
                     vCv.style.width = W + 'px'; vCv.style.height = VH + 'px'; vCv.width = W * DPR; vCv.height = VH * DPR;
@@ -11490,7 +11879,7 @@
                 } else {
                     vCv.style.display = 'none';
                 }
-                
+
                 if (indCv) {
                     indCv.style.width = W + 'px'; indCv.style.height = IH + 'px'; indCv.width = W * DPR; indCv.height = IH * DPR;
                 }
@@ -11616,7 +12005,7 @@
                     const onPointerMove = (e) => {
                         const state = pCv._chartState;
                         if (!state || !state.raw || state.n === 0) return;
-                        
+
                         // Treat as pointer event (mouse or touch)
                         const coords = window._getRotatedCoords ? window._getRotatedCoords(e, canvas) : (() => {
                             const rect = canvas.getBoundingClientRect();
@@ -11925,7 +12314,7 @@
                     pc.font = 'bold 9px "Lexend",monospace'; pc.fillStyle = '#ffffff';
                     pc.textAlign = 'right'; pc.textBaseline = 'middle';
                     const volMultiplier = maxVClose;
-                    
+
                     // Draw max and mid volume labels on the right edge
                     pc.fillText(fmtV(maxV * volMultiplier), W - 4, volBaseY - volH + 6);
                     pc.fillText(fmtV(maxV * 0.5 * volMultiplier), W - 4, volBaseY - volH * 0.5);
@@ -11964,6 +12353,9 @@
                     const d = dateVal instanceof Date ? dateVal : new Date(dateVal);
                     if (!d || isNaN(d.getTime())) return '';
                     const mos = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                    if (window._fsTrainingMode) {
+                        return d.getDate() + ' ' + mos[d.getMonth()];
+                    }
                     if (pCv.id === 'fs-chart-pcv') {
                         return d.getDate() + ' ' + mos[d.getMonth()] + ' ' + d.getFullYear();
                     }
@@ -12018,12 +12410,16 @@
 
                             // Label: year on year change (or if Jan), month name otherwise
                             let label;
-                            if (yr !== lastTickYear && lastTickYear !== null) {
-                                label = String(yr);
-                            } else if (mo === 0) {
-                                label = String(yr);
-                            } else {
+                            if (window._fsTrainingMode) {
                                 label = _mos[mo];
+                            } else {
+                                if (yr !== lastTickYear && lastTickYear !== null) {
+                                    label = String(yr);
+                                } else if (mo === 0) {
+                                    label = String(yr);
+                                } else {
+                                    label = _mos[mo];
+                                }
                             }
                             lastTickYear = yr;
                             lastLabelX = x;
@@ -12133,7 +12529,7 @@
                             pc.fillText(infoTxt, PP.l + 4, PP.t + 2);
                             if (pCv._hoverCanvas === pCv) {
                                 drawPriceActionHoverPanel(pc, buildPriceActionAnalysis(raw), hx, W, PH, PP);
-                                
+
                                 // Volume Overlay Tooltips (if hovering in bottom 15% of full screen price pane)
                                 if (isFs && hy >= PP.t + pH * 0.85) {
                                     // 1. Right-axis Volume Badge
@@ -12143,7 +12539,7 @@
                                     const volBaseY = PP.t + pH;
                                     const volMultiplier = maxVClose;
                                     const volVal = Math.max(0, maxV * (1 - (hy - (volBaseY - volH)) / volH) * volMultiplier);
-                                    
+
                                     const volTxt = fmtV(volVal);
                                     pc.font = 'bold 11px "Lexend",monospace';
                                     const badgeW = pc.measureText(volTxt).width + 8;
@@ -12170,7 +12566,7 @@
                                         const by = Math.max(PP.t + 2, hy - 20);
 
                                         pc.fillStyle = 'rgba(18, 18, 26, 0.9)';
-                                        pc.beginPath(); 
+                                        pc.beginPath();
                                         if (pc.roundRect) {
                                             pc.roundRect(bx, by, dtW, 18, 4);
                                         } else {
@@ -12197,176 +12593,176 @@
                 ════════════════════════════════════════ */
                 if (!isFs) {
                     const VP = { t: 3, b: 14, l: 6, r: 48 };
-                const vW2 = W - VP.l - VP.r;
-                const vH2 = VH - VP.t - VP.b;
+                    const vW2 = W - VP.l - VP.r;
+                    const vH2 = VH - VP.t - VP.b;
 
-                let maxV = 1;
-                let maxVClose = 1;
-                for (const r of raw) {
-                    if (r.vol > maxV) {
-                        maxV = r.vol;
-                        maxVClose = r.close || 1;
-                    }
-                }
-
-                vc.fillStyle = '#000000'; vc.fillRect(0, 0, W, VH);
-
-                // ── Separator line at top of volume panel ──
-                vc.strokeStyle = 'rgba(255,255,255,0.15)'; vc.lineWidth = 0.8;
-                vc.beginPath(); vc.moveTo(0, 0); vc.lineTo(W, 0); vc.stroke();
-
-                // Volume bars — vivid blue bull, vivid magenta bear
-                raw.forEach((r, i) => {
-                    const x = toPaneX(i, VP, vW2);
-                    const bh = Math.max(1, (r.vol / maxV) * vH2);
-
-                    vc.fillStyle = r._vColor || '#6b7280';
-                    vc.globalAlpha = 0.85;
-                    vc.fillRect(x - bW / 2, VP.t + vH2 - bh, bW, bh);
-                    vc.globalAlpha = 1.0;
-                });
-
-                // Draw 9 SMA for Volume: White, 50% opacity, dashed
-                vc.strokeStyle = 'rgba(255, 255, 255, 0.5)'; vc.lineWidth = 1.2; vc.setLineDash([4, 4]);
-                vc.beginPath();
-                let stVolSma = false;
-                raw.forEach((r, i) => {
-                    if (r.volSma9 !== null && r.volSma9 !== undefined) {
-                        const x = toPaneX(i, VP, vW2);
-                        const y = VP.t + vH2 - (r.volSma9 / maxV) * vH2;
-                        stVolSma ? vc.lineTo(x, y) : (vc.moveTo(x, y), stVolSma = true);
-                    }
-                });
-                vc.stroke();
-                vc.setLineDash([]);
-
-                // Volume right-side labels — full white bold, right-aligned
-                vc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 7.5px "Lexend",monospace'; vc.fillStyle = '#ffffff';
-                vc.textAlign = 'right'; vc.textBaseline = 'middle';
-                const volMultiplier = isFs ? maxVClose : 1;
-                vc.fillText(fmtV(maxV * volMultiplier), W - 4, VP.t + (isFs ? 6 : 4));
-                vc.fillText(fmtV(maxV * 0.5 * volMultiplier), W - 4, VP.t + vH2 * 0.5);
-
-                // Draw Volume MA label/badge on Y-axis (latest value or hovered value)
-                const maTargetR = (pCv._hoverIdx !== undefined && pCv._hoverIdx !== null) ? raw[pCv._hoverIdx] : raw[raw.length - 1];
-                if (maTargetR && maTargetR.volSma9 !== null && maTargetR.volSma9 !== undefined && !isNaN(maTargetR.volSma9)) {
-                    const maVal = maTargetR.volSma9 * volMultiplier;
-                    const maTxt = fmtV(maVal);
-                    const maY = VP.t + vH2 - (maTargetR.volSma9 / maxV) * vH2;
-
-                    vc.font = isFs ? 'bold 10px "Lexend",monospace' : 'bold 7px "Lexend",monospace';
-                    const badgeW = vc.measureText(maTxt).width + (isFs ? 8 : 6);
-                    const badgeH = isFs ? 14 : 9;
-                    const badgeOff = isFs ? 7 : 4.5;
-                    let dby = maY;
-                    if (dby - badgeOff < VP.t) dby = VP.t + badgeOff;
-                    if (dby + badgeOff > VH - VP.b) dby = VH - VP.b - badgeOff;
-
-                    vc.fillStyle = 'rgba(255, 255, 255, 0.15)'; // semi-transparent white background
-                    vc.fillRect(W - badgeW - 1, dby - badgeOff, badgeW, badgeH);
-                    vc.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-                    vc.lineWidth = 0.8;
-                    vc.setLineDash([2, 2]);
-                    vc.strokeRect(W - badgeW - 1, dby - badgeOff, badgeW, badgeH);
-                    vc.setLineDash([]);
-
-                    vc.fillStyle = '#ffffff';
-                    vc.textAlign = 'right';
-                    vc.textBaseline = 'middle';
-                    vc.fillText(maTxt, W - 4, dby);
-                }
-
-                // "PERIOD" badge bottom-right of volume panel
-                const badgeTxt = period.toUpperCase();
-                vc.font = 'bold 7px "Lexend",monospace';
-                const bw = vc.measureText(badgeTxt).width + 6;
-                const bx = W - bw - 2, by = VH - VP.b;
-                vc.fillStyle = 'rgba(255,255,255,0.1)';
-                vc.fillRect(bx, by, bw, 10);
-                vc.strokeStyle = 'rgba(255,255,255,0.2)'; vc.lineWidth = 0.5;
-                vc.strokeRect(bx, by, bw, 10);
-                vc.fillStyle = '#ffffff'; vc.textAlign = 'center'; vc.textBaseline = 'middle';
-                vc.fillText(badgeTxt, bx + bw / 2, by + 5);
-
-                // Draw crosshair on volume canvas if hovering
-                if (pCv._hoverX !== undefined && pCv._hoverX !== null) {
-                    const hx = pCv._hoverX;
-                    const hy = pCv._hoverY;
-                    const activeCv = pCv._hoverCanvas;
-
-                    vc.save();
-                    vc.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-                    vc.lineWidth = 0.8;
-                    vc.setLineDash([4, 4]);
-
-                    // Vertical line on volume canvas
-                    vc.beginPath();
-                    vc.moveTo(hx, VP.t);
-                    vc.lineTo(hx, VH - VP.b);
-                    vc.stroke();
-
-                    // Horizontal line on volume canvas (only if hovered canvas is volume canvas)
-                    if (activeCv === vCv && hy !== undefined && hy !== null && hy >= VP.t && hy <= VH - VP.b) {
-                        vc.beginPath();
-                        vc.moveTo(VP.l, hy);
-                        vc.lineTo(W - VP.r, hy);
-                        vc.stroke();
-
-                        vc.setLineDash([]);
-
-                        // Volume badge on right-axis
-                        const volMultiplier = isFs ? maxVClose : 1;
-                        const volVal = maxV * (1 - (hy - VP.t) / vH2) * volMultiplier;
-                        const volTxt = fmtV(volVal);
-                        vc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 7.5px "Lexend",monospace';
-                        const badgeW = vc.measureText(volTxt).width + (isFs ? 8 : 6);
-                        const badgeH = isFs ? 15 : 10;
-                        const badgeOff = isFs ? 7.5 : 5;
-                        let dby = hy;
-                        if (dby - badgeOff < VP.t) dby = VP.t + badgeOff;
-                        if (dby + badgeOff > VH - VP.b) dby = VH - VP.b - badgeOff;
-
-                        vc.fillStyle = '#475569'; // Slate-600
-                        vc.fillRect(W - badgeW - 1, dby - badgeOff, badgeW, badgeH);
-                        vc.fillStyle = '#ffffff';
-                        vc.textAlign = 'right';
-                        vc.textBaseline = 'middle';
-                        vc.fillText(volTxt, W - 4, dby);
-
-                        // Institutional Volume & Delivery Tooltip
-                        if (pCv._hoverIdx !== undefined && pCv._hoverIdx !== null) {
-                            const hr = raw[pCv._hoverIdx];
-                            if (hr) {
-                                let descTxt = hr._vDesc || '';
-                                if (isFs) {
-                                    const delTxt = (hr.delivPer !== undefined && hr.delivPer > 0)
-                                        ? `Vol: ${fmtV(hr.vol)} | Deliv: ${fmtV(hr.vol * hr.delivPer / 100)} (${hr.delivPer.toFixed(1)}%)`
-                                        : `Vol: ${fmtV(hr.vol)} | Deliv: N/A`;
-                                    descTxt = hr._vDesc ? `${hr._vDesc} | ${delTxt}` : delTxt;
-                                }
-
-                                if (descTxt) {
-                                    vc.font = '600 9px "Lexend",monospace';
-                                    const dtW = vc.measureText(descTxt).width + 12;
-                                    const isLeft = hx > W / 2;
-                                    const bx = isLeft ? hx - dtW - 8 : hx + 8;
-                                    const by = Math.max(VP.t + 2, hy - 10);
-
-                                    vc.fillStyle = 'rgba(18, 18, 26, 0.9)';
-                                    vc.beginPath(); vc.roundRect(bx, by, dtW, 18, 4); vc.fill();
-                                    vc.strokeStyle = hr._vColor || 'rgba(255,255,255,0.2)';
-                                    vc.lineWidth = 1; vc.stroke();
-
-                                    vc.fillStyle = '#ffffff';
-                                    vc.textAlign = 'center';
-                                    vc.fillText(descTxt, bx + dtW / 2, by + 9);
-                                }
-                            }
+                    let maxV = 1;
+                    let maxVClose = 1;
+                    for (const r of raw) {
+                        if (r.vol > maxV) {
+                            maxV = r.vol;
+                            maxVClose = r.close || 1;
                         }
                     }
 
-                    vc.restore();
-                }
+                    vc.fillStyle = '#000000'; vc.fillRect(0, 0, W, VH);
+
+                    // ── Separator line at top of volume panel ──
+                    vc.strokeStyle = 'rgba(255,255,255,0.15)'; vc.lineWidth = 0.8;
+                    vc.beginPath(); vc.moveTo(0, 0); vc.lineTo(W, 0); vc.stroke();
+
+                    // Volume bars — vivid blue bull, vivid magenta bear
+                    raw.forEach((r, i) => {
+                        const x = toPaneX(i, VP, vW2);
+                        const bh = Math.max(1, (r.vol / maxV) * vH2);
+
+                        vc.fillStyle = r._vColor || '#6b7280';
+                        vc.globalAlpha = 0.85;
+                        vc.fillRect(x - bW / 2, VP.t + vH2 - bh, bW, bh);
+                        vc.globalAlpha = 1.0;
+                    });
+
+                    // Draw 9 SMA for Volume: White, 50% opacity, dashed
+                    vc.strokeStyle = 'rgba(255, 255, 255, 0.5)'; vc.lineWidth = 1.2; vc.setLineDash([4, 4]);
+                    vc.beginPath();
+                    let stVolSma = false;
+                    raw.forEach((r, i) => {
+                        if (r.volSma9 !== null && r.volSma9 !== undefined) {
+                            const x = toPaneX(i, VP, vW2);
+                            const y = VP.t + vH2 - (r.volSma9 / maxV) * vH2;
+                            stVolSma ? vc.lineTo(x, y) : (vc.moveTo(x, y), stVolSma = true);
+                        }
+                    });
+                    vc.stroke();
+                    vc.setLineDash([]);
+
+                    // Volume right-side labels — full white bold, right-aligned
+                    vc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 7.5px "Lexend",monospace'; vc.fillStyle = '#ffffff';
+                    vc.textAlign = 'right'; vc.textBaseline = 'middle';
+                    const volMultiplier = isFs ? maxVClose : 1;
+                    vc.fillText(fmtV(maxV * volMultiplier), W - 4, VP.t + (isFs ? 6 : 4));
+                    vc.fillText(fmtV(maxV * 0.5 * volMultiplier), W - 4, VP.t + vH2 * 0.5);
+
+                    // Draw Volume MA label/badge on Y-axis (latest value or hovered value)
+                    const maTargetR = (pCv._hoverIdx !== undefined && pCv._hoverIdx !== null) ? raw[pCv._hoverIdx] : raw[raw.length - 1];
+                    if (maTargetR && maTargetR.volSma9 !== null && maTargetR.volSma9 !== undefined && !isNaN(maTargetR.volSma9)) {
+                        const maVal = maTargetR.volSma9 * volMultiplier;
+                        const maTxt = fmtV(maVal);
+                        const maY = VP.t + vH2 - (maTargetR.volSma9 / maxV) * vH2;
+
+                        vc.font = isFs ? 'bold 10px "Lexend",monospace' : 'bold 7px "Lexend",monospace';
+                        const badgeW = vc.measureText(maTxt).width + (isFs ? 8 : 6);
+                        const badgeH = isFs ? 14 : 9;
+                        const badgeOff = isFs ? 7 : 4.5;
+                        let dby = maY;
+                        if (dby - badgeOff < VP.t) dby = VP.t + badgeOff;
+                        if (dby + badgeOff > VH - VP.b) dby = VH - VP.b - badgeOff;
+
+                        vc.fillStyle = 'rgba(255, 255, 255, 0.15)'; // semi-transparent white background
+                        vc.fillRect(W - badgeW - 1, dby - badgeOff, badgeW, badgeH);
+                        vc.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                        vc.lineWidth = 0.8;
+                        vc.setLineDash([2, 2]);
+                        vc.strokeRect(W - badgeW - 1, dby - badgeOff, badgeW, badgeH);
+                        vc.setLineDash([]);
+
+                        vc.fillStyle = '#ffffff';
+                        vc.textAlign = 'right';
+                        vc.textBaseline = 'middle';
+                        vc.fillText(maTxt, W - 4, dby);
+                    }
+
+                    // "PERIOD" badge bottom-right of volume panel
+                    const badgeTxt = period.toUpperCase();
+                    vc.font = 'bold 7px "Lexend",monospace';
+                    const bw = vc.measureText(badgeTxt).width + 6;
+                    const bx = W - bw - 2, by = VH - VP.b;
+                    vc.fillStyle = 'rgba(255,255,255,0.1)';
+                    vc.fillRect(bx, by, bw, 10);
+                    vc.strokeStyle = 'rgba(255,255,255,0.2)'; vc.lineWidth = 0.5;
+                    vc.strokeRect(bx, by, bw, 10);
+                    vc.fillStyle = '#ffffff'; vc.textAlign = 'center'; vc.textBaseline = 'middle';
+                    vc.fillText(badgeTxt, bx + bw / 2, by + 5);
+
+                    // Draw crosshair on volume canvas if hovering
+                    if (pCv._hoverX !== undefined && pCv._hoverX !== null) {
+                        const hx = pCv._hoverX;
+                        const hy = pCv._hoverY;
+                        const activeCv = pCv._hoverCanvas;
+
+                        vc.save();
+                        vc.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+                        vc.lineWidth = 0.8;
+                        vc.setLineDash([4, 4]);
+
+                        // Vertical line on volume canvas
+                        vc.beginPath();
+                        vc.moveTo(hx, VP.t);
+                        vc.lineTo(hx, VH - VP.b);
+                        vc.stroke();
+
+                        // Horizontal line on volume canvas (only if hovered canvas is volume canvas)
+                        if (activeCv === vCv && hy !== undefined && hy !== null && hy >= VP.t && hy <= VH - VP.b) {
+                            vc.beginPath();
+                            vc.moveTo(VP.l, hy);
+                            vc.lineTo(W - VP.r, hy);
+                            vc.stroke();
+
+                            vc.setLineDash([]);
+
+                            // Volume badge on right-axis
+                            const volMultiplier = isFs ? maxVClose : 1;
+                            const volVal = maxV * (1 - (hy - VP.t) / vH2) * volMultiplier;
+                            const volTxt = fmtV(volVal);
+                            vc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 7.5px "Lexend",monospace';
+                            const badgeW = vc.measureText(volTxt).width + (isFs ? 8 : 6);
+                            const badgeH = isFs ? 15 : 10;
+                            const badgeOff = isFs ? 7.5 : 5;
+                            let dby = hy;
+                            if (dby - badgeOff < VP.t) dby = VP.t + badgeOff;
+                            if (dby + badgeOff > VH - VP.b) dby = VH - VP.b - badgeOff;
+
+                            vc.fillStyle = '#475569'; // Slate-600
+                            vc.fillRect(W - badgeW - 1, dby - badgeOff, badgeW, badgeH);
+                            vc.fillStyle = '#ffffff';
+                            vc.textAlign = 'right';
+                            vc.textBaseline = 'middle';
+                            vc.fillText(volTxt, W - 4, dby);
+
+                            // Institutional Volume & Delivery Tooltip
+                            if (pCv._hoverIdx !== undefined && pCv._hoverIdx !== null) {
+                                const hr = raw[pCv._hoverIdx];
+                                if (hr) {
+                                    let descTxt = hr._vDesc || '';
+                                    if (isFs) {
+                                        const delTxt = (hr.delivPer !== undefined && hr.delivPer > 0)
+                                            ? `Vol: ${fmtV(hr.vol)} | Deliv: ${fmtV(hr.vol * hr.delivPer / 100)} (${hr.delivPer.toFixed(1)}%)`
+                                            : `Vol: ${fmtV(hr.vol)} | Deliv: N/A`;
+                                        descTxt = hr._vDesc ? `${hr._vDesc} | ${delTxt}` : delTxt;
+                                    }
+
+                                    if (descTxt) {
+                                        vc.font = '600 9px "Lexend",monospace';
+                                        const dtW = vc.measureText(descTxt).width + 12;
+                                        const isLeft = hx > W / 2;
+                                        const bx = isLeft ? hx - dtW - 8 : hx + 8;
+                                        const by = Math.max(VP.t + 2, hy - 10);
+
+                                        vc.fillStyle = 'rgba(18, 18, 26, 0.9)';
+                                        vc.beginPath(); vc.roundRect(bx, by, dtW, 18, 4); vc.fill();
+                                        vc.strokeStyle = hr._vColor || 'rgba(255,255,255,0.2)';
+                                        vc.lineWidth = 1; vc.stroke();
+
+                                        vc.fillStyle = '#ffffff';
+                                        vc.textAlign = 'center';
+                                        vc.fillText(descTxt, bx + dtW / 2, by + 9);
+                                    }
+                                }
+                            }
+                        }
+
+                        vc.restore();
+                    }
                 } // End if (!isFs)
 
                 /* ════════════════════════════════════════
@@ -14139,7 +14535,7 @@
                     ? overrideQ.toLowerCase()
                     : (document.getElementById('search-input') ? document.getElementById('search-input').value.trim().toLowerCase() : '');
                 const mainParts = mainRaw ? mainRaw.split('|').map(s => s.trim()).filter(Boolean) : [];
-                
+
                 const wantedCols = COLS[sub];
 
                 _filtered[sub] = _data[sub].filter(row => {
@@ -15589,6 +15985,28 @@
             box-shadow: 0 0 8px rgba(250, 204, 21, 0.40);
         }
 
+        .vcp-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            height: 16px;
+            padding: 0 4px;
+            font-size: 8.5px;
+            font-weight: 800;
+            font-family: 'Lexend', sans-serif;
+            background: rgba(6, 182, 212, 0.15);
+            border: 1px solid rgba(6, 182, 212, 0.60);
+            color: #06b6d4;
+            border-radius: 3px;
+            letter-spacing: 0.02em;
+            line-height: 1;
+            flex-shrink: 0;
+            cursor: help;
+            user-select: none;
+            white-space: nowrap;
+            box-shadow: 0 0 8px rgba(6, 182, 212, 0.40);
+        }
+
         .pivot-proximity-badge {
             display: inline-flex;
             align-items: center;
@@ -15617,56 +16035,335 @@
             border-bottom: 2px solid #818cf8 !important;
         }
 
-        .breadth-section-title {
-            color: rgba(255,255,255,0.9);
-            font-size: 13px;
-            font-weight: 700;
-            margin-bottom: 8px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
-            padding-bottom: 4px;
+        /* ── Breadth toolbar ── */
+        .breadth-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 8px;
+            background: rgba(255, 255, 255, 0.03);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            gap: 8px;
         }
 
+        .breadth-subtabs {
+            display: flex;
+            gap: 4px;
+        }
+
+        .breadth-subtab {
+            background: none;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 6px;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 10.5px;
+            font-weight: 600;
+            padding: 4px 9px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .breadth-subtab:hover {
+            background: rgba(255, 255, 255, 0.07);
+            color: #fff;
+        }
+
+        .breadth-subtab.active {
+            background: rgba(129, 140, 248, 0.15);
+            border-color: #818cf8;
+            color: #818cf8;
+        }
+
+        .breadth-viewbtns {
+            display: flex;
+            gap: 3px;
+        }
+
+        .breadth-viewbtn {
+            background: none;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 13px;
+            width: 26px;
+            height: 26px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+        }
+
+        .breadth-viewbtn:hover {
+            background: rgba(255, 255, 255, 0.07);
+            color: #fff;
+        }
+
+        .breadth-viewbtn.active {
+            background: rgba(129, 140, 248, 0.2);
+            border-color: #818cf8;
+            color: #818cf8;
+        }
+
+        /* ── Summary strip ── */
+        .breadth-summary-strip {
+            display: flex;
+            gap: 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .breadth-stat-chip {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 6px 4px;
+            border-right: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .breadth-stat-chip:last-child {
+            border-right: none;
+        }
+
+        .bsc-val {
+            font-size: 13px;
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        .bsc-lbl {
+            font-size: 9px;
+            color: rgba(255, 255, 255, 0.4);
+            margin-top: 2px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        /* ── Table ── */
         .breadth-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 11.5px;
+            font-size: 11px;
             font-family: 'Inter', sans-serif;
         }
 
         .breadth-table th {
-            color: rgba(255,255,255,0.6);
+            color: rgba(255, 255, 255, 0.6);
             font-weight: 600;
             text-transform: uppercase;
             padding: 6px 4px;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
             user-select: none;
+        }
+
+        .breadth-table-rich th {
+            color: rgba(255, 255, 255, 0.5);
+            font-weight: 700;
+            text-transform: uppercase;
+            font-size: 9.5px;
+            letter-spacing: 0.3px;
+            padding: 5px 3px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            user-select: none;
+            white-space: nowrap;
         }
 
         .breadth-table th:hover {
             color: #fff;
-            background: rgba(255,255,255,0.05);
+            background: rgba(255, 255, 255, 0.05);
         }
 
         .breadth-table td {
-            padding: 8px 4px;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
+            padding: 6px 3px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
             vertical-align: middle;
         }
 
-        .breadth-table tr:hover td {
-            background: rgba(255,255,255,0.04);
+        .breadth-main-row:hover td {
+            background: rgba(255, 255, 255, 0.04);
         }
 
         .breadth-name {
             font-weight: 600;
             color: #e2e8f0;
-            max-width: 120px;
+            max-width: 110px;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            font-size: 11px;
         }
+
+        .breadth-expand-icon {
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 8px;
+            margin-right: 3px;
+        }
+
+        /* ── Momentum badge ── */
+        .breadth-momentum-badge {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 800;
+            padding: 2px 5px;
+            border-radius: 4px;
+            color: #fff;
+            min-width: 24px;
+            text-align: center;
+        }
+
+        /* ── Expanded row ── */
+        .breadth-expand-row td {
+            padding: 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .breadth-expand-content {
+            background: rgba(129, 140, 248, 0.05);
+            border-left: 2px solid rgba(129, 140, 248, 0.3);
+            padding: 8px 10px;
+        }
+
+        .breadth-expand-stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-bottom: 8px;
+        }
+
+        .bes-item {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 6px;
+            padding: 4px 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-width: 65px;
+        }
+
+        .bes-lbl {
+            font-size: 8.5px;
+            color: rgba(255, 255, 255, 0.4);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .bes-val {
+            font-size: 12px;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.85);
+            margin-top: 1px;
+        }
+
+        .breadth-topstocks-label {
+            font-size: 9px;
+            color: rgba(255, 255, 255, 0.4);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            margin-bottom: 5px;
+            font-weight: 600;
+        }
+
+        .breadth-topstocks {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+
+        .btop-chip {
+            font-size: 9.5px;
+            padding: 2px 6px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            cursor: pointer;
+            color: rgba(255, 255, 255, 0.7);
+            transition: background 0.1s;
+        }
+
+        .btop-chip:hover {
+            background: rgba(255, 255, 255, 0.12);
+        }
+
+        .btop-chip-lg {
+            font-size: 10px;
+            padding: 3px 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+            cursor: pointer;
+            color: rgba(255, 255, 255, 0.8);
+            transition: background 0.12s;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .btop-chip-lg:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        /* ── Heatmap ── */
+        .breadth-heatmap {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            padding: 6px 2px;
+        }
+
+        .breadth-heatmap-tile {
+            flex: 0 0 calc(33.3% - 5px);
+            min-width: 80px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 7px 6px 5px;
+            cursor: pointer;
+            transition: transform 0.12s, border-color 0.12s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .breadth-heatmap-tile:hover {
+            transform: scale(1.04);
+        }
+
+        .bht-name {
+            font-size: 9.5px;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.75);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 3px;
+        }
+
+        .bht-pct {
+            font-size: 17px;
+            font-weight: 900;
+            line-height: 1;
+        }
+
+        .bht-ret {
+            font-size: 10px;
+            font-weight: 600;
+            margin-top: 2px;
+        }
+
+        .bht-momentum {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            font-size: 9px;
+            font-weight: 800;
+            padding: 1px 4px;
+            border-radius: 3px;
+            color: #fff;
+        }
+
+
 
         /* ── Surveillance Flags column (right side, next to tech-score-box) ── */
         .surv-flags-col {
@@ -15891,8 +16588,9 @@
             if (q) {
                 const tokens = q.split(/\s+/).filter(Boolean);
                 data = data.filter(r => {
-                    const inv = r.Investor.toLowerCase();
-                    return tokens.every(t => inv.includes(t));
+                    const inv = String(r.Investor).toLowerCase();
+                    const tkr = String(r.Ticker).toLowerCase();
+                    return tokens.every(t => inv.includes(t) || tkr.includes(t));
                 });
             }
 
@@ -15930,7 +16628,7 @@
             if (countEl) countEl.textContent = data.length;
 
             if (data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" class="deal-empty">No results found</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="4" class="deal-empty">⭐ No results found</td></tr>';
                 document.getElementById('superstar-load-more-wrap').style.display = 'none';
                 return;
             }
@@ -15940,19 +16638,39 @@
             for (let i = 0; i < limit; i++) {
                 const r = data[i];
 
-                // formatting
-                const changeStr = String(r.Change || '');
+                const invName = String(r.Investor || '');
+                const invInitials = invName.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase().slice(0, 2);
+
+                const holdStr = String(r.Holding || '');
+                const holdVal = parseFloat(holdStr.replace(/[^0-9.-]/g, '')) || 0;
+                const holdPct = Math.min(100, (holdVal / 20) * 100); // 20% cap for bar
+
+                const changeStr = String(r.Change || '').trim();
                 const chgVal = parseFloat(changeStr.replace(/[^0-9.-]/g, '')) || 0;
-                let chgColor = 'var(--text2)';
-                if (changeStr.toLowerCase().includes('new')) chgColor = 'var(--pop-green)';
-                else if (chgVal > 0) chgColor = 'var(--pop-green)';
-                else if (chgVal < 0) chgColor = 'var(--pop-red)';
+                let chgBadge = '';
+                if (changeStr.toLowerCase().includes('new')) {
+                    chgBadge = `<span class="ss-chg-badge ss-chg-new">✨ ${changeStr}</span>`;
+                } else if (chgVal > 0) {
+                    chgBadge = `<span class="ss-chg-badge ss-chg-pos">▲ ${changeStr}</span>`;
+                } else if (chgVal < 0) {
+                    chgBadge = `<span class="ss-chg-badge ss-chg-neg">▼ ${changeStr}</span>`;
+                } else {
+                    chgBadge = `<span class="ss-chg-badge ss-chg-neu">${changeStr || '—'}</span>`;
+                }
 
                 html += `<tr>
-                <td class="dt-person">${r.Investor || ''}</td>
-                <td class="dt-ticker" onclick="searchStock('${r.Ticker || ''}')">${r.Ticker || ''}</td>
-                <td>${r.Holding || ''}</td>
-                <td style="color:${chgColor}; font-weight:600;">${changeStr}</td>
+                <td>
+                    <div class="ss-inv-cell" title="${invName.replace(/"/g, '&quot;')}">
+                        <div class="ss-inv-avatar">${invInitials}</div>
+                        <div class="ss-inv-name">${invName}</div>
+                    </div>
+                </td>
+                <td><span class="dt-ticker" onclick="searchStock('${r.Ticker || ''}')">${r.Ticker || ''}</span></td>
+                <td style="text-align:right;">
+                    <div style="font-weight:700;color:rgba(255,255,255,0.85);">${holdStr}</div>
+                    <div class="ss-hold-bar-wrap"><div class="ss-hold-bar" style="width:${holdPct}%"></div></div>
+                </td>
+                <td style="text-align:right;">${chgBadge}</td>
             </tr>`;
             }
             tbody.innerHTML = html;
@@ -15965,45 +16683,57 @@
 
         function computeSuperstarAnalytics() {
             if (!superStarData.length) return;
-            let maxBuy = 0;
-            let topBuyer = null;
 
-            let newStockList = [];
+            const uniqueInvestors = new Set(superStarData.map(r => r.Investor)).size;
+            let newAdds = 0;
+            let increased = 0;
+            let decreased = 0;
+
+            const topConviction = [];
 
             superStarData.forEach(r => {
                 const chgStr = String(r.Change).toLowerCase();
                 const chg = parseFloat(r.Change.replace(/[^0-9.-]/g, '')) || 0;
-                if (chg > maxBuy) {
-                    maxBuy = chg;
-                    topBuyer = r;
-                }
-                if (chgStr.includes('new') || r.Holding === r.Change) {
-                    newStockList.push(r);
+
+                if (chgStr.includes('new')) newAdds++;
+                else if (chg > 0) increased++;
+                else if (chg < 0) decreased++;
+
+                if (chg > 0 || chgStr.includes('new')) {
+                    topConviction.push(r);
                 }
             });
 
-            if (topBuyer) {
-                document.getElementById('sa-most-buying-investor').textContent = topBuyer.Investor;
-                document.getElementById('sa-most-buying-stock').textContent = `${topBuyer.Ticker} (+${topBuyer.Change})`;
+            const el = id => { const e = document.getElementById(id); return e ? e : { textContent: '' }; };
+
+            el('ssa-total-holdings').textContent = superStarData.length.toLocaleString();
+            el('ssa-investors').textContent = uniqueInvestors.toLocaleString();
+            el('ssa-new-adds').textContent = newAdds.toLocaleString();
+            el('ssa-increased').textContent = increased.toLocaleString();
+            el('ssa-decreased').textContent = decreased.toLocaleString();
+
+            const cStrip = document.getElementById('ss-conviction-strip');
+            const cItems = document.getElementById('ss-conv-items');
+
+            if (cStrip && cItems && topConviction.length > 0) {
+                // Sort by highest change
+                topConviction.sort((a, b) => {
+                    const chgA = parseFloat(a.Change.replace(/[^0-9.-]/g, '')) || (a.Change.toLowerCase().includes('new') ? 10 : 0);
+                    const chgB = parseFloat(b.Change.replace(/[^0-9.-]/g, '')) || (b.Change.toLowerCase().includes('new') ? 10 : 0);
+                    return chgB - chgA;
+                });
+
+                const top10 = topConviction.slice(0, 10);
+                cItems.innerHTML = top10.map(r => {
+                    const icon = String(r.Change).toLowerCase().includes('new') ? '✨' : '▲';
+                    return `<div class="ss-conv-chip" onclick="searchStock('${r.Ticker}')" style="cursor:pointer" title="${r.Investor} added ${r.Change}">
+                        ${icon} <b>${r.Ticker}</b> <span style="color:var(--text2)">${r.Change}</span>
+                    </div>`;
+                }).join('');
+                cStrip.style.display = 'flex';
+            } else if (cStrip) {
+                cStrip.style.display = 'none';
             }
-
-            if (newStockList.length > 0) {
-                // Sort by holding
-                newStockList.sort((a, b) => (parseFloat(b.Holding) || 0) - (parseFloat(a.Holding) || 0));
-                const topNew = newStockList[0];
-                document.getElementById('sa-new-stock').textContent = topNew.Ticker;
-                document.getElementById('sa-new-stock-investor').textContent = `Added by ${topNew.Investor} (${topNew.Holding})`;
-            }
-        }
-
-        function showSuperstarAnalytics() {
-            const p = document.getElementById('superstar-analytics-popup');
-            if (p) p.classList.add('visible');
-        }
-
-        function closeSuperstarAnalytics() {
-            const p = document.getElementById('superstar-analytics-popup');
-            if (p) p.classList.remove('visible');
         }
         window.searchStock = function (ticker) {
             const si = document.getElementById('search-input');
@@ -16580,7 +17310,7 @@
             pointer-events: none;
         }
 
-        #fs-chart-modal > * {
+        #fs-chart-modal>* {
             pointer-events: auto;
         }
 
@@ -16734,8 +17464,8 @@
         #fs-ticker-list {
             position: relative;
             width: 100%;
-            min-height: 200px;
-            max-height: 50vh;
+            min-height: 50px;
+            max-height: 140px;
             background: transparent;
             border: none;
             border-radius: 0;
@@ -16756,10 +17486,10 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 8px 12px;
-            margin: 1px 6px;
+            padding: 2px 8px;
+            margin: 0px 6px;
             border-radius: 6px;
-            font-size: 11.5px;
+            font-size: 11px;
             font-weight: 500;
             color: #a1a1aa;
             cursor: pointer;
@@ -16805,6 +17535,12 @@
 
         .fs-ticker-item.selected .fs-item-tk {
             color: #22d3ee;
+            font-size: 14px;
+        }
+
+        .fs-ticker-item.selected .fs-item-name {
+            font-size: 10px;
+            color: #ffffff;
         }
 
         .fs-item-name {
@@ -17047,14 +17783,104 @@
             color: #e8e8ed;
         }
 
-        #fs-pt-pnl {
-            font-size: 10px;
+        .fs-pt-download {
+            background: rgba(14, 165, 233, 0.15) !important;
+            border: 1px solid rgba(14, 165, 233, 0.4) !important;
+            color: #38bdf8 !important;
+        }
+
+        .fs-pt-download:hover {
+            background: rgba(14, 165, 233, 0.25) !important;
+            border-color: rgba(14, 165, 233, 0.6) !important;
+        }
+
+        .fs-pt-analyze {
+            background: rgba(168, 85, 247, 0.15) !important;
+            border: 1px solid rgba(168, 85, 247, 0.4) !important;
+            color: #c084fc !important;
+        }
+
+        .fs-pt-analyze:hover {
+            background: rgba(168, 85, 247, 0.25) !important;
+            border-color: rgba(168, 85, 247, 0.6) !important;
+        }
+
+        /* Paper Trade Analysis Modal */
+        #fs-pt-analysis-modal {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 400px;
+            background: rgba(15, 23, 42, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+            z-index: 999999;
+            display: none;
+            flex-direction: column;
+            color: white;
+            font-family: 'Lexend', sans-serif;
+            backdrop-filter: blur(10px);
+        }
+        .fs-pt-analysis-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 14px;
             font-weight: 700;
+            color: #c084fc;
+        }
+        .fs-pt-analysis-close {
+            cursor: pointer;
+            color: rgba(255,255,255,0.4);
+            font-size: 16px;
+        }
+        .fs-pt-analysis-close:hover { color: white; }
+        .fs-pt-analysis-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            padding: 16px;
+        }
+        .fs-pt-analysis-card {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 6px;
+            padding: 10px;
             text-align: center;
-            padding: 2px 0 0;
+        }
+        .fs-pt-analysis-card-title {
+            font-size: 10px;
+            color: rgba(255,255,255,0.5);
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .fs-pt-analysis-card-value {
+            font-size: 16px;
+            font-weight: 800;
+            color: #e2e8f0;
+        }
+        .fs-pt-analysis-card.green .fs-pt-analysis-card-value { color: #22c55e; }
+        .fs-pt-analysis-card.red .fs-pt-analysis-card-value { color: #f43f5e; }
+
+
+        #fs-pt-pnl {
+            font-size: 11px;
+            font-weight: 800;
+            text-align: center;
+            padding: 6px 4px;
+            margin: 4px 0;
             letter-spacing: 0.3px;
             min-height: 14px;
-            color: rgba(255, 255, 255, 0.5);
+            color: rgba(255, 255, 255, 0.7);
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);
         }
 
         #fs-pt-log {
@@ -17531,8 +18357,35 @@
                         <button id="fs-step-fwd-btn" onclick="window.fsFsStepForward()"
                             title="Step +1 candle">›</button>
                         <button id="fs-replay-stop-btn" onclick="window.stopFsReplay()">⏹</button>
+                        <button id="fs-blind-btn" onclick="window.fsRandomTraining()" title="Blind Simulator Mode">🎲</button>
+                        <button id="fs-flashcard-mode-btn" onclick="window.fsFlashcardTraining()" title="Next Candle Flashcard Mode">🃏</button>
+                        <button id="fs-pattern-quiz-btn" onclick="window.fsPatternQuizTraining()" title="Pattern-ID Quiz Mode">🧠</button>
                     </div>
                     <div id="fs-replay-status"></div>
+                    <div id="fs-flashcard-ui" style="display:none; margin-top: 10px; background: #1e293b; padding: 10px; border-radius: 6px; text-align: center;">
+                        <div style="font-size: 13px; font-weight: bold; margin-bottom: 8px; color: #f8fafc;">Next Candle Flashcard</div>
+                        <div style="font-size: 11px; margin-bottom: 8px; color: #94a3b8;">Will the breakout succeed or fail in the next 3 weeks?</div>
+                        <div style="display: flex; gap: 8px; justify-content: center;">
+                            <button onclick="window.fsFlashcardGuess(true)" style="background: #22c55e; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">Succeeds</button>
+                            <button onclick="window.fsFlashcardGuess(false)" style="background: #ef4444; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">Fails</button>
+                        </div>
+                        <div id="fs-flashcard-result" style="margin-top: 8px; font-size: 12px; font-weight: bold;"></div>
+                        <button id="fs-flashcard-next-btn" onclick="window.fsFlashcardTraining()" style="display: none; margin-top: 8px; background: #3b82f6; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">Next Flashcard 🃏</button>
+                    </div>
+                    <div id="fs-pattern-quiz-ui" style="display:none; margin-top: 10px; background: #1e293b; padding: 10px; border-radius: 6px; text-align: center;">
+                        <div style="font-size: 13px; font-weight: bold; margin-bottom: 8px; color: #f8fafc;">Pattern-ID Quiz</div>
+                        <div style="font-size: 11px; margin-bottom: 8px; color: #94a3b8;">Identify the primary chart pattern:</div>
+                        <div style="display: flex; flex-direction: column; gap: 6px; justify-content: center;">
+                            <button onclick="window.fsPatternQuizGuess('Cup w/ Handle / Rounding Bottom')" style="background: #334155; color: white; border: 1px solid #475569; padding: 4px; border-radius: 4px; cursor: pointer; font-size: 11px;">Cup w/ Handle / Rounding Bottom</button>
+                            <button onclick="window.fsPatternQuizGuess('Flat Base / VCP')" style="background: #334155; color: white; border: 1px solid #475569; padding: 4px; border-radius: 4px; cursor: pointer; font-size: 11px;">Flat Base / VCP</button>
+                            <button onclick="window.fsPatternQuizGuess('Head &amp; Shoulders')" style="background: #334155; color: white; border: 1px solid #475569; padding: 4px; border-radius: 4px; cursor: pointer; font-size: 11px;">Head &amp; Shoulders (Top/Bottom)</button>
+                            <button onclick="window.fsPatternQuizGuess('Bull Flag / Rectangle')" style="background: #334155; color: white; border: 1px solid #475569; padding: 4px; border-radius: 4px; cursor: pointer; font-size: 11px;">Bull Flag / Rectangle / Ascending</button>
+                            <button onclick="window.fsPatternQuizGuess('Bear Flag / Downtrend')" style="background: #334155; color: white; border: 1px solid #475569; padding: 4px; border-radius: 4px; cursor: pointer; font-size: 11px;">Bear Flag / Downtrend / Descending</button>
+                            <button onclick="window.fsPatternQuizGuess('Symmetrical Triangle')" style="background: #334155; color: white; border: 1px solid #475569; padding: 4px; border-radius: 4px; cursor: pointer; font-size: 11px;">Symmetrical Triangle</button>
+                        </div>
+                        <div id="fs-pattern-quiz-result" style="margin-top: 8px; font-size: 11px; font-weight: bold;"></div>
+                        <button id="fs-pattern-quiz-next-btn" onclick="window.fsPatternQuizTraining()" style="display: none; margin-top: 8px; background: #8b5cf6; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">Next Pattern 🧠</button>
+                    </div>
                 </div>
             </div>
 
@@ -17551,6 +18404,8 @@
                         <button class="fs-pt-btn fs-pt-sell" onclick="window.fsPaperSell()">▼ Sell</button>
                     </div>
                     <button class="fs-pt-btn fs-pt-close" onclick="window.fsPaperClose()">✕ Close Position</button>
+                    <button class="fs-pt-btn fs-pt-download" onclick="window.fsPaperDownloadCSV()">💾 Download CSV</button>
+                    <button class="fs-pt-btn fs-pt-analyze" onclick="window.fsPaperAnalyze()">📊 Analyze Performance</button>
                     <div id="fs-pt-pnl">No position</div>
                     <div id="fs-pt-log"></div>
                 </div>
@@ -17620,6 +18475,52 @@
                 <!-- Transparent navigation buttons -->
                 <button class="fs-nav-overlay-btn" id="fs-nav-up" onclick="window.fsNavTicker(-1)">▲</button>
                 <button class="fs-nav-overlay-btn" id="fs-nav-down" onclick="window.fsNavTicker(1)">▼</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Paper Trade Analysis Modal -->
+    <div id="fs-pt-analysis-modal">
+        <div class="fs-pt-analysis-header">
+            <span>Professional Trade Analysis</span>
+            <span class="fs-pt-analysis-close" onclick="document.getElementById('fs-pt-analysis-modal').style.display='none'">✕</span>
+        </div>
+        <div class="fs-pt-analysis-grid">
+            <div class="fs-pt-analysis-card">
+                <div class="fs-pt-analysis-card-title">Win Rate</div>
+                <div class="fs-pt-analysis-card-value" id="pt-stat-winrate">—</div>
+            </div>
+            <div class="fs-pt-analysis-card">
+                <div class="fs-pt-analysis-card-title">Profit Factor</div>
+                <div class="fs-pt-analysis-card-value" id="pt-stat-pf">—</div>
+            </div>
+            <div class="fs-pt-analysis-card">
+                <div class="fs-pt-analysis-card-title">Expectancy</div>
+                <div class="fs-pt-analysis-card-value" id="pt-stat-exp">—</div>
+            </div>
+            <div class="fs-pt-analysis-card">
+                <div class="fs-pt-analysis-card-title">Total Trades</div>
+                <div class="fs-pt-analysis-card-value" id="pt-stat-trades">—</div>
+            </div>
+            <div class="fs-pt-analysis-card">
+                <div class="fs-pt-analysis-card-title">Average Win</div>
+                <div class="fs-pt-analysis-card-value green" id="pt-stat-avgwin">—</div>
+            </div>
+            <div class="fs-pt-analysis-card">
+                <div class="fs-pt-analysis-card-title">Average Loss</div>
+                <div class="fs-pt-analysis-card-value red" id="pt-stat-avgloss">—</div>
+            </div>
+            <div class="fs-pt-analysis-card">
+                <div class="fs-pt-analysis-card-title">Largest Win</div>
+                <div class="fs-pt-analysis-card-value green" id="pt-stat-maxwin">—</div>
+            </div>
+            <div class="fs-pt-analysis-card">
+                <div class="fs-pt-analysis-card-title">Largest Loss</div>
+                <div class="fs-pt-analysis-card-value red" id="pt-stat-maxloss">—</div>
+            </div>
+            <div class="fs-pt-analysis-card" style="grid-column: 1 / -1;">
+                <div class="fs-pt-analysis-card-title">Max Drawdown</div>
+                <div class="fs-pt-analysis-card-value red" id="pt-stat-dd">—</div>
             </div>
         </div>
     </div>
@@ -18169,6 +19070,9 @@
             };
 
             window.syncFSTickerListSelected = function () {
+                // Exit training mode if manually changing ticker
+                window._fsTrainingMode = false;
+
                 const tickerSel = document.getElementById('fs-ticker-select');
                 const listContainer = document.getElementById('fs-ticker-list');
                 if (!tickerSel || !listContainer) return;
@@ -18506,6 +19410,304 @@
                 }
             };
 
+            window.fsRandomTraining = function () {
+                if (!window._ohlcvTickers || window._ohlcvTickers.size === 0) {
+                    alert("Data not fully loaded yet.");
+                    return;
+                }
+                
+                // Get all tickers that have at least 50 candles
+                const validTickers = [];
+                for (let [tk, data] of window._ohlcvTickers.entries()) {
+                    if (data.length > 50) validTickers.push(tk);
+                }
+                
+                if (validTickers.length === 0) {
+                    alert("Not enough data to start simulation.");
+                    return;
+                }
+                
+                // Pick random ticker
+                const rTick = validTickers[Math.floor(Math.random() * validTickers.length)];
+                const raw = window._ohlcvTickers.get(rTick);
+                
+                // Pick random index (from 50 to length - 1)
+                const rIdx = Math.floor(Math.random() * (raw.length - 50)) + 50;
+                
+                // Set training mode true
+                window._fsTrainingMode = true;
+                
+                // Setup replay
+                window._fsReplay.active = true;
+                window._fsReplay.currentMaxDate = raw[rIdx].date.getTime();
+                window._fsReplay.endDate = Infinity; // Run until the end
+                window._fsReplay.paused = true; // Wait for user to hit play/step
+                
+                // Pause if running
+                if (window._fsReplay.timer) clearInterval(window._fsReplay.timer);
+                window._fsReplay.timer = null;
+                const btn = document.getElementById('fs-replay-btn');
+                if (btn) btn.textContent = '▶';
+                
+                // Update UI visually
+                const tickerSearch = document.getElementById('fs-ticker-search');
+                if (tickerSearch) tickerSearch.value = 'TICKER_A';
+                
+                // Update select without triggering its onchange naturally yet
+                const tickerSel = document.getElementById('fs-ticker-select');
+                if (tickerSel) {
+                    // Make sure it's in the options, if not, add it temporarily (it should be since it's from _index)
+                    tickerSel.value = rTick;
+                }
+                
+                const statusEl = document.getElementById('fs-replay-status');
+                if (statusEl) statusEl.textContent = 'Blind Sim Mode';
+                
+                // Re-render
+                window.renderFullScreenChart();
+            };
+
+            window._fsFindBreakouts = function(raw) {
+                const breakouts = [];
+                for (let i = 50; i < raw.length - 3; i++) {
+                    const r = raw[i];
+                    let prior50High = 0;
+                    let prior20High = 0;
+                    for (let j = Math.max(0, i - 50); j < i; j++) {
+                        if (raw[j].high > prior50High) prior50High = raw[j].high;
+                        if (j >= i - 20 && raw[j].high > prior20High) prior20High = raw[j].high;
+                    }
+                    const pivot = Math.min(prior50High, prior20High) || prior20High || prior50High;
+                    
+                    if (pivot && r.close >= pivot && r.open < pivot) {
+                        const avgVol = (raw[i-1].volSma50 || 1);
+                        if (r.vol > avgVol * 1.0) {
+                            breakouts.push(i);
+                        }
+                    }
+                }
+                return breakouts;
+            };
+
+            window.fsFlashcardTraining = function () {
+                if (!window._ohlcvTickers || window._ohlcvTickers.size === 0) {
+                    alert("Data not fully loaded yet.");
+                    return;
+                }
+                
+                const ui = document.getElementById('fs-flashcard-ui');
+                if (ui) ui.style.display = 'block';
+                const nextBtn = document.getElementById('fs-flashcard-next-btn');
+                if (nextBtn) nextBtn.style.display = 'none';
+                const result = document.getElementById('fs-flashcard-result');
+                if (result) result.textContent = 'Searching for a breakout...';
+
+                let rTick, raw, breakouts;
+                const keys = Array.from(window._ohlcvTickers.keys());
+                keys.sort(() => Math.random() - 0.5);
+                
+                for (const k of keys) {
+                    const data = window._ohlcvTickers.get(k);
+                    if (data.length > 60) {
+                        const b = window._fsFindBreakouts(data);
+                        if (b.length > 0) {
+                            rTick = k;
+                            raw = data;
+                            breakouts = b;
+                            break;
+                        }
+                    }
+                }
+
+                if (!breakouts || breakouts.length === 0) {
+                    if (result) result.textContent = 'No breakout candidates found.';
+                    return;
+                }
+                
+                const bIdx = breakouts[Math.floor(Math.random() * breakouts.length)];
+                window._fsFlashcardState = {
+                    ticker: rTick,
+                    breakoutIdx: bIdx,
+                    raw: raw
+                };
+                
+                window._fsTrainingMode = true;
+                
+                window._fsReplay.active = true;
+                window._fsReplay.currentMaxDate = raw[bIdx - 1].date.getTime();
+                window._fsReplay.endDate = Infinity;
+                window._fsReplay.paused = true;
+                
+                if (window._fsReplay.timer) clearInterval(window._fsReplay.timer);
+                window._fsReplay.timer = null;
+                const btn = document.getElementById('fs-replay-btn');
+                if (btn) btn.textContent = '▶';
+                
+                const tickerSearch = document.getElementById('fs-ticker-search');
+                if (tickerSearch) tickerSearch.value = 'TICKER_A'; // Hide real ticker
+                
+                const tickerSel = document.getElementById('fs-ticker-select');
+                if (tickerSel) tickerSel.value = rTick;
+                
+                const statusEl = document.getElementById('fs-replay-status');
+                if (statusEl) statusEl.textContent = 'Flashcard Mode';
+
+                if (result) result.textContent = '';
+                
+                window.renderFullScreenChart();
+            };
+
+            window.fsFlashcardGuess = function (guessSucceeds) {
+                if (!window._fsFlashcardState) return;
+                const { raw, breakoutIdx } = window._fsFlashcardState;
+                
+                const targetIdx = Math.min(breakoutIdx + 2, raw.length - 1);
+                
+                window._fsReplay.currentMaxDate = raw[targetIdx].date.getTime();
+                
+                const breakoutCandle = raw[breakoutIdx];
+                const finalCandle = raw[targetIdx];
+                const didSucceed = finalCandle.close > breakoutCandle.open;
+                
+                const isCorrect = (guessSucceeds && didSucceed) || (!guessSucceeds && !didSucceed);
+                
+                const result = document.getElementById('fs-flashcard-result');
+                if (result) {
+                    if (isCorrect) {
+                        result.innerHTML = `<span style="color: #22c55e;">✅ Correct! Breakout ${didSucceed ? 'Succeeded' : 'Failed'}.</span>`;
+                    } else {
+                        result.innerHTML = `<span style="color: #ef4444;">❌ Incorrect! Breakout ${didSucceed ? 'Succeeded' : 'Failed'}.</span>`;
+                    }
+                }
+                
+                const tickerSearch = document.getElementById('fs-ticker-search');
+                if (tickerSearch) tickerSearch.value = window._fsFlashcardState.ticker; // Reveal ticker
+
+                const nextBtn = document.getElementById('fs-flashcard-next-btn');
+                if (nextBtn) nextBtn.style.display = 'block';
+
+                window.renderFullScreenChart();
+            };
+
+            window.fsPatternQuizTraining = function () {
+                if (!window._ohlcvTickers || window._ohlcvTickers.size === 0) {
+                    alert("Data not fully loaded yet.");
+                    return;
+                }
+                
+                const ui = document.getElementById('fs-pattern-quiz-ui');
+                if (ui) ui.style.display = 'block';
+                const nextBtn = document.getElementById('fs-pattern-quiz-next-btn');
+                if (nextBtn) nextBtn.style.display = 'none';
+                const result = document.getElementById('fs-pattern-quiz-result');
+                if (result) result.textContent = 'Searching for a pattern...';
+
+                const validTargets = [
+                    'Cup', 'Rounding', 'Flat', 'VCP', 'Tight weekly base',
+                    'Shoulders', 'Bull Flag', 'Power Play', 'Bear Flag', 'downtrend', 'distribution', 'Symmetrical', 'Ascending', 'Descending', 'Rectangle'
+                ];
+                
+                let foundTicker, foundRaw, foundIdx, foundPattern;
+                
+                const keys = Array.from(window._ohlcvTickers.keys());
+                keys.sort(() => Math.random() - 0.5);
+                
+                for (const k of keys) {
+                    const data = window._ohlcvTickers.get(k);
+                    if (data.length < 80) continue;
+                    
+                    for (let attempt = 0; attempt < 20; attempt++) {
+                        const rIdx = Math.floor(Math.random() * (data.length - 60)) + 60;
+                        const snippet = data.slice(0, rIdx + 1);
+                        if (!window._fsBuildPriceActionAnalysis) break;
+                        const analysis = window._fsBuildPriceActionAnalysis(snippet);
+                        
+                        if (analysis && analysis.lines && analysis.lines.length > 0) {
+                            const pName = analysis.lines[0].text;
+                            if (validTargets.some(t => pName.includes(t)) || pName.includes('Base') || pName.includes('Flag') || pName.includes('Triangle') || pName.includes('Double') || pName.includes('Cup') || pName.includes('VCP') || pName.includes('Shoulders')) {
+                                foundTicker = k;
+                                foundRaw = data;
+                                foundIdx = rIdx;
+                                foundPattern = pName;
+                                break;
+                            }
+                        }
+                    }
+                    if (foundTicker) break;
+                }
+
+                if (!foundTicker) {
+                    if (result) result.textContent = 'No clear pattern found. Try again.';
+                    return;
+                }
+                
+                window._fsPatternQuizState = {
+                    ticker: foundTicker,
+                    idx: foundIdx,
+                    raw: foundRaw,
+                    truePattern: foundPattern
+                };
+                
+                window._fsTrainingMode = true;
+                
+                window._fsReplay.active = true;
+                window._fsReplay.currentMaxDate = foundRaw[foundIdx].date.getTime();
+                window._fsReplay.endDate = Infinity;
+                window._fsReplay.paused = true;
+                
+                if (window._fsReplay.timer) clearInterval(window._fsReplay.timer);
+                window._fsReplay.timer = null;
+                const btn = document.getElementById('fs-replay-btn');
+                if (btn) btn.textContent = '▶';
+                
+                const tickerSearch = document.getElementById('fs-ticker-search');
+                if (tickerSearch) tickerSearch.value = 'PATTERN_QUIZ'; 
+                
+                const tickerSel = document.getElementById('fs-ticker-select');
+                if (tickerSel) tickerSel.value = foundTicker;
+                
+                const statusEl = document.getElementById('fs-replay-status');
+                if (statusEl) statusEl.textContent = 'Pattern Quiz Mode';
+
+                if (result) result.textContent = '';
+                
+                window.renderFullScreenChart();
+            };
+
+            window.fsPatternQuizGuess = function (guessedGroup) {
+                if (!window._fsPatternQuizState) return;
+                const { truePattern, ticker } = window._fsPatternQuizState;
+                
+                const isMatch = (guess, actual) => {
+                    const g = guess.toLowerCase();
+                    const a = actual.toLowerCase();
+                    if (g.includes('cup') && (a.includes('cup') || a.includes('rounding'))) return true;
+                    if (g.includes('flat') && (a.includes('flat') || a.includes('vcp') || a.includes('tight') || a.includes('base'))) return true;
+                    if (g.includes('shoulders') && a.includes('shoulders')) return true;
+                    if (g.includes('bull flag') && (a.includes('bull flag') || a.includes('power play') || a.includes('high tight') || (a.includes('rectangle') && a.includes('bull')) || a.includes('ascending'))) return true;
+                    if (g.includes('bear flag') && (a.includes('bear flag') || a.includes('downtrend') || a.includes('distribution') || (a.includes('rectangle') && a.includes('bear')) || a.includes('descending'))) return true;
+                    if (g.includes('triangle') && a.includes('symmetrical triangle')) return true;
+                    return false;
+                };
+                
+                const isCorrect = isMatch(guessedGroup, truePattern);
+                
+                const result = document.getElementById('fs-pattern-quiz-result');
+                if (result) {
+                    if (isCorrect) {
+                        result.innerHTML = `<span style="color: #22c55e;">✅ Correct! True pattern: ${truePattern}</span>`;
+                    } else {
+                        result.innerHTML = `<span style="color: #ef4444;">❌ Incorrect! True pattern: ${truePattern}</span>`;
+                    }
+                }
+                
+                const tickerSearch = document.getElementById('fs-ticker-search');
+                if (tickerSearch) tickerSearch.value = ticker; 
+
+                const nextBtn = document.getElementById('fs-pattern-quiz-next-btn');
+                if (nextBtn) nextBtn.style.display = 'block';
+            };
+
             window.stopFsReplay = function (keepActive = false) {
                 if (window._fsReplay.timer) { clearInterval(window._fsReplay.timer); window._fsReplay.timer = null; }
                 // Cancel any running sub-candle animation
@@ -18662,6 +19864,7 @@
                 const curr = _fsCurrentClose();
                 if (!curr) return;
                 const qty = parseInt(document.getElementById('fs-pt-qty')?.value) || 1;
+                const tk = document.getElementById('fs-ticker-select')?.value?.toUpperCase() || 'UNKNOWN';
                 const pt = window._fsPaperTrade;
                 if (pt.position && pt.position.side === 'long') {
                     // Add to position
@@ -18671,7 +19874,7 @@
                 } else if (pt.position && pt.position.side === 'short') {
                     window.fsPaperClose();
                 } else {
-                    pt.position = { side: 'long', qty, entryPrice: curr.close, entryDate: curr.date };
+                    pt.position = { side: 'long', qty, entryPrice: curr.close, entryDate: curr.date, ticker: tk };
                 }
                 _fsUpdatePnlDisplay();
             };
@@ -18680,6 +19883,7 @@
                 const curr = _fsCurrentClose();
                 if (!curr) return;
                 const qty = parseInt(document.getElementById('fs-pt-qty')?.value) || 1;
+                const tk = document.getElementById('fs-ticker-select')?.value?.toUpperCase() || 'UNKNOWN';
                 const pt = window._fsPaperTrade;
                 if (pt.position && pt.position.side === 'short') {
                     const totalQty = pt.position.qty + qty;
@@ -18688,7 +19892,7 @@
                 } else if (pt.position && pt.position.side === 'long') {
                     window.fsPaperClose();
                 } else {
-                    pt.position = { side: 'short', qty, entryPrice: curr.close, entryDate: curr.date };
+                    pt.position = { side: 'short', qty, entryPrice: curr.close, entryDate: curr.date, ticker: tk };
                 }
                 _fsUpdatePnlDisplay();
             };
@@ -18698,12 +19902,12 @@
                 if (!curr) return;
                 const pt = window._fsPaperTrade;
                 if (!pt.position) return;
-                const { side, qty, entryPrice, entryDate } = pt.position;
+                const { side, qty, entryPrice, entryDate, ticker } = pt.position;
                 const exitPrice = curr.close;
                 const diff = side === 'long' ? exitPrice - entryPrice : entryPrice - exitPrice;
                 const pnl = diff * qty;
                 pt.totalPnl += pnl;
-                pt.trades.push({ side, qty, entryPrice, exitPrice, pnl, entryDate, exitDate: curr.date });
+                pt.trades.push({ side, qty, entryPrice, exitPrice, pnl, entryDate, exitDate: curr.date, ticker: ticker || 'UNKNOWN' });
                 pt.position = null;
                 // Add to log
                 const logEl = document.getElementById('fs-pt-log');
@@ -18719,6 +19923,89 @@
                     while (logEl.children.length > 8) logEl.removeChild(logEl.lastChild);
                 }
                 _fsUpdatePnlDisplay();
+            };
+
+            window.fsPaperDownloadCSV = function () {
+                const pt = window._fsPaperTrade;
+                if (!pt.trades || pt.trades.length === 0) {
+                    alert("No completed trades to download.");
+                    return;
+                }
+
+                let csv = "\uFEFFTicker,Company,Side,Qty,EntryDate,EntryPrice,ExitDate,ExitPrice,PnL\r\n";
+                pt.trades.forEach(t => {
+                    const tk = t.ticker || 'UNKNOWN';
+                    let companyName = "Unknown";
+                    if (window.tickerToName && window.tickerToName[tk]) {
+                        companyName = window.tickerToName[tk].replace(/"/g, '""');
+                    }
+                    csv += `${tk},"${companyName}",${t.side},${t.qty},${t.entryDate.toISOString().split('T')[0]},${t.entryPrice.toFixed(2)},${t.exitDate.toISOString().split('T')[0]},${t.exitPrice.toFixed(2)},${t.pnl.toFixed(2)}\r\n`;
+                });
+                
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `PaperTrade_Results.csv`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            };
+
+            window.fsPaperAnalyze = function () {
+                const pt = window._fsPaperTrade;
+                if (!pt.trades || pt.trades.length === 0) {
+                    alert("Complete at least one trade to analyze performance.");
+                    return;
+                }
+
+                let grossProfit = 0;
+                let grossLoss = 0;
+                let wins = 0;
+                let losses = 0;
+                let maxWin = 0;
+                let maxLoss = 0;
+                let runningPnl = 0;
+                let peakPnl = 0;
+                let maxDrawdown = 0;
+
+                pt.trades.forEach(t => {
+                    runningPnl += t.pnl;
+                    if (runningPnl > peakPnl) peakPnl = runningPnl;
+                    let dd = peakPnl - runningPnl;
+                    if (dd > maxDrawdown) maxDrawdown = dd;
+
+                    if (t.pnl > 0) {
+                        wins++;
+                        grossProfit += t.pnl;
+                        if (t.pnl > maxWin) maxWin = t.pnl;
+                    } else if (t.pnl < 0) {
+                        losses++;
+                        grossLoss += Math.abs(t.pnl);
+                        if (t.pnl < maxLoss) maxLoss = t.pnl;
+                    }
+                });
+
+                const totalTrades = pt.trades.length;
+                const winRate = (wins / totalTrades) * 100;
+                const profitFactor = grossLoss === 0 ? (grossProfit > 0 ? Infinity : 0) : grossProfit / grossLoss;
+                const avgWin = wins > 0 ? grossProfit / wins : 0;
+                const avgLoss = losses > 0 ? grossLoss / losses : 0;
+                const expectancy = (avgWin * (winRate / 100)) - (avgLoss * (1 - (winRate / 100)));
+
+                document.getElementById('pt-stat-winrate').textContent = winRate.toFixed(1) + '%';
+                document.getElementById('pt-stat-pf').textContent = profitFactor === Infinity ? '∞' : profitFactor.toFixed(2);
+                document.getElementById('pt-stat-exp').textContent = expectancy >= 0 ? '+' + expectancy.toFixed(2) : expectancy.toFixed(2);
+                document.getElementById('pt-stat-exp').style.color = expectancy >= 0 ? '#22c55e' : '#f43f5e';
+                document.getElementById('pt-stat-trades').textContent = totalTrades;
+                document.getElementById('pt-stat-avgwin').textContent = '+' + avgWin.toFixed(2);
+                document.getElementById('pt-stat-avgloss').textContent = '-' + avgLoss.toFixed(2);
+                document.getElementById('pt-stat-maxwin').textContent = '+' + maxWin.toFixed(2);
+                document.getElementById('pt-stat-maxloss').textContent = maxLoss.toFixed(2);
+                document.getElementById('pt-stat-dd').textContent = '-' + maxDrawdown.toFixed(2);
+
+                document.getElementById('fs-pt-analysis-modal').style.display = 'flex';
             };
 
             // Update P&L display on every replay tick
