@@ -10988,22 +10988,129 @@
 
                 const ascendingBase = isFinite(lowA) && isFinite(lowB) && isFinite(lowC) && lowB > lowA * 0.98 && lowC > lowB * 0.98 && nearPivot && above20;
 
-                const headAndShoulders = isFinite(highA) && isFinite(highB) && isFinite(highC) && highB > highA && highB > highC && Math.abs(highA - highC) / highA < 0.08 && r.close < minOf(raw.slice(Math.max(0, i - 6), i + 1), x => x.low);
-                const invHeadAndShoulders = isFinite(lowA) && isFinite(lowB) && isFinite(lowC) && lowB < lowA && lowB < lowC && Math.abs(lowA - lowC) / lowA < 0.08 && r.close > maxOf(raw.slice(Math.max(0, i - 6), i + 1), x => x.high);
+                /* ── Swing-pivot detection (fractal strength 2) over the base window ──
+                   Real swing highs/lows give far better structural pattern recognition
+                   than the coarse 6-week bucket extremes (highA/B/C, lowA/B/C). */
+                const _swStr = 2;
+                const swingHighsAll = [];
+                const swingLowsAll = [];
+                for (let k = Math.max(baseStartIdx, _swStr); k <= i - _swStr; k++) {
+                    let isH = true, isL = true;
+                    for (let s = 1; s <= _swStr; s++) {
+                        if (raw[k].high < raw[k - s].high || raw[k].high < raw[k + s].high) isH = false;
+                        if (raw[k].low > raw[k - s].low || raw[k].low > raw[k + s].low) isL = false;
+                        if (!isH && !isL) break;
+                    }
+                    if (isH) swingHighsAll.push({ idx: k, val: raw[k].high });
+                    if (isL) swingLowsAll.push({ idx: k, val: raw[k].low });
+                }
+                // Merge pivots that are too close together (keep the more extreme one)
+                const _mergeSwings = (arr, mode) => {
+                    const out = [];
+                    arr.forEach(p => {
+                        const last = out[out.length - 1];
+                        if (last && p.idx - last.idx <= _swStr) {
+                            if ((mode === 'max' && p.val > last.val) || (mode === 'min' && p.val < last.val)) out[out.length - 1] = p;
+                        } else out.push(p);
+                    });
+                    return out;
+                };
+                const swingHighsArr = _mergeSwings(swingHighsAll, 'max');
+                const swingLowsArr = _mergeSwings(swingLowsAll, 'min');
+                // Least-squares slope through recent pivots, expressed as % of price per week
+                const _fitSlopePct = pts => {
+                    if (pts.length < 2) return null;
+                    const n = pts.length;
+                    let sx = 0, sy = 0, sxy = 0, sxx = 0;
+                    pts.forEach(p => { sx += p.idx; sy += p.val; sxy += p.idx * p.val; sxx += p.idx * p.idx; });
+                    const denom = n * sxx - sx * sx;
+                    if (!denom) return null;
+                    return (((n * sxy - sx * sy) / denom) / r.close) * 100;
+                };
+                const hiSlope = _fitSlopePct(swingHighsArr.slice(-4));
+                const loSlope = _fitSlopePct(swingLowsArr.slice(-4));
+                const _FLAT = 0.35; // <= 0.35%/week counts as a flat weekly trendline
+                const slopesOk = hiSlope !== null && loSlope !== null && swingHighsArr.length >= 3 && swingLowsArr.length >= 3;
+                let tlAscTri = false, tlDescTri = false, tlSymTri = false, tlRisingWedge = false,
+                    tlFallingWedge = false, tlAscChan = false, tlDescChan = false, tlMegaphone = false, tlRect = false;
+                if (slopesOk) {
+                    const hiFlat = Math.abs(hiSlope) <= _FLAT, loFlat = Math.abs(loSlope) <= _FLAT;
+                    const hiUp = hiSlope > _FLAT, hiDn = hiSlope < -_FLAT;
+                    const loUp = loSlope > _FLAT, loDn = loSlope < -_FLAT;
+                    const conv = hiSlope < loSlope - 0.15;   // trendlines converging
+                    const divg = hiSlope > loSlope + 0.15;   // trendlines diverging
+                    tlAscTri = hiFlat && loUp;
+                    tlDescTri = loFlat && hiDn;
+                    tlSymTri = hiDn && loUp;
+                    tlRisingWedge = hiUp && loUp && conv;
+                    tlFallingWedge = hiDn && loDn && conv;
+                    tlAscChan = hiUp && loUp && !conv && !divg;
+                    tlDescChan = hiDn && loDn && !conv && !divg;
+                    tlMegaphone = hiUp && loDn;
+                    tlRect = hiFlat && loFlat;
+                }
+
+                /* Head & Shoulders from actual swing pivots (fallback: bucket extremes) */
+                let swHsTop = false, swHsInv = false;
+                {
+                    const h3 = swingHighsArr.slice(-3);
+                    if (h3.length === 3) {
+                        const [Ls, Hd, Rs] = h3;
+                        const neckLows = swingLowsArr.filter(x => x.idx > Ls.idx && x.idx < Rs.idx);
+                        if (Hd.val > Ls.val * 1.03 && Hd.val > Rs.val * 1.03 &&
+                            Math.abs(Ls.val - Rs.val) / Ls.val < 0.10 && neckLows.length >= 1) {
+                            const neck = Math.min(...neckLows.map(x => x.val));
+                            swHsTop = r.close < neck * 1.01;
+                        }
+                    }
+                    const l3 = swingLowsArr.slice(-3);
+                    if (l3.length === 3) {
+                        const [Ls, Hd, Rs] = l3;
+                        const neckHighs = swingHighsArr.filter(x => x.idx > Ls.idx && x.idx < Rs.idx);
+                        if (Hd.val < Ls.val * 0.97 && Hd.val < Rs.val * 0.97 &&
+                            Math.abs(Ls.val - Rs.val) / Ls.val < 0.10 && neckHighs.length >= 1) {
+                            const neck = Math.max(...neckHighs.map(x => x.val));
+                            swHsInv = r.close > neck * 0.99;
+                        }
+                    }
+                }
+
+                /* Double / triple tops & bottoms from swing pivots */
+                const _eqPct = (a, b, tol) => Math.abs(a - b) / a < tol;
+                let swDoubleTop = false;
+                const sH2 = swingHighsArr.slice(-2);
+                if (sH2.length === 2 && _eqPct(sH2[0].val, sH2[1].val, 0.04)) {
+                    const trough = minOf(raw.slice(sH2[0].idx, sH2[1].idx + 1), x => x.low);
+                    swDoubleTop = trough < sH2[0].val * 0.92 && r.close < Math.max(sH2[0].val, sH2[1].val) * 0.96;
+                }
+                const sH3 = swingHighsArr.slice(-3);
+                const swTripleTop = sH3.length === 3 && _eqPct(sH3[0].val, sH3[1].val, 0.04) && _eqPct(sH3[1].val, sH3[2].val, 0.04) && r.close < sH3[2].val * 0.95;
+                const sL3 = swingLowsArr.slice(-3);
+                const swTripleBottom = sL3.length === 3 && _eqPct(sL3[0].val, sL3[1].val, 0.04) && _eqPct(sL3[1].val, sL3[2].val, 0.04) && r.close > sL3[2].val * 1.05;
+
+                const headAndShoulders = swHsTop || (isFinite(highA) && isFinite(highB) && isFinite(highC) && highB > highA && highB > highC && Math.abs(highA - highC) / highA < 0.08 && r.close < minOf(raw.slice(Math.max(0, i - 6), i + 1), x => x.low));
+                const invHeadAndShoulders = swHsInv || (isFinite(lowA) && isFinite(lowB) && isFinite(lowC) && lowB < lowA && lowB < lowC && Math.abs(lowA - lowC) / lowA < 0.08 && r.close > maxOf(raw.slice(Math.max(0, i - 6), i + 1), x => x.high));
                 const roundingBottom = baseWeeks >= 15 && baseDepth <= 35 && !cupShape && Math.abs(r.close - maxOf(raw.slice(baseStartIdx, baseStartIdx + 3), x => x.high)) / r.close < 0.10 && minOf(raw.slice(baseStartIdx + 5, i - 5), x => x.low) < minOf(raw.slice(baseStartIdx, baseStartIdx + 3), x => x.low);
                 const powerPlay = above20 && chartPos > 80 && baseWeeks >= 3 && baseWeeks <= 6 && baseDepth <= 12 && avgBreakoutConfirmed;
-                const risingWedge = isFinite(highA) && isFinite(highB) && isFinite(highC) && highC > highB && highB > highA && lowC > lowB && lowB > lowA && (highC - highA) < (lowC - lowA) && vol.ratio < 0.8;
-                const fallingWedge = isFinite(lowA) && isFinite(lowB) && isFinite(lowC) && lowC < lowB && lowB < lowA && highC < highB && highB < highA && (lowA - lowC) < (highA - highC) && vol.ratio < 0.8;
-                const ascChannel = isFinite(highA) && isFinite(highB) && isFinite(highC) && highC > highB && highB > highA && lowC > lowB && lowB > lowA && Math.abs((highC - highA) - (lowC - lowA)) / (highC - highA) < 0.2;
-                const descChannel = isFinite(lowA) && isFinite(lowB) && isFinite(lowC) && lowC < lowB && lowB < lowA && highC < highB && highB < highA && Math.abs((lowA - lowC) - (highA - highC)) / (lowA - lowC) < 0.2;
+                const risingWedge = slopesOk ? (tlRisingWedge && vol.ratio < 1.0)
+                    : (isFinite(highA) && isFinite(highB) && isFinite(highC) && highC > highB && highB > highA && lowC > lowB && lowB > lowA && (highC - highA) < (lowC - lowA) && vol.ratio < 0.8);
+                const fallingWedge = slopesOk ? (tlFallingWedge && vol.ratio < 1.0)
+                    : (isFinite(lowA) && isFinite(lowB) && isFinite(lowC) && lowC < lowB && lowB < lowA && highC < highB && highB < highA && (lowA - lowC) < (highA - highC) && vol.ratio < 0.8);
+                const ascChannel = slopesOk ? tlAscChan
+                    : (isFinite(highA) && isFinite(highB) && isFinite(highC) && highC > highB && highB > highA && lowC > lowB && lowB > lowA && Math.abs((highC - highA) - (lowC - lowA)) / (highC - highA) < 0.2);
+                const descChannel = slopesOk ? tlDescChan
+                    : (isFinite(lowA) && isFinite(lowB) && isFinite(lowC) && lowC < lowB && lowB < lowA && highC < highB && highB < highA && Math.abs((lowA - lowC) - (highA - highC)) / (lowA - lowC) < 0.2);
 
                 const isEq = (a, b) => Math.abs(a - b) / a < 0.035;
-                const ascTriangle = isFinite(highA) && isFinite(highB) && isFinite(highC) && isEq(highA, highB) && isEq(highB, highC) && lowC > lowB && lowB > lowA && vol.ratio < 0.9;
-                const descTriangle = isFinite(lowA) && isFinite(lowB) && isFinite(lowC) && isEq(lowA, lowB) && isEq(lowB, lowC) && highC < highB && highB < highA && vol.ratio < 0.9;
-                const megaphone = isFinite(highA) && isFinite(highB) && isFinite(highC) && isFinite(lowA) && isFinite(lowB) && isFinite(lowC) && highC > highB && highB > highA && lowC < lowB && lowB < lowA;
-                const doubleTop = isFinite(highB) && isFinite(highC) && isFinite(lowC) && isEq(highB, highC) && lowC < highB * 0.90 && r.close < highC * 0.95;
-                const tripleTop = isFinite(highA) && isFinite(highB) && isFinite(highC) && isEq(highA, highB) && isEq(highB, highC) && r.close < highC * 0.95;
-                const tripleBottom = isFinite(lowA) && isFinite(lowB) && isFinite(lowC) && isEq(lowA, lowB) && isEq(lowB, lowC) && r.close > lowC * 1.05;
+                const ascTriangle = slopesOk ? (tlAscTri && vol.ratio < 1.1)
+                    : (isFinite(highA) && isFinite(highB) && isFinite(highC) && isEq(highA, highB) && isEq(highB, highC) && lowC > lowB && lowB > lowA && vol.ratio < 0.9);
+                const descTriangle = slopesOk ? (tlDescTri && vol.ratio < 1.1)
+                    : (isFinite(lowA) && isFinite(lowB) && isFinite(lowC) && isEq(lowA, lowB) && isEq(lowB, lowC) && highC < highB && highB < highA && vol.ratio < 0.9);
+                const megaphone = slopesOk ? tlMegaphone
+                    : (isFinite(highA) && isFinite(highB) && isFinite(highC) && isFinite(lowA) && isFinite(lowB) && isFinite(lowC) && highC > highB && highB > highA && lowC < lowB && lowB < lowA);
+                const doubleTop = swDoubleTop || (isFinite(highB) && isFinite(highC) && isFinite(lowC) && isEq(highB, highC) && lowC < highB * 0.90 && r.close < highC * 0.95);
+                const tripleTop = swTripleTop || (isFinite(highA) && isFinite(highB) && isFinite(highC) && isEq(highA, highB) && isEq(highB, highC) && r.close < highC * 0.95);
+                const tripleBottom = swTripleBottom || (isFinite(lowA) && isFinite(lowB) && isFinite(lowC) && isEq(lowA, lowB) && isEq(lowB, lowC) && r.close > lowC * 1.05);
                 const roundingTop = baseWeeks >= 15 && baseDepth <= 35 && Math.abs(r.close - minOf(raw.slice(baseStartIdx, baseStartIdx + 3), x => x.low)) / r.close < 0.10 && maxOf(raw.slice(baseStartIdx + 5, i - 5), x => x.high) > maxOf(raw.slice(baseStartIdx, baseStartIdx + 3), x => x.high);
                 const firstLow = extremeIdx(baseStartIdx, Math.max(baseStartIdx, i - Math.floor(baseWeeks * 0.45)), 'low', 'min');
                 const secondLow = extremeIdx(Math.min(i, firstLow.idx + 3), i, 'low', 'min');
@@ -11048,17 +11155,94 @@
                 addPattern(roundingBottom && !avgBreakoutConfirmed,
                     'Rounding Bottom Forming', 'bull', 16, 'Gradual, saucer-like accumulation base.');
 
-                const symTriangle = isFinite(highA) && isFinite(highB) && isFinite(highC) && highC < highB && highB < highA && lowC > lowB && lowB > lowA && vol.ratio < 0.9;
+                const symTriangle = slopesOk ? (tlSymTri && vol.ratio < 1.0)
+                    : (isFinite(highA) && isFinite(highB) && isFinite(highC) && highC < highB && highB < highA && lowC > lowB && lowB > lowA && vol.ratio < 0.9);
                 const bullFlag = above20 && chartPos > 70 && baseWeeks >= 3 && baseWeeks <= 7 && baseTight && baseDepth <= 15 && vol.ratio < 0.85 && maxOf(raw.slice(Math.max(0, i - 3), i + 1), x => x.high) < baseHigh;
                 const bearFlag = !above40 && chartPos < 30 && baseWeeks >= 3 && baseWeeks <= 7 && baseTight && baseDepth <= 15 && vol.ratio < 0.85 && minOf(raw.slice(Math.max(0, i - 3), i + 1), x => x.low) > (baseLowInfo ? baseLowInfo.val : 0);
-                const rectangleBull = above40 && baseWeeks >= 6 && baseDepth <= 15 && isFinite(highB) && isFinite(highC) && Math.abs(highC - highB) / highB < 0.05 && Math.abs(lowC - lowB) / lowB < 0.05;
-                const rectangleBear = !above40 && baseWeeks >= 6 && baseDepth <= 15 && isFinite(highB) && isFinite(highC) && Math.abs(highC - highB) / highB < 0.05 && Math.abs(lowC - lowB) / lowB < 0.05;
+                const rectRange = slopesOk ? tlRect : (baseWeeks >= 6 && baseDepth <= 15 && isFinite(highB) && isFinite(highC) && Math.abs(highC - highB) / highB < 0.05 && Math.abs(lowC - lowB) / lowB < 0.05);
+                const rectangleBull = above40 && baseWeeks >= 6 && baseDepth <= 18 && rectRange;
+                const rectangleBear = !above40 && baseWeeks >= 6 && baseDepth <= 18 && rectRange;
+
+                /* ── Additional structural patterns ─────────────────────────── */
+                // Pennant: small symmetrical coil right after a sharp pole move
+                const poleRet = i >= 8 ? pctFrom(raw[Math.max(0, i - 4)].close, raw[Math.max(0, i - 8)].close) : 0;
+                const coil5 = recent10.length >= 5 && (maxOf(recent10.slice(-5), x => x.high) - minOf(recent10.slice(-5), x => x.low)) / r.close * 100 <= 8;
+                const bullPennant = poleRet >= 15 && coil5 && above20 && vol.ratio < 0.9;
+                const bearPennant = poleRet <= -15 && coil5 && !above20 && vol.ratio < 0.9;
+                // Diamond top: broadening first half, converging second half at the highs
+                let diamondTop = false;
+                if (chartPos > 70 && baseWeeks >= 10 && swingHighsArr.length >= 4 && swingLowsArr.length >= 4) {
+                    const midIdx = baseStartIdx + Math.floor((i - baseStartIdx) / 2);
+                    const hEarly = swingHighsArr.filter(p => p.idx <= midIdx), hLate = swingHighsArr.filter(p => p.idx > midIdx);
+                    const lEarly = swingLowsArr.filter(p => p.idx <= midIdx), lLate = swingLowsArr.filter(p => p.idx > midIdx);
+                    if (hEarly.length >= 2 && hLate.length >= 2 && lEarly.length >= 2 && lLate.length >= 2) {
+                        const widEarly = maxOf(hEarly, p => p.val) - minOf(lEarly, p => p.val);
+                        const widLate = maxOf(hLate, p => p.val) - minOf(lLate, p => p.val);
+                        diamondTop = widLate < widEarly * 0.65 && r.close < effectiveMa20 * 1.02;
+                    }
+                }
+                // Island reversal: gap up into a cluster, then gap down out of it (weekly)
+                const gapUpPrev2 = !!(prev2 && prev && prev.low > prev2.high);
+                const gapDownNow = !!(prev && r.high < prev.low);
+                const islandTop = gapUpPrev2 && gapDownNow;
+                const gapDnPrev2 = !!(prev2 && prev && prev.high < prev2.low);
+                const gapUpNow = !!(prev && r.low > prev.high);
+                const islandBottom = gapDnPrev2 && gapUpNow;
+                // V-bottom recovery: violent decline then >=60% straight-line recovery in <= half the decline time
+                let vBottom = false;
+                if (baseLowInfo.idx >= 0 && leftHighInfo.idx >= 0) {
+                    const dropPct = leftHighInfo.val ? ((leftHighInfo.val - baseLowInfo.val) / leftHighInfo.val) * 100 : 0;
+                    const recovPct = leftHighInfo.val ? ((r.close - baseLowInfo.val) / Math.max(0.0001, leftHighInfo.val - baseLowInfo.val)) * 100 : 0;
+                    const dropDur = baseLowInfo.idx - leftHighInfo.idx;
+                    const recovDur = i - baseLowInfo.idx;
+                    vBottom = dropPct >= 25 && recovPct >= 60 && recovDur > 0 && dropDur > 0 && recovDur <= dropDur && above10;
+                }
+                // 3-weeks-tight: 3 consecutive weekly closes within ~1.5% of each other (O'Neil)
+                let threeWeeksTight = false;
+                if (i >= 2 && trendBias === 'bull') {
+                    const c3 = [raw[i - 2].close, raw[i - 1].close, r.close];
+                    const c3max = Math.max(...c3), c3min = Math.min(...c3);
+                    threeWeeksTight = c3max > 0 && ((c3max - c3min) / c3max) * 100 <= 3 && chartPos > 60;
+                }
+                // Shakeout + recovery: undercut a prior swing low then reclaim it within 3 weeks
+                let shakeoutRecovery = false;
+                if (swingLowsArr.length >= 2) {
+                    const priorLow = swingLowsArr[swingLowsArr.length - 2];
+                    const recentMin = extremeIdx(Math.max(0, i - 3), i, 'low', 'min');
+                    shakeoutRecovery = recentMin.val !== null && recentMin.val < priorLow.val * 0.99 &&
+                        r.close > priorLow.val * 1.01 && closeLoc >= 55 && trendBias !== 'bear';
+                }
+                // Bump-and-run reversal: steep late-stage acceleration then break of the run trendline
+                let bumpAndRun = false;
+                if (chartPos > 60 && i >= 20) {
+                    const runRet = pctFrom(raw[Math.max(0, i - 6)].close, raw[Math.max(0, i - 20)].close);
+                    const bumpRet = pctFrom(rollingLevel(raw, i, 3, 'high', 'max') || r.high, raw[Math.max(0, i - 6)].close);
+                    bumpAndRun = runRet > 15 && bumpRet > runRet * 0.9 && !above10 && r.close < r.open;
+                }
+                // Gap-up breakaway week: gap above the pivot with volume
+                const breakawayGap = !!(prev && basePivot && r.open > prev.high * 1.01 && prev.close < basePivot && r.close > basePivot && vol.ratio > 1.2);
+                // Climax top: parabolic extension + hugely stretched from MA with churn/reversal
+                const climaxTop = extended20 > 45 && chartPos > 92 && (upperWickPct >= 40 || (vol.ratio > 2 && r.close < r.open));
+                // 50% base retracement failure: broke down through >½ of the base after failing pivot
+                const halfBaseFail = baseHigh > baseLow && r.close < baseHigh - (baseHigh - baseLow) * 0.5 && !above40 && distributionDays > accumulationDays;
 
                 addPattern(symTriangle, 'Symmetrical Triangle', 'neutral', 5, 'Highs and lows converging symmetrically.');
                 addPattern(bullFlag, 'Bull Flag', 'bull', 18, 'Short, tight downward/sideways drift in an uptrend.');
                 addPattern(bearFlag, 'Bear Flag', 'bear', -18, 'Short, tight upward/sideways drift in a downtrend.');
                 addPattern(rectangleBull, 'Bullish Rectangle', 'bull', 12, 'Sideways channel consolidation in an uptrend.');
                 addPattern(rectangleBear, 'Bearish Rectangle', 'bear', -12, 'Sideways channel consolidation in a downtrend.');
+                addPattern(bullPennant, 'Bull Pennant', 'bull', 20, 'Tight coil after a sharp pole advance; continuation likely.');
+                addPattern(bearPennant, 'Bear Pennant', 'bear', -20, 'Tight coil after a sharp decline; continuation risk.');
+                addPattern(diamondTop, 'Diamond Top', 'bear', -20, 'Broadening then narrowing swings near highs; distribution.');
+                addPattern(islandTop, 'Island Reversal Top', 'bear', -22, 'Gap up, stall, then gap down leaving an island of price.');
+                addPattern(islandBottom, 'Island Reversal Bottom', 'bull', 20, 'Gap down, stall, then gap up leaving an island low.');
+                addPattern(vBottom, 'V-Bottom Recovery', 'bull', 16, 'Sharp decline recovered at near-equal speed; strong demand.');
+                addPattern(threeWeeksTight, '3-Weeks-Tight', 'bull', 17, 'Three weekly closes within a tight band in an uptrend.');
+                addPattern(shakeoutRecovery, 'Shakeout + Reclaim', 'bull', 16, 'Undercut of a prior low reclaimed quickly — weak hands flushed.');
+                addPattern(bumpAndRun, 'Bump-and-Run Reversal', 'bear', -18, 'Parabolic bump breaking its steep run trendline.');
+                addPattern(breakawayGap, 'Breakaway Gap Week', 'bull', 22, 'Gapped above the pivot on strong weekly volume.');
+                addPattern(climaxTop, 'Climax Top / Exhaustion', 'bear', -24, 'Parabolic extension with churn or reversal wick — late-stage risk.');
+                addPattern(halfBaseFail, 'Base Failure (>50% retrace)', 'bear', -20, 'Gave back over half of the base; supply in control.');
 
                 addPattern(risingWedge,
                     'Rising Wedge', 'bear', -15, 'Higher highs and lows converging on declining volume.');
@@ -11223,7 +11407,7 @@
                     action = 'BUY WATCH';
                     actionColor = '#22c55e';
                     setup = 'Constructive weekly pattern near pivot. Buy needs average-volume breakout or held pullback.';
-                } else if ((chartPattern === 'Tight weekly base' || chartPattern === 'VCP / volatility contraction' || chartPattern === 'Flat base near pivot' || chartPattern === 'Bull Flag' || chartPattern === 'Bullish Rectangle') && score >= 55) {
+                } else if ((chartPattern === 'Tight weekly base' || chartPattern === 'VCP / volatility contraction' || chartPattern === 'Flat base near pivot' || chartPattern === 'Bull Flag' || chartPattern === 'Bullish Rectangle' || chartPattern === 'Bull Pennant' || chartPattern === '3-Weeks-Tight' || chartPattern === 'Symmetrical Triangle' || chartPattern === 'Ascending Triangle') && score >= 55) {
                     action = 'WATCH';
                     actionColor = '#fbbf24';
                     setup = 'Weekly base is building. Wait for pivot breakout with volume.';
@@ -11300,7 +11484,9 @@
                 const outLines = patternCandidates.map(p => ({
                     label: '',
                     text: p.name,
-                    tone: p.bias
+                    tone: p.bias,
+                    score: p.score,
+                    detail: p.detail
                 }));
 
                 return {
@@ -11376,31 +11562,86 @@
                 const compact = W < 360;
                 const bodyFont = compact ? '500 11px "Lexend",sans-serif' : '500 12px "Lexend",sans-serif';
                 const labelFont = compact ? '700 11px "Lexend",sans-serif' : '700 12px "Lexend",sans-serif';
+                const headerFont = compact ? '800 11px "Lexend",sans-serif' : '800 12.5px "Lexend",sans-serif';
+                const chipFont = compact ? '700 9px "Lexend",sans-serif' : '700 10px "Lexend",sans-serif';
+                const lineH = compact ? 16 : 18;
+                const panelW = compact ? 232 : 292;
+                const maxLines = 9;
+
+                const lines = pa.lines.slice(0, maxLines);
+                const hasHeader = pa.action !== undefined && pa.score !== undefined;
+                const panelH = (hasHeader ? lineH + 8 : 0) + lines.length * lineH + 16;
 
                 ctx.save();
 
-                let px = hx > W / 2 ? PP.l + 10 : W - PP.r - (compact ? 220 : 280);
-                px = clamp(px, PP.l + 10, W - PP.r - 200);
-                let py = PP.t + 20;
+                let px = hx > W / 2 ? PP.l + 10 : W - PP.r - panelW - 6;
+                px = clamp(px, PP.l + 10, Math.max(PP.l + 10, W - PP.r - panelW - 6));
+                let py = PP.t + 18;
 
-                ctx.shadowColor = 'rgba(0,0,0,0.9)';
-                ctx.shadowBlur = 4;
-                ctx.shadowOffsetY = 1;
+                // Panel background
+                ctx.shadowColor = 'rgba(0,0,0,0.55)';
+                ctx.shadowBlur = 10;
+                ctx.shadowOffsetY = 2;
+                ctx.fillStyle = 'rgba(13, 17, 27, 0.88)';
+                drawRoundedPanel(ctx, px - 8, py - 8, panelW, panelH, 8);
+                ctx.fill();
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
+                ctx.shadowOffsetY = 0;
+                ctx.strokeStyle = 'rgba(148, 163, 184, 0.22)';
+                ctx.lineWidth = 1;
+                drawRoundedPanel(ctx, px - 8, py - 8, panelW, panelH, 8);
+                ctx.stroke();
+
                 ctx.textBaseline = 'top';
 
-                pa.lines.forEach(line => {
+                // Header: ACTION + score
+                if (hasHeader) {
+                    ctx.font = headerFont;
+                    ctx.fillStyle = pa.actionColor || '#cbd5e1';
+                    ctx.textAlign = 'left';
+                    ctx.fillText(fitCanvasText(ctx, pa.action, panelW - 76), px, py);
+                    const scColor = pa.score >= 62 ? '#22c55e' : pa.score <= 40 ? '#ef4444' : '#fbbf24';
+                    ctx.fillStyle = scColor;
+                    ctx.textAlign = 'right';
+                    ctx.fillText(String(pa.score) + '/100', px + panelW - 16, py);
+                    ctx.textAlign = 'left';
+                    py += lineH + 2;
+                    // Divider
+                    ctx.strokeStyle = 'rgba(148, 163, 184, 0.15)';
+                    ctx.beginPath();
+                    ctx.moveTo(px, py - 2);
+                    ctx.lineTo(px + panelW - 16, py - 2);
+                    ctx.stroke();
+                    py += 6;
+                }
+
+                lines.forEach(line => {
                     ctx.font = labelFont;
                     const toneColor = line.tone === 'bull' ? '#22c55e' : line.tone === 'bear' ? '#ef4444' : '#cbd5e1';
                     ctx.fillStyle = toneColor;
 
                     const labelStr = line.label ? line.label + ': ' : '';
-                    ctx.fillText(labelStr, px, py);
-
+                    if (labelStr) ctx.fillText(labelStr, px, py);
                     const labelW = line.label ? ctx.measureText(labelStr).width : 0;
-                    ctx.font = bodyFont;
-                    ctx.fillText(line.text, px + labelW, py);
 
-                    py += 18;
+                    // Right-aligned score chip (e.g. +18 / -22) when available
+                    let chipW = 0;
+                    if (typeof line.score === 'number' && line.score !== 0) {
+                        const chipTxt = (line.score > 0 ? '+' : '') + line.score;
+                        ctx.font = chipFont;
+                        chipW = ctx.measureText(chipTxt).width + 6;
+                        ctx.fillStyle = line.score > 0 ? 'rgba(34,197,94,0.85)' : 'rgba(239,68,68,0.85)';
+                        ctx.textAlign = 'right';
+                        ctx.fillText(chipTxt, px + panelW - 16, py + (compact ? 1 : 2));
+                        ctx.textAlign = 'left';
+                    }
+
+                    ctx.font = bodyFont;
+                    ctx.fillStyle = toneColor;
+                    ctx.fillText(fitCanvasText(ctx, line.text, panelW - 24 - labelW - chipW), px + labelW, py);
+
+                    py += lineH;
                 });
 
                 ctx.restore();
@@ -18360,31 +18601,47 @@
                         <button id="fs-blind-btn" onclick="window.fsRandomTraining()" title="Blind Simulator Mode">🎲</button>
                         <button id="fs-flashcard-mode-btn" onclick="window.fsFlashcardTraining()" title="Next Candle Flashcard Mode">🃏</button>
                         <button id="fs-pattern-quiz-btn" onclick="window.fsPatternQuizTraining()" title="Pattern-ID Quiz Mode">🧠</button>
+                        <button id="fs-decision-btn" onclick="window.fsDecisionTraining()" title="Swing Decision Trainer">🎯</button>
                     </div>
                     <div id="fs-replay-status"></div>
                     <div id="fs-flashcard-ui" style="display:none; margin-top: 10px; background: #1e293b; padding: 10px; border-radius: 6px; text-align: center;">
-                        <div style="font-size: 13px; font-weight: bold; margin-bottom: 8px; color: #f8fafc;">Next Candle Flashcard</div>
-                        <div style="font-size: 11px; margin-bottom: 8px; color: #94a3b8;">Will the breakout succeed or fail in the next 3 weeks?</div>
+                        <div style="font-size: 13px; font-weight: bold; margin-bottom: 8px; color: #f8fafc;">Breakout Flashcard</div>
+                        <div style="font-size: 11px; margin-bottom: 8px; color: #94a3b8;">The last candle is a pivot-breakout attempt. Within 5 weeks, will it follow through (close ≥ +5% above pivot) or fail (close &lt; −5%)?</div>
                         <div style="display: flex; gap: 8px; justify-content: center;">
-                            <button onclick="window.fsFlashcardGuess(true)" style="background: #22c55e; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">Succeeds</button>
+                            <button onclick="window.fsFlashcardGuess(true)" style="background: #22c55e; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">Follows Through</button>
                             <button onclick="window.fsFlashcardGuess(false)" style="background: #ef4444; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">Fails</button>
                         </div>
                         <div id="fs-flashcard-result" style="margin-top: 8px; font-size: 12px; font-weight: bold;"></div>
+                        <div id="fs-flashcard-stats" style="margin-top: 6px; font-size: 10px; color: #94a3b8;"></div>
                         <button id="fs-flashcard-next-btn" onclick="window.fsFlashcardTraining()" style="display: none; margin-top: 8px; background: #3b82f6; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">Next Flashcard 🃏</button>
                     </div>
                     <div id="fs-pattern-quiz-ui" style="display:none; margin-top: 10px; background: #1e293b; padding: 10px; border-radius: 6px; text-align: center;">
                         <div style="font-size: 13px; font-weight: bold; margin-bottom: 8px; color: #f8fafc;">Pattern-ID Quiz</div>
                         <div style="font-size: 11px; margin-bottom: 8px; color: #94a3b8;">Identify the primary chart pattern:</div>
                         <div style="display: flex; flex-direction: column; gap: 6px; justify-content: center;">
-                            <button onclick="window.fsPatternQuizGuess('Cup w/ Handle / Rounding Bottom')" style="background: #334155; color: white; border: 1px solid #475569; padding: 4px; border-radius: 4px; cursor: pointer; font-size: 11px;">Cup w/ Handle / Rounding Bottom</button>
-                            <button onclick="window.fsPatternQuizGuess('Flat Base / VCP')" style="background: #334155; color: white; border: 1px solid #475569; padding: 4px; border-radius: 4px; cursor: pointer; font-size: 11px;">Flat Base / VCP</button>
-                            <button onclick="window.fsPatternQuizGuess('Head &amp; Shoulders')" style="background: #334155; color: white; border: 1px solid #475569; padding: 4px; border-radius: 4px; cursor: pointer; font-size: 11px;">Head &amp; Shoulders (Top/Bottom)</button>
-                            <button onclick="window.fsPatternQuizGuess('Bull Flag / Rectangle')" style="background: #334155; color: white; border: 1px solid #475569; padding: 4px; border-radius: 4px; cursor: pointer; font-size: 11px;">Bull Flag / Rectangle / Ascending</button>
-                            <button onclick="window.fsPatternQuizGuess('Bear Flag / Downtrend')" style="background: #334155; color: white; border: 1px solid #475569; padding: 4px; border-radius: 4px; cursor: pointer; font-size: 11px;">Bear Flag / Downtrend / Descending</button>
-                            <button onclick="window.fsPatternQuizGuess('Symmetrical Triangle')" style="background: #334155; color: white; border: 1px solid #475569; padding: 4px; border-radius: 4px; cursor: pointer; font-size: 11px;">Symmetrical Triangle</button>
+                            <button onclick="window.fsPatternQuizGuess('cup')" style="background: #334155; color: white; border: 1px solid #475569; padding: 4px; border-radius: 4px; cursor: pointer; font-size: 11px;">Cup w/ Handle / Rounding Bottom</button>
+                            <button onclick="window.fsPatternQuizGuess('flat')" style="background: #334155; color: white; border: 1px solid #475569; padding: 4px; border-radius: 4px; cursor: pointer; font-size: 11px;">Flat Base / VCP / Tight</button>
+                            <button onclick="window.fsPatternQuizGuess('hs')" style="background: #334155; color: white; border: 1px solid #475569; padding: 4px; border-radius: 4px; cursor: pointer; font-size: 11px;">Head &amp; Shoulders (Top/Bottom)</button>
+                            <button onclick="window.fsPatternQuizGuess('bullflag')" style="background: #334155; color: white; border: 1px solid #475569; padding: 4px; border-radius: 4px; cursor: pointer; font-size: 11px;">Bull Flag / Pennant / Ascending</button>
+                            <button onclick="window.fsPatternQuizGuess('bearflag')" style="background: #334155; color: white; border: 1px solid #475569; padding: 4px; border-radius: 4px; cursor: pointer; font-size: 11px;">Bear Flag / Downtrend / Descending</button>
+                            <button onclick="window.fsPatternQuizGuess('triangle')" style="background: #334155; color: white; border: 1px solid #475569; padding: 4px; border-radius: 4px; cursor: pointer; font-size: 11px;">Triangle / Wedge / Coil</button>
+                            <button onclick="window.fsPatternQuizGuess('dtb')" style="background: #334155; color: white; border: 1px solid #475569; padding: 4px; border-radius: 4px; cursor: pointer; font-size: 11px;">Double / Triple Top-Bottom</button>
+                            <button onclick="window.fsPatternQuizGuess('reversal')" style="background: #334155; color: white; border: 1px solid #475569; padding: 4px; border-radius: 4px; cursor: pointer; font-size: 11px;">Reversal (Island / Climax / V-Bottom)</button>
                         </div>
                         <div id="fs-pattern-quiz-result" style="margin-top: 8px; font-size: 11px; font-weight: bold;"></div>
+                        <div id="fs-pattern-quiz-stats" style="margin-top: 6px; font-size: 10px; color: #94a3b8;"></div>
                         <button id="fs-pattern-quiz-next-btn" onclick="window.fsPatternQuizTraining()" style="display: none; margin-top: 8px; background: #8b5cf6; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">Next Pattern 🧠</button>
+                    </div>
+                    <div id="fs-decision-ui" style="display:none; margin-top: 10px; background: #1e293b; padding: 10px; border-radius: 6px; text-align: center;">
+                        <div style="font-size: 13px; font-weight: bold; margin-bottom: 8px; color: #f8fafc;">Swing Decision Trainer 🎯</div>
+                        <div style="font-size: 11px; margin-bottom: 8px; color: #94a3b8;">Would you BUY this weekly setup? Trade is simulated 8 weeks with a −7% stop. Aim for positive expectancy, not just win rate.</div>
+                        <div style="display: flex; gap: 8px; justify-content: center;">
+                            <button onclick="window.fsDecisionGuess(true)" style="background: #22c55e; color: white; border: none; padding: 5px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">▲ Buy</button>
+                            <button onclick="window.fsDecisionGuess(false)" style="background: #64748b; color: white; border: none; padding: 5px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">✕ Skip</button>
+                        </div>
+                        <div id="fs-decision-result" style="margin-top: 8px; font-size: 11px; font-weight: bold;"></div>
+                        <div id="fs-decision-stats" style="margin-top: 6px; font-size: 10px; color: #94a3b8;"></div>
+                        <button id="fs-decision-next-btn" onclick="window.fsDecisionTraining()" style="display: none; margin-top: 8px; background: #14b8a6; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">Next Setup 🎯</button>
                     </div>
                 </div>
             </div>
@@ -18465,6 +18722,16 @@
                             onclick="window.fsToggleActiveFH('H')" title="Toggle Holding">
                             H
                         </button>
+                    </div>
+                    <!-- Live pattern recognition badge -->
+                    <div id="fs-pattern-badge"
+                        style="display: none; pointer-events: auto; align-items: center; gap: 7px; background: rgba(13,17,27,0.82); border: 1px solid rgba(148,163,184,0.22); border-radius: 8px; padding: 4px 10px; font-family: 'Lexend', sans-serif; cursor: default; backdrop-filter: blur(4px);">
+                        <span id="fs-pattern-badge-action"
+                            style="font-size: 10px; font-weight: 800; letter-spacing: 0.04em; white-space: nowrap;"></span>
+                        <span id="fs-pattern-badge-name"
+                            style="font-size: 10.5px; font-weight: 600; color: #e2e8f0; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis;"></span>
+                        <span id="fs-pattern-badge-score"
+                            style="font-size: 10px; font-weight: 800; white-space: nowrap;"></span>
                     </div>
                 </div>
                 <canvas id="fs-chart-pcv" style="display:none;"></canvas>
@@ -19179,6 +19446,70 @@
                         btnHold.classList.toggle('is-hold', isHold);
                     }
                 }
+
+                // Live pattern recognition badge (hidden in training/quiz modes to not leak answers)
+                window._fsUpdatePatternBadge(tkUpper);
+            };
+
+            window._fsUpdatePatternBadge = function (tkUpper) {
+                const badge = document.getElementById('fs-pattern-badge');
+                if (!badge) return;
+                // Skip during sub-candle animation frames (60fps) — pattern only changes per candle
+                if (window._fsReplay && window._fsReplay.partialCandle) return;
+                if (window._fsTrainingMode || typeof window._fsBuildPriceActionAnalysis !== 'function') {
+                    badge.style.display = 'none';
+                    return;
+                }
+                let arr = null;
+                if (window._chartCalcCache) {
+                    for (const [, cached] of window._chartCalcCache) {
+                        if (cached.ticker === tkUpper && cached.fullProcessed && cached.fullProcessed.length > 0) {
+                            arr = cached.fullProcessed;
+                            break;
+                        }
+                    }
+                }
+                if (!arr) {
+                    // Cache not warm yet (first render still running) — retry shortly
+                    badge.style.display = 'none';
+                    clearTimeout(window._fsBadgeRetry);
+                    window._fsBadgeRetry = setTimeout(() => {
+                        const cur = document.getElementById('fs-ticker-select')?.value?.toUpperCase();
+                        if (cur === tkUpper) window._fsUpdatePatternBadge(tkUpper);
+                    }, 600);
+                    return;
+                }
+                // Respect replay truncation: analyze only what's visible
+                if (window._fsReplay && window._fsReplay.active && window._fsReplay.currentMaxDate) {
+                    let cut = arr.length;
+                    for (let k = arr.length - 1; k >= 0; k--) {
+                        if (arr[k].date.getTime() <= window._fsReplay.currentMaxDate) { cut = k + 1; break; }
+                        cut = k;
+                    }
+                    arr = arr.slice(0, cut);
+                }
+                if (arr.length < 12) { badge.style.display = 'none'; return; }
+                let pa = null;
+                try { pa = window._fsBuildPriceActionAnalysis(arr); } catch (e) { /* ignore */ }
+                if (!pa || !pa.lines || !pa.lines.length) { badge.style.display = 'none'; return; }
+                const actEl = document.getElementById('fs-pattern-badge-action');
+                const nameEl = document.getElementById('fs-pattern-badge-name');
+                const scEl = document.getElementById('fs-pattern-badge-score');
+                if (actEl) {
+                    actEl.textContent = pa.action || '';
+                    actEl.style.color = pa.actionColor || '#cbd5e1';
+                }
+                if (nameEl) {
+                    const top = pa.lines[0];
+                    nameEl.textContent = top.text;
+                    nameEl.title = pa.lines.slice(0, 5).map(l => l.text + (l.score ? ' (' + (l.score > 0 ? '+' : '') + l.score + ')' : '')).join('  |  ');
+                    nameEl.style.color = top.tone === 'bull' ? '#22c55e' : top.tone === 'bear' ? '#ef4444' : '#e2e8f0';
+                }
+                if (scEl) {
+                    scEl.textContent = pa.score + '/100';
+                    scEl.style.color = pa.score >= 62 ? '#22c55e' : pa.score <= 40 ? '#ef4444' : '#fbbf24';
+                }
+                badge.style.display = 'flex';
             };
 
             // ── Candlestick Replay engine ──────────────────────────────────────────
@@ -19410,83 +19741,135 @@
                 }
             };
 
+            /* ═══════════════════════════════════════════════════════
+               TRAINING ENGINE — shared helpers + session stats
+               ═══════════════════════════════════════════════════════ */
+            function _fsShuffleArr(arr) {
+                // Unbiased Fisher-Yates shuffle (the old sort(()=>Math.random()-0.5) is biased)
+                const a = arr.slice();
+                for (let i = a.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    const t = a[i]; a[i] = a[j]; a[j] = t;
+                }
+                return a;
+            }
+
+            window._fsTrainStats = {
+                flash: { c: 0, t: 0, s: 0, bs: 0 },
+                quiz: { c: 0, t: 0, s: 0, bs: 0 },
+                decide: { c: 0, t: 0, s: 0, bs: 0, pnl: 0 }
+            };
+
+            function _fsRecordStat(mode, correct, extra) {
+                const st = window._fsTrainStats[mode];
+                st.t++;
+                if (correct) { st.c++; st.s++; if (st.s > st.bs) st.bs = st.s; }
+                else st.s = 0;
+                if (extra && typeof extra.pnl === 'number') st.pnl += extra.pnl;
+                return st;
+            }
+
+            function _fsStatHtml(st, withPnl) {
+                const acc = st.t ? Math.round((st.c / st.t) * 100) : 0;
+                let html = 'Score: <b>' + st.c + '/' + st.t + '</b> (' + acc + '%) · Streak: <b>' + st.s + '</b> · Best: <b>' + st.bs + '</b>';
+                if (withPnl) {
+                    const p = st.pnl;
+                    html += ' · Net P&L: <b style="color:' + (p >= 0 ? '#22c55e' : '#f43f5e') + '">' + (p >= 0 ? '+' : '') + p.toFixed(1) + '%</b>';
+                }
+                return html;
+            }
+
+            function _fsCloseTrainingUIs(except) {
+                ['fs-flashcard-ui', 'fs-pattern-quiz-ui', 'fs-decision-ui'].forEach(id => {
+                    if (id === except) return;
+                    const el = document.getElementById(id);
+                    if (el) el.style.display = 'none';
+                });
+            }
+
+            // Put the chart into a masked, paused replay at raw[idx]
+            function _fsEnterTrainingReplay(ticker, raw, idx, statusTxt, mask) {
+                window._fsTrainingMode = true;
+                window._fsReplay.active = true;
+                window._fsReplay.currentMaxDate = raw[idx].date.getTime();
+                window._fsReplay.endDate = Infinity;
+                window._fsReplay.paused = true;
+                if (window._fsReplay.timer) clearInterval(window._fsReplay.timer);
+                window._fsReplay.timer = null;
+                const btn = document.getElementById('fs-replay-btn');
+                if (btn) btn.textContent = '▶';
+                const tickerSearch = document.getElementById('fs-ticker-search');
+                if (tickerSearch) tickerSearch.value = mask || 'HIDDEN';
+                const tickerSel = document.getElementById('fs-ticker-select');
+                if (tickerSel) tickerSel.value = ticker;
+                const statusEl = document.getElementById('fs-replay-status');
+                if (statusEl) statusEl.textContent = statusTxt || 'Training';
+                window.renderFullScreenChart();
+            }
+
+            const _FS_INDEX_TICKERS = ['NIFTY50', 'MIDCAP', 'SMALLCAP', 'MICROCAP'];
+
+            /* ═══ 🎲 BLIND SIMULATOR ═══
+               Unbiased ticker shuffle + guaranteed history (≥55w visible) and
+               forward runway (≥30w hidden) so every session is playable. */
             window.fsRandomTraining = function () {
                 if (!window._ohlcvTickers || window._ohlcvTickers.size === 0) {
                     alert("Data not fully loaded yet.");
                     return;
                 }
-                
-                // Get all tickers that have at least 50 candles
-                const validTickers = [];
-                for (let [tk, data] of window._ohlcvTickers.entries()) {
-                    if (data.length > 50) validTickers.push(tk);
+                _fsCloseTrainingUIs();
+
+                const MIN_HISTORY = 55;   // weeks visible at start
+                const MIN_RUNWAY = 30;    // hidden weeks left to replay into
+                const keys = _fsShuffleArr(Array.from(window._ohlcvTickers.keys()))
+                    .filter(k => _FS_INDEX_TICKERS.indexOf(k) === -1);
+
+                let rTick = null, raw = null, rIdx = -1;
+                for (const k of keys) {
+                    const data = window._ohlcvTickers.get(k);
+                    if (!data || data.length < MIN_HISTORY + MIN_RUNWAY + 5) continue;
+                    rTick = k;
+                    raw = data;
+                    rIdx = MIN_HISTORY + Math.floor(Math.random() * (data.length - MIN_HISTORY - MIN_RUNWAY));
+                    break;
                 }
-                
-                if (validTickers.length === 0) {
+                if (!rTick) {
                     alert("Not enough data to start simulation.");
                     return;
                 }
-                
-                // Pick random ticker
-                const rTick = validTickers[Math.floor(Math.random() * validTickers.length)];
-                const raw = window._ohlcvTickers.get(rTick);
-                
-                // Pick random index (from 50 to length - 1)
-                const rIdx = Math.floor(Math.random() * (raw.length - 50)) + 50;
-                
-                // Set training mode true
-                window._fsTrainingMode = true;
-                
-                // Setup replay
-                window._fsReplay.active = true;
-                window._fsReplay.currentMaxDate = raw[rIdx].date.getTime();
-                window._fsReplay.endDate = Infinity; // Run until the end
-                window._fsReplay.paused = true; // Wait for user to hit play/step
-                
-                // Pause if running
-                if (window._fsReplay.timer) clearInterval(window._fsReplay.timer);
-                window._fsReplay.timer = null;
-                const btn = document.getElementById('fs-replay-btn');
-                if (btn) btn.textContent = '▶';
-                
-                // Update UI visually
-                const tickerSearch = document.getElementById('fs-ticker-search');
-                if (tickerSearch) tickerSearch.value = 'TICKER_A';
-                
-                // Update select without triggering its onchange naturally yet
-                const tickerSel = document.getElementById('fs-ticker-select');
-                if (tickerSel) {
-                    // Make sure it's in the options, if not, add it temporarily (it should be since it's from _index)
-                    tickerSel.value = rTick;
-                }
-                
-                const statusEl = document.getElementById('fs-replay-status');
-                if (statusEl) statusEl.textContent = 'Blind Sim Mode';
-                
-                // Re-render
-                window.renderFullScreenChart();
+                _fsEnterTrainingReplay(rTick, raw, rIdx, 'Blind Sim — ▶ play or › step', 'TICKER_A');
             };
 
-            window._fsFindBreakouts = function(raw) {
-                const breakouts = [];
-                for (let i = 50; i < raw.length - 3; i++) {
+            /* ═══ 🃏 NEXT-CANDLE FLASHCARD ═══
+               Finds pivot-breakout weeks and pre-classifies the 5-week outcome:
+                 success = a weekly close ≥ pivot +5% comes first
+                 fail    = a weekly close < pivot −5% comes first
+               Ambiguous / sideways events are skipped so every card has a clean
+               answer, and the target outcome is randomized ~50/50 so the deck
+               cannot be gamed by always answering one way. */
+            window._fsFindBreakouts = function (raw) {
+                const events = [];
+                for (let i = 55; i < raw.length - 6; i++) {
                     const r = raw[i];
-                    let prior50High = 0;
-                    let prior20High = 0;
+                    let prior50High = 0, prior20High = 0;
                     for (let j = Math.max(0, i - 50); j < i; j++) {
                         if (raw[j].high > prior50High) prior50High = raw[j].high;
                         if (j >= i - 20 && raw[j].high > prior20High) prior20High = raw[j].high;
                     }
                     const pivot = Math.min(prior50High, prior20High) || prior20High || prior50High;
-                    
-                    if (pivot && r.close >= pivot && r.open < pivot) {
-                        const avgVol = (raw[i-1].volSma50 || 1);
-                        if (r.vol > avgVol * 1.0) {
-                            breakouts.push(i);
-                        }
+                    if (!pivot) continue;
+                    if (!(r.close >= pivot && r.open < pivot * 1.005 && raw[i - 1].close < pivot)) continue;
+                    const avgVol = raw[i - 1].volSma50 || 0;
+                    if (avgVol && r.vol < avgVol * 0.9) continue; // demand a real (≥ ~avg vol) attempt
+                    let outcome = null;
+                    for (let j = i + 1; j <= Math.min(raw.length - 1, i + 5); j++) {
+                        if (raw[j].close < pivot * 0.95) { outcome = 'fail'; break; }
+                        if (raw[j].close >= pivot * 1.05) { outcome = 'success'; break; }
                     }
+                    if (!outcome) continue; // sideways — no clean answer, skip
+                    events.push({ idx: i, pivot: pivot, outcome: outcome });
                 }
-                return breakouts;
+                return events;
             };
 
             window.fsFlashcardTraining = function () {
@@ -19494,218 +19877,313 @@
                     alert("Data not fully loaded yet.");
                     return;
                 }
-                
+                _fsCloseTrainingUIs('fs-flashcard-ui');
                 const ui = document.getElementById('fs-flashcard-ui');
                 if (ui) ui.style.display = 'block';
                 const nextBtn = document.getElementById('fs-flashcard-next-btn');
                 if (nextBtn) nextBtn.style.display = 'none';
                 const result = document.getElementById('fs-flashcard-result');
-                if (result) result.textContent = 'Searching for a breakout...';
+                if (result) result.textContent = 'Searching for a breakout…';
+                const statsEl = document.getElementById('fs-flashcard-stats');
+                if (statsEl) statsEl.innerHTML = _fsStatHtml(window._fsTrainStats.flash);
 
-                let rTick, raw, breakouts;
-                const keys = Array.from(window._ohlcvTickers.keys());
-                keys.sort(() => Math.random() - 0.5);
-                
+                // Randomized target outcome keeps the deck balanced
+                const want = Math.random() < 0.5 ? 'success' : 'fail';
+                let chosen = null, chosenTicker = null, chosenRaw = null;
+                let fallback = null, fallbackTicker = null, fallbackRaw = null;
+                let scanned = 0;
+                const keys = _fsShuffleArr(Array.from(window._ohlcvTickers.keys()))
+                    .filter(k => _FS_INDEX_TICKERS.indexOf(k) === -1);
                 for (const k of keys) {
                     const data = window._ohlcvTickers.get(k);
-                    if (data.length > 60) {
-                        const b = window._fsFindBreakouts(data);
-                        if (b.length > 0) {
-                            rTick = k;
-                            raw = data;
-                            breakouts = b;
-                            break;
-                        }
+                    if (!data || data.length < 70) continue;
+                    const evts = window._fsFindBreakouts(data);
+                    if (!evts.length) continue;
+                    scanned++;
+                    const match = evts.filter(e => e.outcome === want);
+                    if (match.length) {
+                        chosen = match[Math.floor(Math.random() * match.length)];
+                        chosenTicker = k;
+                        chosenRaw = data;
+                        break;
                     }
+                    if (!fallback) {
+                        fallback = evts[Math.floor(Math.random() * evts.length)];
+                        fallbackTicker = k;
+                        fallbackRaw = data;
+                    }
+                    if (scanned >= 30 && fallback) break;
                 }
-
-                if (!breakouts || breakouts.length === 0) {
+                if (!chosen && fallback) { chosen = fallback; chosenTicker = fallbackTicker; chosenRaw = fallbackRaw; }
+                if (!chosen) {
                     if (result) result.textContent = 'No breakout candidates found.';
                     return;
                 }
-                
-                const bIdx = breakouts[Math.floor(Math.random() * breakouts.length)];
-                window._fsFlashcardState = {
-                    ticker: rTick,
-                    breakoutIdx: bIdx,
-                    raw: raw
-                };
-                
-                window._fsTrainingMode = true;
-                
-                window._fsReplay.active = true;
-                window._fsReplay.currentMaxDate = raw[bIdx - 1].date.getTime();
-                window._fsReplay.endDate = Infinity;
-                window._fsReplay.paused = true;
-                
-                if (window._fsReplay.timer) clearInterval(window._fsReplay.timer);
-                window._fsReplay.timer = null;
-                const btn = document.getElementById('fs-replay-btn');
-                if (btn) btn.textContent = '▶';
-                
-                const tickerSearch = document.getElementById('fs-ticker-search');
-                if (tickerSearch) tickerSearch.value = 'TICKER_A'; // Hide real ticker
-                
-                const tickerSel = document.getElementById('fs-ticker-select');
-                if (tickerSel) tickerSel.value = rTick;
-                
-                const statusEl = document.getElementById('fs-replay-status');
-                if (statusEl) statusEl.textContent = 'Flashcard Mode';
 
+                window._fsFlashcardState = {
+                    ticker: chosenTicker,
+                    breakoutIdx: chosen.idx,
+                    pivot: chosen.pivot,
+                    outcome: chosen.outcome,
+                    raw: chosenRaw
+                };
+                // The breakout candle itself is visible — the drill is judging its QUALITY
+                _fsEnterTrainingReplay(chosenTicker, chosenRaw, chosen.idx, 'Flashcard Mode', 'TICKER_A');
                 if (result) result.textContent = '';
-                
-                window.renderFullScreenChart();
             };
 
             window.fsFlashcardGuess = function (guessSucceeds) {
                 if (!window._fsFlashcardState) return;
-                const { raw, breakoutIdx } = window._fsFlashcardState;
-                
-                const targetIdx = Math.min(breakoutIdx + 2, raw.length - 1);
-                
+                const { raw, breakoutIdx, pivot, outcome, ticker } = window._fsFlashcardState;
+
+                // Reveal the full 5-week resolution window
+                const targetIdx = Math.min(breakoutIdx + 5, raw.length - 1);
                 window._fsReplay.currentMaxDate = raw[targetIdx].date.getTime();
-                
-                const breakoutCandle = raw[breakoutIdx];
-                const finalCandle = raw[targetIdx];
-                const didSucceed = finalCandle.close > breakoutCandle.open;
-                
-                const isCorrect = (guessSucceeds && didSucceed) || (!guessSucceeds && !didSucceed);
-                
+
+                const didSucceed = outcome === 'success';
+                const isCorrect = !!guessSucceeds === didSucceed;
+                const st = _fsRecordStat('flash', isCorrect);
+
                 const result = document.getElementById('fs-flashcard-result');
                 if (result) {
-                    if (isCorrect) {
-                        result.innerHTML = `<span style="color: #22c55e;">✅ Correct! Breakout ${didSucceed ? 'Succeeded' : 'Failed'}.</span>`;
-                    } else {
-                        result.innerHTML = `<span style="color: #ef4444;">❌ Incorrect! Breakout ${didSucceed ? 'Succeeded' : 'Failed'}.</span>`;
-                    }
+                    const post = pivot ? ((raw[targetIdx].close - pivot) / pivot) * 100 : 0;
+                    const col = isCorrect ? '#22c55e' : '#ef4444';
+                    result.innerHTML = '<span style="color:' + col + ';">' + (isCorrect ? '✅ Correct!' : '❌ Incorrect!') +
+                        ' Breakout ' + (didSucceed ? 'followed through' : 'failed') +
+                        ' — now ' + (post >= 0 ? '+' : '') + post.toFixed(1) + '% vs pivot.</span>';
                 }
-                
+                const statsEl = document.getElementById('fs-flashcard-stats');
+                if (statsEl) statsEl.innerHTML = _fsStatHtml(st);
+
                 const tickerSearch = document.getElementById('fs-ticker-search');
-                if (tickerSearch) tickerSearch.value = window._fsFlashcardState.ticker; // Reveal ticker
+                if (tickerSearch) tickerSearch.value = ticker; // Reveal ticker
 
                 const nextBtn = document.getElementById('fs-flashcard-next-btn');
                 if (nextBtn) nextBtn.style.display = 'block';
 
                 window.renderFullScreenChart();
             };
+
+            /* ═══ 🧠 PATTERN-ID QUIZ ═══
+               Group-based grading: the true pattern is mapped to exactly ONE
+               answer group up-front (ordered matchers), so overlapping keywords
+               can never mark a right answer wrong. Only clear patterns
+               (|score| ≥ 12) are quizzed, and the explanation shows the
+               analyzer's reasoning plus secondary patterns. */
+            const _FS_QUIZ_GROUPS = [
+                { key: 'cup', label: 'Cup w/ Handle / Rounding Bottom', match: a => a.includes('cup') || a.includes('rounding bottom') },
+                { key: 'hs', label: 'Head & Shoulders', match: a => a.includes('shoulders') },
+                { key: 'dtb', label: 'Double / Triple Top-Bottom', match: a => a.includes('double') || a.includes('triple') },
+                { key: 'triangle', label: 'Triangle / Wedge / Coil', match: a => a.includes('triangle') || a.includes('wedge') || a.includes('broadening') || a.includes('diamond') },
+                { key: 'bullflag', label: 'Bull Flag / Pennant / Ascending', match: a => a.includes('bull flag') || a.includes('bull pennant') || a.includes('power play') || a.includes('high tight') || (a.includes('rectangle') && a.includes('bull')) || a.includes('ascending') || a.includes('breakaway gap') },
+                { key: 'bearflag', label: 'Bear Flag / Downtrend / Descending', match: a => a.includes('bear flag') || a.includes('bear pennant') || a.includes('downtrend') || a.includes('distribution') || (a.includes('rectangle') && a.includes('bear')) || a.includes('descending') || a.includes('base failure') },
+                { key: 'reversal', label: 'Reversal (Island / Climax / V-Bottom)', match: a => a.includes('island') || a.includes('climax') || a.includes('v-bottom') || a.includes('shakeout') || a.includes('bump-and-run') || a.includes('rounding top') || a.includes('follow-through') },
+                { key: 'flat', label: 'Flat Base / VCP / Tight', match: a => a.includes('flat') || a.includes('vcp') || a.includes('tight') || a.includes('3-weeks') || (a.includes('base') && !a.includes('failure')) }
+            ];
+
+            function _fsQuizGroupOf(name) {
+                const a = String(name || '').toLowerCase();
+                for (const g of _FS_QUIZ_GROUPS) {
+                    if (g.match(a)) return g.key;
+                }
+                return null;
+            }
 
             window.fsPatternQuizTraining = function () {
                 if (!window._ohlcvTickers || window._ohlcvTickers.size === 0) {
                     alert("Data not fully loaded yet.");
                     return;
                 }
-                
+                _fsCloseTrainingUIs('fs-pattern-quiz-ui');
                 const ui = document.getElementById('fs-pattern-quiz-ui');
                 if (ui) ui.style.display = 'block';
                 const nextBtn = document.getElementById('fs-pattern-quiz-next-btn');
                 if (nextBtn) nextBtn.style.display = 'none';
                 const result = document.getElementById('fs-pattern-quiz-result');
-                if (result) result.textContent = 'Searching for a pattern...';
+                if (result) result.textContent = 'Searching for a clear pattern…';
+                const statsEl = document.getElementById('fs-pattern-quiz-stats');
+                if (statsEl) statsEl.innerHTML = _fsStatHtml(window._fsTrainStats.quiz);
 
-                const validTargets = [
-                    'Cup', 'Rounding', 'Flat', 'VCP', 'Tight weekly base',
-                    'Shoulders', 'Bull Flag', 'Power Play', 'Bear Flag', 'downtrend', 'distribution', 'Symmetrical', 'Ascending', 'Descending', 'Rectangle'
-                ];
-                
-                let foundTicker, foundRaw, foundIdx, foundPattern;
-                
-                const keys = Array.from(window._ohlcvTickers.keys());
-                keys.sort(() => Math.random() - 0.5);
-                
+                let found = null;
+                const keys = _fsShuffleArr(Array.from(window._ohlcvTickers.keys()))
+                    .filter(k => _FS_INDEX_TICKERS.indexOf(k) === -1);
+                outer:
                 for (const k of keys) {
                     const data = window._ohlcvTickers.get(k);
-                    if (data.length < 80) continue;
-                    
-                    for (let attempt = 0; attempt < 20; attempt++) {
-                        const rIdx = Math.floor(Math.random() * (data.length - 60)) + 60;
+                    if (!data || data.length < 90) continue;
+                    for (let attempt = 0; attempt < 25; attempt++) {
+                        const rIdx = 70 + Math.floor(Math.random() * (data.length - 70));
                         const snippet = data.slice(0, rIdx + 1);
-                        if (!window._fsBuildPriceActionAnalysis) break;
+                        if (!window._fsBuildPriceActionAnalysis) break outer;
                         const analysis = window._fsBuildPriceActionAnalysis(snippet);
-                        
-                        if (analysis && analysis.lines && analysis.lines.length > 0) {
-                            const pName = analysis.lines[0].text;
-                            if (validTargets.some(t => pName.includes(t)) || pName.includes('Base') || pName.includes('Flag') || pName.includes('Triangle') || pName.includes('Double') || pName.includes('Cup') || pName.includes('VCP') || pName.includes('Shoulders')) {
-                                foundTicker = k;
-                                foundRaw = data;
-                                foundIdx = rIdx;
-                                foundPattern = pName;
-                                break;
-                            }
-                        }
+                        if (!analysis || !analysis.lines || !analysis.lines.length) continue;
+                        const top = analysis.lines[0];
+                        if (typeof top.score === 'number' && Math.abs(top.score) < 12) continue; // demand a CLEAR pattern
+                        const grp = _fsQuizGroupOf(top.text);
+                        if (!grp) continue;
+                        found = {
+                            ticker: k, idx: rIdx, raw: data,
+                            pattern: top.text, group: grp,
+                            detail: top.detail || '',
+                            others: analysis.lines.slice(1, 3).map(l => l.text)
+                        };
+                        break outer;
                     }
-                    if (foundTicker) break;
                 }
-
-                if (!foundTicker) {
+                if (!found) {
                     if (result) result.textContent = 'No clear pattern found. Try again.';
                     return;
                 }
-                
-                window._fsPatternQuizState = {
-                    ticker: foundTicker,
-                    idx: foundIdx,
-                    raw: foundRaw,
-                    truePattern: foundPattern
-                };
-                
-                window._fsTrainingMode = true;
-                
-                window._fsReplay.active = true;
-                window._fsReplay.currentMaxDate = foundRaw[foundIdx].date.getTime();
-                window._fsReplay.endDate = Infinity;
-                window._fsReplay.paused = true;
-                
-                if (window._fsReplay.timer) clearInterval(window._fsReplay.timer);
-                window._fsReplay.timer = null;
-                const btn = document.getElementById('fs-replay-btn');
-                if (btn) btn.textContent = '▶';
-                
-                const tickerSearch = document.getElementById('fs-ticker-search');
-                if (tickerSearch) tickerSearch.value = 'PATTERN_QUIZ'; 
-                
-                const tickerSel = document.getElementById('fs-ticker-select');
-                if (tickerSel) tickerSel.value = foundTicker;
-                
-                const statusEl = document.getElementById('fs-replay-status');
-                if (statusEl) statusEl.textContent = 'Pattern Quiz Mode';
 
+                window._fsPatternQuizState = {
+                    ticker: found.ticker,
+                    idx: found.idx,
+                    raw: found.raw,
+                    truePattern: found.pattern,
+                    trueGroup: found.group,
+                    detail: found.detail,
+                    others: found.others
+                };
+                _fsEnterTrainingReplay(found.ticker, found.raw, found.idx, 'Pattern Quiz Mode', 'PATTERN_QUIZ');
                 if (result) result.textContent = '';
-                
-                window.renderFullScreenChart();
             };
 
-            window.fsPatternQuizGuess = function (guessedGroup) {
+            window.fsPatternQuizGuess = function (guessKey) {
                 if (!window._fsPatternQuizState) return;
-                const { truePattern, ticker } = window._fsPatternQuizState;
-                
-                const isMatch = (guess, actual) => {
-                    const g = guess.toLowerCase();
-                    const a = actual.toLowerCase();
-                    if (g.includes('cup') && (a.includes('cup') || a.includes('rounding'))) return true;
-                    if (g.includes('flat') && (a.includes('flat') || a.includes('vcp') || a.includes('tight') || a.includes('base'))) return true;
-                    if (g.includes('shoulders') && a.includes('shoulders')) return true;
-                    if (g.includes('bull flag') && (a.includes('bull flag') || a.includes('power play') || a.includes('high tight') || (a.includes('rectangle') && a.includes('bull')) || a.includes('ascending'))) return true;
-                    if (g.includes('bear flag') && (a.includes('bear flag') || a.includes('downtrend') || a.includes('distribution') || (a.includes('rectangle') && a.includes('bear')) || a.includes('descending'))) return true;
-                    if (g.includes('triangle') && a.includes('symmetrical triangle')) return true;
-                    return false;
-                };
-                
-                const isCorrect = isMatch(guessedGroup, truePattern);
-                
+                const { truePattern, trueGroup, ticker, detail, others } = window._fsPatternQuizState;
+
+                const isCorrect = guessKey === trueGroup;
+                const st = _fsRecordStat('quiz', isCorrect);
+                const grpDef = _FS_QUIZ_GROUPS.filter(g => g.key === trueGroup)[0];
+                const trueLabel = grpDef ? grpDef.label : trueGroup;
+
                 const result = document.getElementById('fs-pattern-quiz-result');
                 if (result) {
-                    if (isCorrect) {
-                        result.innerHTML = `<span style="color: #22c55e;">✅ Correct! True pattern: ${truePattern}</span>`;
-                    } else {
-                        result.innerHTML = `<span style="color: #ef4444;">❌ Incorrect! True pattern: ${truePattern}</span>`;
-                    }
+                    result.innerHTML =
+                        '<div style="color:' + (isCorrect ? '#22c55e' : '#ef4444') + ';">' +
+                        (isCorrect ? '✅ Correct!' : '❌ Incorrect — answer: ' + trueLabel) + '</div>' +
+                        '<div style="color:#e2e8f0; margin-top:3px;">' + truePattern + '</div>' +
+                        (detail ? '<div style="color:#94a3b8; font-weight:normal; margin-top:2px;">' + detail + '</div>' : '') +
+                        (others && others.length ? '<div style="color:#64748b; font-weight:normal; margin-top:2px;">Also present: ' + others.join(', ') + '</div>' : '');
                 }
-                
+                const statsEl = document.getElementById('fs-pattern-quiz-stats');
+                if (statsEl) statsEl.innerHTML = _fsStatHtml(st);
+
                 const tickerSearch = document.getElementById('fs-ticker-search');
-                if (tickerSearch) tickerSearch.value = ticker; 
+                if (tickerSearch) tickerSearch.value = ticker;
 
                 const nextBtn = document.getElementById('fs-pattern-quiz-next-btn');
                 if (nextBtn) nextBtn.style.display = 'block';
+            };
+
+            /* ═══ 🎯 SWING DECISION TRAINER (new) ═══
+               Weekly swing-trading drill: a bull-leaning setup is shown; decide
+               BUY or SKIP. The trade is then simulated exactly — entry at the
+               last visible close, −7% weekly-close stop, 8-week horizon — and
+               session expectancy (net P&L of taken trades) is tracked. */
+            window.fsDecisionTraining = function () {
+                if (!window._ohlcvTickers || window._ohlcvTickers.size === 0) {
+                    alert("Data not fully loaded yet.");
+                    return;
+                }
+                _fsCloseTrainingUIs('fs-decision-ui');
+                const ui = document.getElementById('fs-decision-ui');
+                if (ui) ui.style.display = 'block';
+                const nextBtn = document.getElementById('fs-decision-next-btn');
+                if (nextBtn) nextBtn.style.display = 'none';
+                const result = document.getElementById('fs-decision-result');
+                if (result) result.textContent = 'Searching for a decision point…';
+                const statsEl = document.getElementById('fs-decision-stats');
+                if (statsEl) statsEl.innerHTML = _fsStatHtml(window._fsTrainStats.decide, true);
+
+                let found = null;
+                const keys = _fsShuffleArr(Array.from(window._ohlcvTickers.keys()))
+                    .filter(k => _FS_INDEX_TICKERS.indexOf(k) === -1);
+                outer:
+                for (const k of keys) {
+                    const data = window._ohlcvTickers.get(k);
+                    if (!data || data.length < 110) continue;
+                    for (let attempt = 0; attempt < 20; attempt++) {
+                        const idx = 70 + Math.floor(Math.random() * (data.length - 80));
+                        if (idx >= data.length - 9) continue;
+                        const snippet = data.slice(0, idx + 1);
+                        const analysis = window._fsBuildPriceActionAnalysis ? window._fsBuildPriceActionAnalysis(snippet) : null;
+                        if (!analysis) continue;
+                        // Only bull-leaning, tempting-looking spots qualify — the hard
+                        // part is telling which of them actually work.
+                        if (analysis.score < 52) continue;
+                        found = { ticker: k, idx: idx, raw: data, analysis: analysis };
+                        break outer;
+                    }
+                }
+                if (!found) {
+                    if (result) result.textContent = 'No setup found. Try again.';
+                    return;
+                }
+
+                // Pre-simulate the 8-week forward trade with a −7% weekly-close stop
+                const raw = found.raw;
+                const idx = found.idx;
+                const entry = raw[idx].close;
+                const stopLevel = entry * 0.93;
+                let exitIdx = Math.min(idx + 8, raw.length - 1);
+                let exitPrice = raw[exitIdx].close;
+                let stopped = false;
+                for (let j = idx + 1; j <= Math.min(idx + 8, raw.length - 1); j++) {
+                    if (raw[j].close < stopLevel) {
+                        exitIdx = j;
+                        exitPrice = raw[j].close;
+                        stopped = true;
+                        break;
+                    }
+                }
+                const pnl = entry ? ((exitPrice - entry) / entry) * 100 : 0;
+
+                window._fsDecisionState = {
+                    ticker: found.ticker,
+                    idx: idx,
+                    raw: raw,
+                    entry: entry,
+                    pnl: pnl,
+                    stopped: stopped,
+                    exitIdx: exitIdx,
+                    action: found.analysis.action,
+                    score: found.analysis.score
+                };
+                _fsEnterTrainingReplay(found.ticker, raw, idx, 'Decision Trainer', 'TICKER_A');
+                if (result) result.textContent = '';
+            };
+
+            window.fsDecisionGuess = function (buys) {
+                if (!window._fsDecisionState) return;
+                const { ticker, idx, raw, pnl, stopped, action, score } = window._fsDecisionState;
+
+                // Reveal the full 8-week outcome window
+                window._fsReplay.currentMaxDate = raw[Math.min(idx + 8, raw.length - 1)].date.getTime();
+
+                const goodTrade = pnl >= 5; // worth taking
+                const isCorrect = buys ? goodTrade : !goodTrade;
+                const st = _fsRecordStat('decide', isCorrect, { pnl: buys ? pnl : 0 });
+
+                const result = document.getElementById('fs-decision-result');
+                if (result) {
+                    const pcol = pnl >= 0 ? '#22c55e' : '#f43f5e';
+                    result.innerHTML =
+                        '<div style="color:' + (isCorrect ? '#22c55e' : '#ef4444') + ';">' + (isCorrect ? '✅ Good decision!' : '❌ Wrong call.') + '</div>' +
+                        '<div style="color:#e2e8f0; margin-top:3px;">8-week result: <b style="color:' + pcol + '">' +
+                        (pnl >= 0 ? '+' : '') + pnl.toFixed(1) + '%</b>' + (stopped ? ' (stopped out)' : '') + '</div>' +
+                        '<div style="color:#64748b; font-weight:normal; margin-top:2px;">Analyzer said: ' + action + ' (' + score + '/100)</div>';
+                }
+                const statsEl = document.getElementById('fs-decision-stats');
+                if (statsEl) statsEl.innerHTML = _fsStatHtml(st, true);
+
+                const tickerSearch = document.getElementById('fs-ticker-search');
+                if (tickerSearch) tickerSearch.value = ticker;
+
+                const nextBtn = document.getElementById('fs-decision-next-btn');
+                if (nextBtn) nextBtn.style.display = 'block';
+
+                window.renderFullScreenChart();
             };
 
             window.stopFsReplay = function (keepActive = false) {
@@ -20619,6 +21097,13 @@
             window.addEventListener('keydown', function (e) {
                 const modal = document.getElementById('fs-chart-modal');
                 if (!modal || modal.style.display !== 'flex') return;
+
+                // Don't hijack keys while the user is typing in an input/select
+                const tag = ((e.target && e.target.tagName) || '').toLowerCase();
+                if (tag === 'input' || tag === 'textarea' || tag === 'select') {
+                    if (e.key === 'Escape' && e.target.blur) e.target.blur();
+                    return;
+                }
 
                 if (e.key === 'Escape') {
                     window.closeFullScreenChart();
