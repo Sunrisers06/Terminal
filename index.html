@@ -6372,7 +6372,7 @@
                     <div style="flex:1;"></div>
                     <button class="fs-btn" onclick="toggleNewsFS('breadth-section', this)" title="Fullscreen">⛶</button>
                     <button class="deal-refresh-btn"
-                        onclick="renderBreadthTab(window._breadthSort||'above10Pct',window._breadthDir||-1)"
+                        onclick="renderBreadthTab(window._breadthSort||'momentum',window._breadthDir||-1)"
                         title="Refresh">↻</button>
                 </div>
                 <div class="deal-sub-pane active-sub-pane" style="overflow-y:auto;flex:1;">
@@ -8194,7 +8194,7 @@
             }
             // Lazy-render breadth tab on first visit or re-render
             if (tab === 'breadth' && typeof renderBreadthTab === 'function') {
-                renderBreadthTab(window._breadthSort || 'above10Pct', window._breadthDir || -1);
+                renderBreadthTab(window._breadthSort || 'momentum', window._breadthDir || -1);
             }
         }
 
