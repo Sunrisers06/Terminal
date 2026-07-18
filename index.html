@@ -6107,8 +6107,7 @@
                 </div>
 
                 <!-- FILTER ROW -->
-                <div
-                    class="pane-toolbar" style="padding-top:5px;padding-bottom:5px;">
+                <div class="pane-toolbar" style="padding-top:5px;padding-bottom:5px;">
                     <input class="pane-search" id="nsenews-search" placeholder="🔍 Search ticker or keyword…"
                         oninput="filterPaneSearch('nsenews')" style="flex:1;min-width:100px;">
                     <div class="font-size-controls">
@@ -7988,14 +7987,13 @@
 
         function buildNseNewsItem(n) {
             const t = _newsTimeStr(n.timestamp);
-            const headline = n.title || n.summary;
-            const summary = n.title && n.summary && n.summary !== n.title ? `<span class="news-summary">${escHtml(n.summary)}</span>` : '';
+            const content = n.summary || n.title;
             return `<div class="news-item">
     ${(n.ticker || t) ? `<div class="news-date">
       ${n.ticker ? `<span class="news-tick-chip" onclick="searchStock('${escHtml(n.ticker)}')">${escHtml(n.ticker)}</span>` : ''}
       ${t ? `<span>${t}</span>` : ''}
     </div>` : ''}
-    ${n.url ? `<a class="news-link" href="${n.url}" target="_blank" rel="noopener">${escHtml(headline)}${summary}</a>` : `<span class="news-text">${escHtml(headline)}${summary}</span>`}
+    ${n.url ? `<a class="news-link" href="${n.url}" target="_blank" rel="noopener" style="font-weight:400; color:#fff;">${escHtml(content)}</a>` : `<span class="news-text" style="font-weight:400; color:#fff;">${escHtml(content)}</span>`}
   </div>`;
         }
 
@@ -8075,8 +8073,8 @@
                         _searchLow: ''
                     };
                 }).filter(r => (r.title || r.summary) && r.timestamp > 0)
-                  .map(r => ({ ...r, _searchLow: [r.ticker, r.title, r.summary].join(' ').toLowerCase() }))
-                  .sort((a, b) => b.timestamp - a.timestamp);
+                    .map(r => ({ ...r, _searchLow: [r.ticker, r.title, r.summary].join(' ').toLowerCase() }))
+                    .sort((a, b) => b.timestamp - a.timestamp);
                 filterBothNews();
             } catch (e) {
                 console.error('Failed to fetch NSE News:', e);
@@ -8583,7 +8581,7 @@
                 if (dc.peadFilter && dc.peadFilter.checked) {
                     if (!r._peadFlag) return false;
                 }
-                
+
                 // VCP filter
                 if (dc.vcpFilter && dc.vcpFilter.checked) {
                     if (!r._vcpFlag) return false;
@@ -9776,7 +9774,7 @@
             allData.forEach(r => {
                 r._vcpFlag = false;
                 const arr = window._ohlcvTickers.get(String(r._ticker).toUpperCase());
-                if (!arr || arr.length < 30) return; 
+                if (!arr || arr.length < 30) return;
 
                 // Analyze the last 26 weeks for a base
                 const baseBars = arr.slice(-26, -3); // the base building phase
@@ -18224,7 +18222,7 @@
             background: rgba(15, 23, 42, 0.95);
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 8px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
             z-index: 999999;
             display: none;
             flex-direction: column;
@@ -18232,6 +18230,7 @@
             font-family: 'Lexend', sans-serif;
             backdrop-filter: blur(10px);
         }
+
         .fs-pt-analysis-header {
             display: flex;
             justify-content: space-between;
@@ -18242,39 +18241,53 @@
             font-weight: 700;
             color: #c084fc;
         }
+
         .fs-pt-analysis-close {
             cursor: pointer;
-            color: rgba(255,255,255,0.4);
+            color: rgba(255, 255, 255, 0.4);
             font-size: 16px;
         }
-        .fs-pt-analysis-close:hover { color: white; }
+
+        .fs-pt-analysis-close:hover {
+            color: white;
+        }
+
         .fs-pt-analysis-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 12px;
             padding: 16px;
         }
+
         .fs-pt-analysis-card {
-            background: rgba(0,0,0,0.3);
-            border: 1px solid rgba(255,255,255,0.05);
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.05);
             border-radius: 6px;
             padding: 10px;
             text-align: center;
         }
+
         .fs-pt-analysis-card-title {
             font-size: 10px;
-            color: rgba(255,255,255,0.5);
+            color: rgba(255, 255, 255, 0.5);
             margin-bottom: 4px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
+
         .fs-pt-analysis-card-value {
             font-size: 16px;
             font-weight: 800;
             color: #e2e8f0;
         }
-        .fs-pt-analysis-card.green .fs-pt-analysis-card-value { color: #22c55e; }
-        .fs-pt-analysis-card.red .fs-pt-analysis-card-value { color: #f43f5e; }
+
+        .fs-pt-analysis-card.green .fs-pt-analysis-card-value {
+            color: #22c55e;
+        }
+
+        .fs-pt-analysis-card.red .fs-pt-analysis-card-value {
+            color: #f43f5e;
+        }
 
 
         #fs-pt-pnl {
@@ -18289,7 +18302,7 @@
             background: rgba(0, 0, 0, 0.3);
             border: 1px solid rgba(255, 255, 255, 0.05);
             border-radius: 4px;
-            box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
         }
 
         #fs-pt-log {
@@ -18626,14 +18639,16 @@
         }
 
         #fs-sidebar-header {
-            justify-content: space-between;
+            justify-content: center;
             gap: 8px;
             cursor: default;
-            padding: 12px 12px 10px 14px;
+            padding: 12px 14px 10px 14px;
         }
 
         #fs-sidebar-header img {
-            width: 120px;
+            width: 100%;
+            max-width: 160px;
+            object-fit: contain;
         }
 
         #fs-sidebar-close {
@@ -18756,7 +18771,10 @@
         }
 
         /* Training result panels — match sidebar theme */
-        #fs-flashcard-ui, #fs-pattern-quiz-ui, #fs-decision-ui, #fs-volread-ui {
+        #fs-flashcard-ui,
+        #fs-pattern-quiz-ui,
+        #fs-decision-ui,
+        #fs-volread-ui {
             background: rgba(30, 41, 59, 0.55) !important;
             border: 1px solid rgba(148, 163, 184, 0.15);
         }
@@ -18826,11 +18844,10 @@
         style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; width:100%; height:100%; background:var(--bg); z-index:99999; flex-direction:row; overflow:hidden;">
         <!-- Left Panel: Apple-style sidebar -->
         <div id="fs-sidebar">
-            <!-- Header: Logo + close -->
+            <!-- Header: Logo -->
             <div id="fs-sidebar-header">
                 <img src="https://lh3.googleusercontent.com/d/1pPqrvLPPH2Mh9aqjQgG1eAnoziFAxtWg" alt="Sundarx Quantara"
                     onclick="closeFullScreenChart()" title="Close Charts" style="cursor:pointer;">
-                <button id="fs-sidebar-close" onclick="closeFullScreenChart()" title="Close (Esc)">✕</button>
             </div>
 
             <!-- Search bar at top -->
@@ -18907,7 +18924,8 @@
                     </div>
 
                     <div class="fs-replay-btns">
-                        <button id="fs-replay-btn" onclick="window.toggleFsReplay()" title="Play / Pause (Space)">▶</button>
+                        <button id="fs-replay-btn" onclick="window.toggleFsReplay()"
+                            title="Play / Pause (Space)">▶</button>
                         <button id="fs-step-fwd-btn" onclick="window.fsFsStepForward()"
                             title="Step +1 candle">›</button>
                         <button id="fs-replay-stop-btn" onclick="window.stopFsReplay()" title="Stop replay">⏹</button>
@@ -18946,58 +18964,116 @@
                             <span class="tb-ico">🔊</span><span class="tb-lbl">Volume Read</span>
                         </button>
                     </div>
-                    <div id="fs-flashcard-ui" style="display:none; margin-top: 4px; padding: 10px; border-radius: 8px; text-align: center;">
-                        <div style="font-size: 12px; font-weight: bold; margin-bottom: 6px; color: #f8fafc;">🃏 Breakout Flashcard</div>
-                        <div style="font-size: 10px; margin-bottom: 8px; color: #94a3b8;">The last candle is a pivot-breakout attempt. Within 5 weeks, will it follow through (close ≥ +5% above pivot) or fail (close &lt; −5%)?</div>
+                    <div id="fs-flashcard-ui"
+                        style="display:none; margin-top: 4px; padding: 10px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 12px; font-weight: bold; margin-bottom: 6px; color: #f8fafc;">🃏 Breakout
+                            Flashcard</div>
+                        <div style="font-size: 10px; margin-bottom: 8px; color: #94a3b8;">The last candle is a
+                            pivot-breakout attempt. Within 5 weeks, will it follow through (close ≥ +5% above pivot) or
+                            fail (close &lt; −5%)?</div>
                         <div style="display: flex; gap: 6px; justify-content: center;">
-                            <button onclick="window.fsFlashcardGuess(true)" style="flex:1; background: #22c55e; color: white; border: none; padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 10.5px; font-weight: bold;">Follows Through</button>
-                            <button onclick="window.fsFlashcardGuess(false)" style="flex:1; background: #ef4444; color: white; border: none; padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 10.5px; font-weight: bold;">Fails</button>
+                            <button onclick="window.fsFlashcardGuess(true)"
+                                style="flex:1; background: #22c55e; color: white; border: none; padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 10.5px; font-weight: bold;">Follows
+                                Through</button>
+                            <button onclick="window.fsFlashcardGuess(false)"
+                                style="flex:1; background: #ef4444; color: white; border: none; padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 10.5px; font-weight: bold;">Fails</button>
                         </div>
-                        <div id="fs-flashcard-result" style="margin-top: 8px; font-size: 11px; font-weight: bold;"></div>
+                        <div id="fs-flashcard-result" style="margin-top: 8px; font-size: 11px; font-weight: bold;">
+                        </div>
                         <div id="fs-flashcard-stats" style="margin-top: 6px; font-size: 9px; color: #94a3b8;"></div>
-                        <button id="fs-flashcard-next-btn" onclick="window.fsFlashcardTraining()" style="display: none; margin-top: 8px; background: #3b82f6; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; width: 100%; font-weight: 700;">Next Flashcard 🃏</button>
+                        <button id="fs-flashcard-next-btn" onclick="window.fsFlashcardTraining()"
+                            style="display: none; margin-top: 8px; background: #3b82f6; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; width: 100%; font-weight: 700;">Next
+                            Flashcard 🃏</button>
                     </div>
-                    <div id="fs-pattern-quiz-ui" style="display:none; margin-top: 4px; padding: 10px; border-radius: 8px; text-align: center;">
-                        <div style="font-size: 12px; font-weight: bold; margin-bottom: 6px; color: #f8fafc;">🧠 Pattern-ID Quiz</div>
-                        <div style="font-size: 10px; margin-bottom: 8px; color: #94a3b8;">Identify the primary chart pattern:</div>
+                    <div id="fs-pattern-quiz-ui"
+                        style="display:none; margin-top: 4px; padding: 10px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 12px; font-weight: bold; margin-bottom: 6px; color: #f8fafc;">🧠
+                            Pattern-ID Quiz</div>
+                        <div style="font-size: 10px; margin-bottom: 8px; color: #94a3b8;">Identify the primary chart
+                            pattern:</div>
                         <div style="display: flex; flex-direction: column; gap: 5px; justify-content: center;">
-                            <button onclick="window.fsPatternQuizGuess('cup')" style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Cup w/ Handle / Rounding Bottom</button>
-                            <button onclick="window.fsPatternQuizGuess('flat')" style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Flat Base / VCP / Tight</button>
-                            <button onclick="window.fsPatternQuizGuess('hs')" style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Head &amp; Shoulders (Top/Bottom)</button>
-                            <button onclick="window.fsPatternQuizGuess('bullflag')" style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Bull Flag / Pennant / Ascending</button>
-                            <button onclick="window.fsPatternQuizGuess('bearflag')" style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Bear Flag / Downtrend / Descending</button>
-                            <button onclick="window.fsPatternQuizGuess('triangle')" style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Triangle / Wedge / Coil</button>
-                            <button onclick="window.fsPatternQuizGuess('dtb')" style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Double / Triple Top-Bottom</button>
-                            <button onclick="window.fsPatternQuizGuess('reversal')" style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Reversal (Island / Climax / V-Bottom)</button>
+                            <button onclick="window.fsPatternQuizGuess('cup')"
+                                style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Cup
+                                w/ Handle / Rounding Bottom</button>
+                            <button onclick="window.fsPatternQuizGuess('flat')"
+                                style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Flat
+                                Base / VCP / Tight</button>
+                            <button onclick="window.fsPatternQuizGuess('hs')"
+                                style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Head
+                                &amp; Shoulders (Top/Bottom)</button>
+                            <button onclick="window.fsPatternQuizGuess('bullflag')"
+                                style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Bull
+                                Flag / Pennant / Ascending</button>
+                            <button onclick="window.fsPatternQuizGuess('bearflag')"
+                                style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Bear
+                                Flag / Downtrend / Descending</button>
+                            <button onclick="window.fsPatternQuizGuess('triangle')"
+                                style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Triangle
+                                / Wedge / Coil</button>
+                            <button onclick="window.fsPatternQuizGuess('dtb')"
+                                style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Double
+                                / Triple Top-Bottom</button>
+                            <button onclick="window.fsPatternQuizGuess('reversal')"
+                                style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Reversal
+                                (Island / Climax / V-Bottom)</button>
                         </div>
-                        <div id="fs-pattern-quiz-result" style="margin-top: 8px; font-size: 10px; font-weight: bold;"></div>
+                        <div id="fs-pattern-quiz-result" style="margin-top: 8px; font-size: 10px; font-weight: bold;">
+                        </div>
                         <div id="fs-pattern-quiz-stats" style="margin-top: 6px; font-size: 9px; color: #94a3b8;"></div>
-                        <button id="fs-pattern-quiz-next-btn" onclick="window.fsPatternQuizTraining()" style="display: none; margin-top: 8px; background: #8b5cf6; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; width: 100%; font-weight: 700;">Next Pattern 🧠</button>
+                        <button id="fs-pattern-quiz-next-btn" onclick="window.fsPatternQuizTraining()"
+                            style="display: none; margin-top: 8px; background: #8b5cf6; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; width: 100%; font-weight: 700;">Next
+                            Pattern 🧠</button>
                     </div>
-                    <div id="fs-decision-ui" style="display:none; margin-top: 4px; padding: 10px; border-radius: 8px; text-align: center;">
-                        <div style="font-size: 12px; font-weight: bold; margin-bottom: 6px; color: #f8fafc;">🎯 Swing Decision</div>
-                        <div style="font-size: 10px; margin-bottom: 8px; color: #94a3b8;">Would you BUY this weekly setup? Trade is simulated 8 weeks with a −7% stop. Aim for positive expectancy, not just win rate.</div>
+                    <div id="fs-decision-ui"
+                        style="display:none; margin-top: 4px; padding: 10px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 12px; font-weight: bold; margin-bottom: 6px; color: #f8fafc;">🎯 Swing
+                            Decision</div>
+                        <div style="font-size: 10px; margin-bottom: 8px; color: #94a3b8;">Would you BUY this weekly
+                            setup? Trade is simulated 8 weeks with a −7% stop. Aim for positive expectancy, not just win
+                            rate.</div>
                         <div style="display: flex; gap: 6px; justify-content: center;">
-                            <button onclick="window.fsDecisionGuess(true)" style="flex:1; background: #22c55e; color: white; border: none; padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: bold;">▲ Buy</button>
-                            <button onclick="window.fsDecisionGuess(false)" style="flex:1; background: #64748b; color: white; border: none; padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: bold;">✕ Skip</button>
+                            <button onclick="window.fsDecisionGuess(true)"
+                                style="flex:1; background: #22c55e; color: white; border: none; padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: bold;">▲
+                                Buy</button>
+                            <button onclick="window.fsDecisionGuess(false)"
+                                style="flex:1; background: #64748b; color: white; border: none; padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: bold;">✕
+                                Skip</button>
                         </div>
                         <div id="fs-decision-result" style="margin-top: 8px; font-size: 10px; font-weight: bold;"></div>
                         <div id="fs-decision-stats" style="margin-top: 6px; font-size: 9px; color: #94a3b8;"></div>
-                        <button id="fs-decision-next-btn" onclick="window.fsDecisionTraining()" style="display: none; margin-top: 8px; background: #14b8a6; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; width: 100%; font-weight: 700;">Next Setup 🎯</button>
+                        <button id="fs-decision-next-btn" onclick="window.fsDecisionTraining()"
+                            style="display: none; margin-top: 8px; background: #14b8a6; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; width: 100%; font-weight: 700;">Next
+                            Setup 🎯</button>
                     </div>
-                    <div id="fs-volread-ui" style="display:none; margin-top: 4px; padding: 10px; border-radius: 8px; text-align: center;">
-                        <div style="font-size: 12px; font-weight: bold; margin-bottom: 6px; color: #f8fafc;">🔊 Volume Read</div>
-                        <div style="font-size: 10px; margin-bottom: 8px; color: #94a3b8;">Read the <b>last candle</b> — its spread, close location and volume vs the 50-week average. What is the smart money doing?</div>
+                    <div id="fs-volread-ui"
+                        style="display:none; margin-top: 4px; padding: 10px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 12px; font-weight: bold; margin-bottom: 6px; color: #f8fafc;">🔊 Volume
+                            Read</div>
+                        <div style="font-size: 10px; margin-bottom: 8px; color: #94a3b8;">Read the <b>last candle</b> —
+                            its spread, close location and volume vs the 50-week average. What is the smart money doing?
+                        </div>
                         <div style="display: flex; flex-direction: column; gap: 5px;">
-                            <button onclick="window.fsVolReadGuess('accum')" style="background: rgba(34,197,94,0.14); color: #4ade80; border: 1px solid rgba(34,197,94,0.4); padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 10.5px; font-weight: 700; text-align: left; padding-left: 10px;">🟢 Accumulation — big buying</button>
-                            <button onclick="window.fsVolReadGuess('dist')" style="background: rgba(239,68,68,0.14); color: #f87171; border: 1px solid rgba(239,68,68,0.4); padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 10.5px; font-weight: 700; text-align: left; padding-left: 10px;">🔴 Distribution — big selling</button>
-                            <button onclick="window.fsVolReadGuess('dryup')" style="background: rgba(56,189,248,0.12); color: #38bdf8; border: 1px solid rgba(56,189,248,0.4); padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 10.5px; font-weight: 700; text-align: left; padding-left: 10px;">💤 Supply dry-up — sellers gone</button>
-                            <button onclick="window.fsVolReadGuess('churn')" style="background: rgba(245,158,11,0.12); color: #fbbf24; border: 1px solid rgba(245,158,11,0.4); padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 10.5px; font-weight: 700; text-align: left; padding-left: 10px;">⚠️ Churn — effort, no result</button>
+                            <button onclick="window.fsVolReadGuess('accum')"
+                                style="background: rgba(34,197,94,0.14); color: #4ade80; border: 1px solid rgba(34,197,94,0.4); padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 10.5px; font-weight: 700; text-align: left; padding-left: 10px;">🟢
+                                Accumulation — big buying</button>
+                            <button onclick="window.fsVolReadGuess('dist')"
+                                style="background: rgba(239,68,68,0.14); color: #f87171; border: 1px solid rgba(239,68,68,0.4); padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 10.5px; font-weight: 700; text-align: left; padding-left: 10px;">🔴
+                                Distribution — big selling</button>
+                            <button onclick="window.fsVolReadGuess('dryup')"
+                                style="background: rgba(56,189,248,0.12); color: #38bdf8; border: 1px solid rgba(56,189,248,0.4); padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 10.5px; font-weight: 700; text-align: left; padding-left: 10px;">💤
+                                Supply dry-up — sellers gone</button>
+                            <button onclick="window.fsVolReadGuess('churn')"
+                                style="background: rgba(245,158,11,0.12); color: #fbbf24; border: 1px solid rgba(245,158,11,0.4); padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 10.5px; font-weight: 700; text-align: left; padding-left: 10px;">⚠️
+                                Churn — effort, no result</button>
                         </div>
                         <div id="fs-volread-result" style="margin-top: 8px; font-size: 11px; font-weight: bold;"></div>
-                        <div id="fs-volread-explain" style="margin-top: 6px; font-size: 9.5px; color: #cbd5e1; text-align: left; line-height: 1.55;"></div>
+                        <div id="fs-volread-explain"
+                            style="margin-top: 6px; font-size: 9.5px; color: #cbd5e1; text-align: left; line-height: 1.55;">
+                        </div>
                         <div id="fs-volread-stats" style="margin-top: 6px; font-size: 9px; color: #94a3b8;"></div>
-                        <button id="fs-volread-next-btn" onclick="window.fsVolReadTraining()" style="display: none; margin-top: 8px; background: #0ea5e9; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; width: 100%; font-weight: 700;">Next Candle 🔊</button>
+                        <button id="fs-volread-next-btn" onclick="window.fsVolReadTraining()"
+                            style="display: none; margin-top: 8px; background: #0ea5e9; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; width: 100%; font-weight: 700;">Next
+                            Candle 🔊</button>
                     </div>
                 </div>
             </div>
@@ -19017,8 +19093,10 @@
                         <button class="fs-pt-btn fs-pt-sell" onclick="window.fsPaperSell()">▼ Sell</button>
                     </div>
                     <button class="fs-pt-btn fs-pt-close" onclick="window.fsPaperClose()">✕ Close Position</button>
-                    <button class="fs-pt-btn fs-pt-download" onclick="window.fsPaperDownloadCSV()">💾 Download CSV</button>
-                    <button class="fs-pt-btn fs-pt-analyze" onclick="window.fsPaperAnalyze()">📊 Analyze Performance</button>
+                    <button class="fs-pt-btn fs-pt-download" onclick="window.fsPaperDownloadCSV()">💾 Download
+                        CSV</button>
+                    <button class="fs-pt-btn fs-pt-analyze" onclick="window.fsPaperAnalyze()">📊 Analyze
+                        Performance</button>
                     <div id="fs-pt-pnl">No position</div>
                     <div id="fs-pt-log"></div>
                 </div>
@@ -19106,7 +19184,8 @@
     <div id="fs-pt-analysis-modal">
         <div class="fs-pt-analysis-header">
             <span>Professional Trade Analysis</span>
-            <span class="fs-pt-analysis-close" onclick="document.getElementById('fs-pt-analysis-modal').style.display='none'">✕</span>
+            <span class="fs-pt-analysis-close"
+                onclick="document.getElementById('fs-pt-analysis-modal').style.display='none'">✕</span>
         </div>
         <div class="fs-pt-analysis-grid">
             <div class="fs-pt-analysis-card">
@@ -19696,8 +19775,14 @@
             };
 
             window.syncFSTickerListSelected = function () {
-                // Exit training mode if manually changing ticker
+                // Exit training mode and replay if manually changing ticker
                 window._fsTrainingMode = false;
+                if (window.stopFsReplay && window._fsReplay) {
+                    window.stopFsReplay(true); // Stop timers but don't re-render yet
+                    window._fsReplay.active = false;
+                    const statusEl = document.getElementById('fs-replay-status');
+                    if (statusEl) statusEl.textContent = '';
+                }
 
                 const tickerSel = document.getElementById('fs-ticker-select');
                 const listContainer = document.getElementById('fs-ticker-list');
@@ -20167,7 +20252,16 @@
                 const tickerSearch = document.getElementById('fs-ticker-search');
                 if (tickerSearch) tickerSearch.value = mask || 'HIDDEN';
                 const tickerSel = document.getElementById('fs-ticker-select');
-                if (tickerSel) tickerSel.value = ticker;
+                if (tickerSel) {
+                    let opt = Array.from(tickerSel.options).find(o => o.value === ticker);
+                    if (!opt) {
+                        opt = document.createElement('option');
+                        opt.value = ticker;
+                        opt.textContent = ticker;
+                        tickerSel.appendChild(opt);
+                    }
+                    tickerSel.value = ticker;
+                }
                 const statusEl = document.getElementById('fs-replay-status');
                 if (statusEl) statusEl.textContent = statusTxt || 'Training';
                 window.renderFullScreenChart();
@@ -20705,7 +20799,7 @@
                     result.innerHTML = isCorrect
                         ? '<span style="color:#22c55e;">✅ Correct — ' + info.icon + ' ' + info.label + '</span>'
                         : '<span style="color:#ef4444;">❌ You said "' + (guessInfo ? guessInfo.label : guessKey) +
-                          '" — it was ' + info.icon + ' <span style="color:' + info.color + '">' + info.label + '</span></span>';
+                        '" — it was ' + info.icon + ' <span style="color:' + info.color + '">' + info.label + '</span></span>';
                 }
 
                 // ── Structured price-action explanation ──
@@ -20722,14 +20816,14 @@
                         : ' (a stand-off)';
                 const lines = [
                     '<div style="' + row + '"><span style="' + key + '">Price</span><span>' +
-                        sg(f.chgPct) + f.chgPct.toFixed(1) + '% week · closed at <b>' + Math.round(f.closeLoc) + '%</b> of its range' + closeDesc +
-                        ' · spread <b>' + f.spreadR.toFixed(1) + '×</b> normal · body ' + Math.round(f.bodyPct) + '% of range</span></div>',
+                    sg(f.chgPct) + f.chgPct.toFixed(1) + '% week · closed at <b>' + Math.round(f.closeLoc) + '%</b> of its range' + closeDesc +
+                    ' · spread <b>' + f.spreadR.toFixed(1) + '×</b> normal · body ' + Math.round(f.bodyPct) + '% of range</span></div>',
                     '<div style="' + row + '"><span style="' + key + '">Volume</span><span><b>' + f.volR.toFixed(1) + '×</b> the 50-week average — ' + volDesc + '</span></div>',
                     '<div style="' + row + '"><span style="' + key + '">Trend</span><span>' + (f.above40 ? 'Above' : 'Below') + ' the 40-week MA — the same bar means different things in different trends</span></div>',
                     '<div style="' + row + '"><span style="' + key + '">Next 4w</span><span><b style="color:' + (f.fwdPct >= 0 ? '#4ade80' : '#f87171') + ';">' +
-                        sg(f.fwdPct) + f.fwdPct.toFixed(1) + '%</b> — the market confirmed this read (now revealed on the chart)</span></div>',
+                    sg(f.fwdPct) + f.fwdPct.toFixed(1) + '%</b> — the market confirmed this read (now revealed on the chart)</span></div>',
                     '<div style="margin-top:7px; padding:6px 8px; background:rgba(148,163,184,0.08); border-left:2px solid ' + info.color +
-                        '; border-radius:0 5px 5px 0; color:#e2e8f0;">' + info.icon + ' <b style="color:' + info.color + '">' + info.label + ':</b> ' + info.principle + '</div>'
+                    '; border-radius:0 5px 5px 0; color:#e2e8f0;">' + info.icon + ' <b style="color:' + info.color + '">' + info.label + ':</b> ' + info.principle + '</div>'
                 ];
                 const explain = document.getElementById('fs-volread-explain');
                 if (explain) explain.innerHTML = lines.join('');
@@ -20979,7 +21073,7 @@
                     }
                     csv += `${tk},"${companyName}",${t.side},${t.qty},${t.entryDate.toISOString().split('T')[0]},${t.entryPrice.toFixed(2)},${t.exitDate.toISOString().split('T')[0]},${t.exitPrice.toFixed(2)},${t.pnl.toFixed(2)}\r\n`;
                 });
-                
+
                 const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
