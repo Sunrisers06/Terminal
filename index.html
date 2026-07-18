@@ -1274,7 +1274,8 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 6px;
+            flex-direction: column-reverse;
+            gap: 2px;
             border-bottom: 2px solid transparent;
             margin-bottom: -1px;
             position: relative;
@@ -6018,36 +6019,28 @@
 
             <div class="sidebar-tabs">
                 <button class="mobile-back-btn" onclick="toggleNewsPanel()">← Back</button>
-                <button class="sidebar-tab tab-insights active" id="tab-insights-btn"
-                    onclick="switchSidebarTab('insights')">
-                    <span class="tab-dot"></span>
-                    Insights
+                <button class="sidebar-tab tab-insights active" id="tab-insights-btn" onclick="switchSidebarTab('insights')">
+                    <div style="display:flex; align-items:center; gap:4px;"><span class="tab-dot"></span> Insights</div>
                     <span class="tab-count" id="insights-count">1,417</span>
                 </button>
                 <button class="sidebar-tab tab-news" id="tab-news-btn" onclick="switchSidebarTab('news')">
-                    <span class="tab-dot"></span>
-                    News
+                    <div style="display:flex; align-items:center; gap:4px;"><span class="tab-dot"></span> News</div>
                     <span class="tab-count" id="news-count">62,070</span>
                 </button>
                 <button class="sidebar-tab tab-nsenews" id="tab-nsenews-btn" onclick="switchSidebarTab('nsenews')">
-                    <span class="tab-dot" style="background:#eab308;box-shadow:0 0 6px rgba(234,179,8,0.6);"></span>
-                    NSE
+                    <div style="display:flex; align-items:center; gap:4px;"><span class="tab-dot" style="background:#eab308;box-shadow:0 0 6px rgba(234,179,8,0.6);"></span> NSE</div>
                     <span class="tab-count" id="nsenews-count">—</span>
                 </button>
                 <button class="sidebar-tab tab-deals" id="tab-deals-btn" onclick="switchSidebarTab('deals')">
-                    <span class="tab-dot" style="background:#f59e0b;box-shadow:0 0 6px rgba(245,158,11,0.6);"></span>
-                    Deals
+                    <div style="display:flex; align-items:center; gap:4px;"><span class="tab-dot" style="background:#f59e0b;box-shadow:0 0 6px rgba(245,158,11,0.6);"></span> Deals</div>
                     <span class="tab-count" id="deals-count">—</span>
                 </button>
-                <button class="sidebar-tab tab-superstar" id="tab-superstar-btn"
-                    onclick="switchSidebarTab('superstar')">
-                    <span class="tab-dot" style="background:#10b981;box-shadow:0 0 6px rgba(16,185,129,0.6);"></span>
-                    SuperStar
+                <button class="sidebar-tab tab-superstar" id="tab-superstar-btn" onclick="switchSidebarTab('superstar')">
+                    <div style="display:flex; align-items:center; gap:4px;"><span class="tab-dot" style="background:#10b981;box-shadow:0 0 6px rgba(16,185,129,0.6);"></span> SuperStar</div>
                     <span class="tab-count" id="superstar-count">—</span>
                 </button>
                 <button class="sidebar-tab tab-breadth" id="tab-breadth-btn" onclick="switchSidebarTab('breadth')">
-                    <span class="tab-dot" style="background:#818cf8;box-shadow:0 0 6px rgba(129,140,248,0.6);"></span>
-                    Breadth
+                    <div style="display:flex; align-items:center; gap:4px;"><span class="tab-dot" style="background:#818cf8;box-shadow:0 0 6px rgba(129,140,248,0.6);"></span> Breadth</div>
                 </button>
             </div>
             <div class="swipe-dots" id="swipe-dots">
