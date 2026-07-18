@@ -6372,7 +6372,7 @@
                     <div style="flex:1;"></div>
                     <button class="fs-btn" onclick="toggleNewsFS('breadth-section', this)" title="Fullscreen">⛶</button>
                     <button class="deal-refresh-btn"
-                        onclick="renderBreadthTab(window._breadthSort||'momentum',window._breadthDir||-1)"
+                        onclick="renderBreadthTab(window._breadthSort||'momentum',window._breadthDir||1)"
                         title="Refresh">↻</button>
                 </div>
                 <div class="deal-sub-pane active-sub-pane" style="overflow-y:auto;flex:1;">
@@ -6660,6 +6660,22 @@
 
             const sortSel = document.getElementById('sort-select');
             if (sortSel) sortSel.value = 'sno';
+            const viewModeSel = document.getElementById('view-mode-filter');
+            if (viewModeSel) { viewModeSel.value = 'latest'; if (typeof setViewMode === 'function') setViewMode('latest'); }
+            const colSel = document.getElementById('col-filter');
+            if (colSel) { colSel.value = 'auto'; if (typeof updateColumnCount === 'function') updateColumnCount('auto'); }
+
+            // Reset breadth state
+            window._breadthSort = 'momentum';
+            window._breadthDir = 1;
+            window._breadthTab = 'sector';
+            window._breadthIndex = 'Nifty_ALL';
+            const breadthIdx = document.getElementById('breadth-index-select');
+            if (breadthIdx) breadthIdx.value = 'Nifty_ALL';
+            window._breadthExpanded = {};
+
+            // Reset active tab to default (insights)
+            if (typeof switchSidebarTab === 'function') switchSidebarTab('insights');
 
             selectedCardTicker = null;
             // Only remove news-selected from the one card that had it — no need to scan all
@@ -7286,20 +7302,36 @@
         /* SECTOR AND INDUSTRY FILTER FUNCTIONS */
         function setSectorFilter(sec, event) {
             if (event) event.stopPropagation();
-            const secFilter = document.getElementById('sec-filter');
-            if (secFilter) {
-                secFilter.value = sec;
-                doFilter();
+            const searchInput = document.getElementById('search-input');
+            if (searchInput && searchInput.value) {
+                searchInput.value = '';
+                const clearBtn = document.getElementById('clear-search-btn');
+                if (clearBtn) clearBtn.style.display = 'none';
+                const wrap = document.getElementById('search-wrap');
+                if (wrap) wrap.classList.remove('mob-expanded');
             }
+            const indFilter = document.getElementById('ind-filter');
+            if (indFilter) indFilter.value = 'all';
+            const secFilter = document.getElementById('sec-filter');
+            if (secFilter) secFilter.value = sec;
+            doFilter();
         }
 
         function setIndustryFilter(ind, event) {
             if (event) event.stopPropagation();
-            const indFilter = document.getElementById('ind-filter');
-            if (indFilter) {
-                indFilter.value = ind;
-                doFilter();
+            const searchInput = document.getElementById('search-input');
+            if (searchInput && searchInput.value) {
+                searchInput.value = '';
+                const clearBtn = document.getElementById('clear-search-btn');
+                if (clearBtn) clearBtn.style.display = 'none';
+                const wrap = document.getElementById('search-wrap');
+                if (wrap) wrap.classList.remove('mob-expanded');
             }
+            const secFilter = document.getElementById('sec-filter');
+            if (secFilter) secFilter.value = 'all';
+            const indFilter = document.getElementById('ind-filter');
+            if (indFilter) indFilter.value = ind;
+            doFilter();
         }
 
         /* SMART RESET FUNCTION FOR THE TOP-RIGHT BUTTON */
@@ -8194,7 +8226,7 @@
             }
             // Lazy-render breadth tab on first visit or re-render
             if (tab === 'breadth' && typeof renderBreadthTab === 'function') {
-                renderBreadthTab(window._breadthSort || 'momentum', window._breadthDir || -1);
+                renderBreadthTab(window._breadthSort || 'momentum', window._breadthDir || 1);
             }
         }
 
@@ -9466,8 +9498,16 @@
 
             const avg = arr => arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : NaN;
 
+            const filterIndex = window._breadthIndex && window._breadthIndex !== 'all' ? window._breadthIndex : null;
+            let filteredTickers = null;
+            if (filterIndex && window.indexDataMap && window.indexDataMap[filterIndex]) {
+                filteredTickers = window.indexDataMap[filterIndex];
+            }
+
             allData.forEach(r => {
-                const arr = window._ohlcvTickers.get(String(r._ticker).toUpperCase());
+                const tickerStr = String(r._ticker).toUpperCase();
+                if (filteredTickers && !filteredTickers.has(tickerStr)) return;
+                const arr = window._ohlcvTickers.get(tickerStr);
                 if (!arr || arr.length < 10) return;
                 const last = arr[arr.length - 1];
                 const close = last.close;
@@ -9526,7 +9566,7 @@
 
         function renderBreadthTab(sortKey, sortDir) {
             sortKey = sortKey || window._breadthSort || 'momentum';
-            sortDir = (sortDir !== undefined) ? sortDir : ((window._breadthDir !== undefined) ? window._breadthDir : -1);
+            sortDir = (sortDir !== undefined) ? sortDir : ((window._breadthDir !== undefined) ? window._breadthDir : 1);
             window._breadthSort = sortKey;
             window._breadthDir = sortDir;
 
@@ -9554,15 +9594,22 @@
                     return (vb - va) * sortDir;
                 });
 
-            const hdr = key => sortKey === key ? (sortDir > 0 ? ' ▲' : ' ▼') : '';
-            const onSrt = key => `window._breadthSort='${key}';window._breadthDir=(window._breadthSort==='${key}'?-(window._breadthDir||-1):-1);renderBreadthTab(window._breadthSort,window._breadthDir);`;
+            const hdr = key => sortKey === key ? (sortDir > 0 ? ' ▼' : ' ▲') : '';
+            const onSrt = key => `window._breadthSort='${key}';window._breadthDir=(window._breadthSort==='${key}'?-(window._breadthDir||1):1);renderBreadthTab(window._breadthSort,window._breadthDir);`;
 
             // ── Toolbar ──
+            const idxNames = window.indexDataMap ? Object.keys(window.indexDataMap).sort() : [];
+            const idxOptions = `<option value="all">All Indices</option>` + 
+                idxNames.map(idx => `<option value="${idx}" ${window._breadthIndex === idx ? 'selected' : ''}>${idx}</option>`).join('');
+
             const toolbar = `<div class="breadth-toolbar">
                 <div class="breadth-subtabs">
                     <button class="breadth-subtab${activeTab === 'sector' ? ' active' : ''}" onclick="window._breadthTab='sector';renderBreadthTab();">🏭 Sector</button>
                     <button class="breadth-subtab${activeTab === 'industry' ? ' active' : ''}" onclick="window._breadthTab='industry';renderBreadthTab();">🔬 Industry</button>
                 </div>
+                <select class="breadth-index-select" style="margin: 0 auto; max-width: 150px;" onchange="window._breadthIndex=this.value; window._breadthSort='momentum'; window._breadthDir=1; calcSectorBreadth();">
+                    ${idxOptions}
+                </select>
                 <div class="breadth-viewbtns">
                     <button class="breadth-viewbtn${view === 'table' ? ' active' : ''}" onclick="window._breadthView='table';renderBreadthTab();" title="Table View">☰</button>
                     <button class="breadth-viewbtn${view === 'heatmap' ? ' active' : ''}" onclick="window._breadthView='heatmap';renderBreadthTab();" title="Heatmap View">⬛</button>
@@ -9668,14 +9715,17 @@
                                     <div class="breadth-topstocks-label">Top Stocks by Tech Score:</div>
                                     <div class="breadth-topstocks">${r.tickers.slice(0, 10).map(t => {
                         const fa = t.above10 && t.above40 ? '🟢' : (!t.above10 && !t.above40) ? '🔴' : '🟡';
-                        return `<span class="btop-chip-lg" onclick="event.stopPropagation(); ${filterFn}('${safeN}',event);" title="${t.name}">${fa} <b>${t.ticker}</b> <span style="color:${retColor(t.ret3m)};">${fmtRet(t.ret3m)}</span></span>`;
+                        return `<span class="btop-chip-lg" onclick="event.stopPropagation(); const si=document.getElementById('search-input'); if(si){ si.value='${t.ticker}'; if(typeof onSearchInput==='function') onSearchInput(); }" title="${t.name}">${fa} <b>${t.ticker}</b> <span style="color:${retColor(t.ret3m)};">${fmtRet(t.ret3m)}</span></span>`;
                     }).join('')}</div>
                                 </div>
                             </td>
                         </tr>` : '';
 
                     return `<tr class="breadth-main-row" onclick="window._breadthExpanded['${expKey}']=!window._breadthExpanded['${expKey}'];renderBreadthTab();" style="cursor:pointer;">
-                            <td class="breadth-name" title="${r.name}"><span class="breadth-expand-icon">${isExp ? '▼' : '▶'}</span>${r.name}</td>
+                            <td class="breadth-name" title="${r.name}">
+                                <span class="breadth-expand-icon" style="display:inline-block;width:16px;text-align:center;">${isExp ? '▼' : '▶'}</span>
+                                <span class="breadth-filter-link" onclick="event.stopPropagation(); ${filterFn}('${safeN}',event);" title="Filter by ${r.name}">${r.name}</span>
+                            </td>
                             <td style="text-align:center;color:rgba(255,255,255,0.5);">${r.total}</td>
                             <td style="text-align:center;">
                                 <span style="color:${c10};font-weight:700;font-size:11px;">${p10}%</span>
@@ -15175,12 +15225,8 @@
                             blockValue = (raw / 1e5).toFixed(2) + ' Lacs';
                         }
                     }
-                    const companyLink = row['Company Link'];
-                    const blockTickerEl = companyLink
-                        ? `<a class="dt-link dt-ticker" href="${escH(companyLink)}" target="_blank" rel="noopener">${ticker}</a>`
-                        : `<span class="dt-ticker" onclick="setDealTickerFilter('${ticker}')">${ticker}</span>`;
                     return `<tr>
-        <td>${blockTickerEl}</td>
+        <td>${tickerEl}</td>
         <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;" title="${person}">${personLink}</td>
         <td>${date}</td>
         <td><span class="${typeClass}">${type}</span></td>
@@ -16472,6 +16518,45 @@
             background: rgba(129, 140, 248, 0.15);
             border-color: #818cf8;
             color: #818cf8;
+        }
+
+        .breadth-filter-link {
+            transition: color 0.15s;
+        }
+
+        .breadth-filter-link:hover {
+            color: #818cf8;
+            text-decoration: underline;
+        }
+
+        .breadth-index-select {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 6px;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 11px;
+            font-weight: 500;
+            padding: 4px 24px 4px 8px;
+            cursor: pointer;
+            outline: none;
+            transition: all 0.15s;
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
+            background-repeat: no-repeat;
+            background-position: right 6px center;
+            background-size: 8px auto;
+        }
+
+        .breadth-index-select:hover {
+            background-color: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.25);
+            color: #fff;
+        }
+
+        .breadth-index-select option {
+            background: #111116;
+            color: #fff;
         }
 
         .breadth-viewbtns {
