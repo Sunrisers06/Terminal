@@ -12374,12 +12374,12 @@
                 if (pCv.id === 'fs-chart-pcv') {
                     const parentH = (widthEl && widthEl.parentElement) ? widthEl.parentElement.clientHeight : (window.innerHeight - 40);
                     const hasDeals = dealCv && dealCv.style.display !== 'none';
-                    const constantH = 10 + (hasDeals ? 22 : 0) + 15; // 15px margins/safety
+                    const constantH = 10 + (hasDeals ? 15 : 0) + 15; // 15px margins/safety
                     const remH = Math.max(parentH - constantH, 300);
-                    PH = Math.round(remH * 0.79);  // absorbed VH and part of RSH
+                    PH = Math.round(remH * 0.76);  // slightly smaller to give MRS more space
                     VH = 0; // hide volume pane in full screen
-                    IH = Math.round(remH * 0.13);
-                    RSH = Math.round(remH * 0.08); // Reduced RS pane height
+                    IH = Math.round(remH * 0.12);
+                    RSH = remH - PH - IH; // Shift extra space into RS pane
                 } else {
                     PH = Math.round(W * 0.62);   // ~8:5 ratio — taller, more chart real-estate
                     VH = Math.round(W * 0.14);   // volume panel ~14% of width
@@ -13676,7 +13676,7 @@
                 ════════════════════════════════════════ */
                 if (dealCv) {
                     dealCv.style.display = 'block';
-                    const SH = 22;
+                    const SH = 15;
                     dealCv.style.width = W + 'px';
                     dealCv.style.height = SH + 'px';
                     dealCv.width = W * DPR;
