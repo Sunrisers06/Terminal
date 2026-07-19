@@ -12264,7 +12264,9 @@
 
                 // Pre-compute delivery percentage and volume signal colors for all visible candles
                 const delivMap = (isFs && window._fsDelivCache) ? window._fsDelivCache[UC] : null;
-                raw.forEach(r => {
+                const reqStart = Math.max(0, actualStart - 8);
+                for (let k = reqStart; k < actualEnd; k++) {
+                    const r = currentData[k];
                     let delivPer = 0;
                     if (delivMap) {
                         const dateObj = new Date(r.date);
@@ -12275,6 +12277,19 @@
                         delivPer = delivMap[mondayStr] || 0;
                     }
                     r.delivPer = delivPer;
+                }
+
+                raw.forEach((r, i) => {
+                    const cIdx = actualStart + i;
+                    let sum = 0, count = 0;
+                    for (let j = 0; j < 9; j++) {
+                        const idx = cIdx - j;
+                        if (idx >= 0) {
+                            sum += currentData[idx].delivPer || 0;
+                            count++;
+                        }
+                    }
+                    r.delivSma9 = count > 0 ? sum / count : null;
 
                     const volSig = getVolumeSignal(r);
                     r._vColor = volSig.color;
@@ -13370,19 +13385,16 @@
                    MANSFIELD RS OSCILLATOR PANE (full-screen only)
                 ════════════════════════════════════════ */
                 if (rsc && RSH > 0) {
+                    const toggleBtn = document.getElementById('fs-rscv-toggle-btn');
+                    if (toggleBtn) {
+                        toggleBtn.style.display = 'block';
+                        toggleBtn.style.top = (PH + IH + 6) + 'px';
+                        toggleBtn.innerText = window.fsRscvMode === 'DELIV' ? 'Deliv %' : 'MRS';
+                    }
+                    
+                    window.fsRscvMode = window.fsRscvMode || 'MRS';
                     const RP = { t: 6, b: 8, l: 8, r: 70 };
                     const rH = RSH - RP.t - RP.b;
-
-                    // Collect visible Mansfield RS values
-                    const rsVals = raw.map(r => r.rsMansfield).filter(v => v !== null);
-                    let rsMin = Math.min(...rsVals, 0);
-                    let rsMax = Math.max(...rsVals, 0);
-                    const rsPad = Math.max(0.5, (rsMax - rsMin) * 0.1);
-                    rsMin -= rsPad; rsMax += rsPad;
-                    const rsRange = rsMax - rsMin || 1;
-
-                    const toYRS = v => RP.t + rH * (1 - (v - rsMin) / rsRange);
-                    const zeroY = toYRS(0);
 
                     // Background
                     rsc.fillStyle = '#000000'; rsc.fillRect(0, 0, W, RSH);
@@ -13391,56 +13403,130 @@
                     rsc.strokeStyle = 'rgba(255,255,255,0.15)'; rsc.lineWidth = 0.8;
                     rsc.beginPath(); rsc.moveTo(0, 0); rsc.lineTo(W, 0); rsc.stroke();
 
-                    // Zero line (dashed)
-                    rsc.strokeStyle = 'rgba(255,255,255,0.25)'; rsc.lineWidth = 0.6; rsc.setLineDash([4, 4]);
-                    rsc.beginPath(); rsc.moveTo(RP.l, zeroY); rsc.lineTo(W - RP.r, zeroY); rsc.stroke();
-                    rsc.setLineDash([]);
+                    if (window.fsRscvMode === 'DELIV') {
+                        // Delivery Volume %
+                        const delivVals = raw.map(r => r.delivPer).filter(v => v !== null && v !== undefined);
+                        let dMin = Math.min(0, ...delivVals);
+                        let dMax = Math.max(100, ...delivVals);
+                        const dPad = Math.max(0.1, (dMax - dMin) * 0.1);
+                        dMin -= dPad; dMax += dPad;
+                        const dRange = dMax - dMin || 1;
 
-                    // Histogram bars
-                    raw.forEach((r, i) => {
-                        const v = r.rsMansfield;
-                        if (v === null || v === undefined) return;
-                        const x = toX(i);
-                        const bTop = Math.min(zeroY, toYRS(v));
-                        const bBot = Math.max(zeroY, toYRS(v));
-                        const bH = Math.max(1, bBot - bTop);
-                        const bW2 = Math.max(1.5, Math.min(8, (W / n) * 0.55));
-                        rsc.fillStyle = v >= 0 ? 'rgba(0, 230, 118, 0.65)' : 'rgba(255, 77, 79, 0.65)';
-                        rsc.fillRect(x - bW2 / 2, bTop, bW2, bH);
-                    });
+                        const toYD = v => RP.t + rH * (1 - (v - dMin) / dRange);
+                        const zeroY = toYD(0);
 
-                    // 10W signal line
-                    rsc.strokeStyle = '#facc15'; rsc.lineWidth = 1.2; rsc.lineJoin = 'round';
-                    rsc.beginPath();
-                    let stRS = false;
-                    raw.forEach((r, i) => {
-                        const v = r.rsSma10;
-                        if (v === null || v === undefined) { stRS = false; return; }
-                        const x = toX(i), y = toYRS(v);
-                        stRS ? rsc.lineTo(x, y) : (rsc.moveTo(x, y), stRS = true);
-                    });
-                    rsc.stroke();
+                        rsc.strokeStyle = 'rgba(255,255,255,0.25)'; rsc.lineWidth = 0.6; rsc.setLineDash([4, 4]);
+                        rsc.beginPath(); rsc.moveTo(RP.l, zeroY); rsc.lineTo(W - RP.r, zeroY); rsc.stroke();
+                        rsc.setLineDash([]);
 
-                    // Label
-                    rsc.font = 'bold 9px "Lexend",monospace';
-                    rsc.textAlign = 'left'; rsc.textBaseline = 'top';
-                    rsc.fillStyle = 'rgba(255,255,255,0.5)';
-                    rsc.fillText('MRS', RP.l + 2, RP.t + 1);
+                        // 9 SMA Line (Drawn in background)
+                        rsc.strokeStyle = 'rgba(255, 255, 255, 0.7)'; rsc.lineWidth = 1.2; rsc.setLineDash([4, 4]);
+                        rsc.beginPath();
+                        let stDSMA = false;
+                        raw.forEach((r, i) => {
+                            const v = r.delivSma9;
+                            if (v === null || v === undefined) { stDSMA = false; return; }
+                            const x = toX(i), y = toYD(v);
+                            stDSMA ? rsc.lineTo(x, y) : (rsc.moveTo(x, y), stDSMA = true);
+                        });
+                        rsc.stroke();
+                        rsc.setLineDash([]);
 
-                    // Current RS value label
-                    const hoverIdx = pCv._hoverIdx;
-                    const lastR = raw[raw.length - 1];
-                    const displayR = (hoverIdx !== undefined && hoverIdx !== null) ? raw[hoverIdx] : lastR;
-                    const rsVal = displayR && displayR.rsMansfield !== null ? displayR.rsMansfield : null;
-                    if (rsVal !== null) {
-                        const rsStr = (rsVal >= 0 ? '+' : '') + rsVal.toFixed(2);
+                        raw.forEach((r, i) => {
+                            const v = r.delivPer;
+                            if (v === null || v === undefined) return;
+                            const x = toX(i);
+                            const bTop = toYD(v);
+                            const bBot = zeroY;
+                            const bH = Math.max(1, bBot - bTop);
+                            const bW2 = Math.max(1.5, Math.min(8, (W / n) * 0.55));
+                            rsc.fillStyle = r._vColor || '#00bfff';
+                            rsc.fillRect(x - bW2 / 2, bTop, bW2, bH);
+                        });
+
+                        // Current Deliv value & SMA label
+                        const hoverIdx = pCv._hoverIdx;
+                        const lastR = raw[raw.length - 1];
+                        const displayR = (hoverIdx !== undefined && hoverIdx !== null) ? raw[hoverIdx] : lastR;
+                        const dVal = displayR && displayR.delivPer !== undefined ? displayR.delivPer : null;
+                        const sVal = displayR && displayR.delivSma9 !== undefined ? displayR.delivSma9 : null;
+
+                        let dY = dVal !== null ? toYD(dVal) : 0;
+                        let sY = sVal !== null ? toYD(sVal) : 0;
+
+                        // Avoid overlap
+                        if (dVal !== null && sVal !== null) {
+                            if (Math.abs(sY - dY) < 10) {
+                                sY += (sY > dY) ? 10 : -10;
+                            }
+                        }
+
                         rsc.font = 'bold 9px "Lexend",monospace';
                         rsc.textAlign = 'right'; rsc.textBaseline = 'middle';
-                        rsc.fillStyle = rsVal >= 0 ? '#00e676' : '#ff4d4f';
-                        rsc.fillText(rsStr, W - 4, toYRS(rsVal));
+
+                        if (dVal !== null) {
+                            const dStr = dVal.toFixed(1) + '%';
+                            rsc.fillStyle = '#00bfff';
+                            rsc.fillText(dStr, W - 4, dY);
+                        }
+
+                        if (sVal !== null) {
+                            const sStr = sVal.toFixed(1) + '%';
+                            rsc.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                            rsc.fillText(sStr, W - 4, sY);
+                        }
+                    } else {
+                        // MRS
+                        const rsVals = raw.map(r => r.rsMansfield).filter(v => v !== null);
+                        let rsMin = Math.min(...rsVals, 0);
+                        let rsMax = Math.max(...rsVals, 0);
+                        const rsPad = Math.max(0.5, (rsMax - rsMin) * 0.1);
+                        rsMin -= rsPad; rsMax += rsPad;
+                        const rsRange = rsMax - rsMin || 1;
+
+                        const toYRS = v => RP.t + rH * (1 - (v - rsMin) / rsRange);
+                        const zeroY = toYRS(0);
+
+                        rsc.strokeStyle = 'rgba(255,255,255,0.25)'; rsc.lineWidth = 0.6; rsc.setLineDash([4, 4]);
+                        rsc.beginPath(); rsc.moveTo(RP.l, zeroY); rsc.lineTo(W - RP.r, zeroY); rsc.stroke();
+                        rsc.setLineDash([]);
+
+                        raw.forEach((r, i) => {
+                            const v = r.rsMansfield;
+                            if (v === null || v === undefined) return;
+                            const x = toX(i);
+                            const bTop = Math.min(zeroY, toYRS(v));
+                            const bBot = Math.max(zeroY, toYRS(v));
+                            const bH = Math.max(1, bBot - bTop);
+                            const bW2 = Math.max(1.5, Math.min(8, (W / n) * 0.55));
+                            rsc.fillStyle = v >= 0 ? 'rgba(0, 230, 118, 0.65)' : 'rgba(255, 77, 79, 0.65)';
+                            rsc.fillRect(x - bW2 / 2, bTop, bW2, bH);
+                        });
+
+                        rsc.strokeStyle = '#facc15'; rsc.lineWidth = 1.2; rsc.lineJoin = 'round';
+                        rsc.beginPath();
+                        let stRS = false;
+                        raw.forEach((r, i) => {
+                            const v = r.rsSma10;
+                            if (v === null || v === undefined) { stRS = false; return; }
+                            const x = toX(i), y = toYRS(v);
+                            stRS ? rsc.lineTo(x, y) : (rsc.moveTo(x, y), stRS = true);
+                        });
+                        rsc.stroke();
+
+                        const hoverIdx = pCv._hoverIdx;
+                        const lastR = raw[raw.length - 1];
+                        const displayR = (hoverIdx !== undefined && hoverIdx !== null) ? raw[hoverIdx] : lastR;
+                        const rsVal = displayR && displayR.rsMansfield !== null ? displayR.rsMansfield : null;
+                        if (rsVal !== null) {
+                            const rsStr = (rsVal >= 0 ? '+' : '') + rsVal.toFixed(2);
+                            rsc.font = 'bold 9px "Lexend",monospace';
+                            rsc.textAlign = 'right'; rsc.textBaseline = 'middle';
+                            rsc.fillStyle = rsVal >= 0 ? '#00e676' : '#ff4d4f';
+                            rsc.fillText(rsStr, W - 4, toYRS(rsVal));
+                        }
                     }
 
-                    // Crosshair vertical line
                     if (pCv._hoverX !== undefined && pCv._hoverX !== null) {
                         rsc.save();
                         rsc.strokeStyle = 'rgba(255,255,255,0.4)';
@@ -13448,6 +13534,9 @@
                         rsc.beginPath(); rsc.moveTo(pCv._hoverX, RP.t); rsc.lineTo(pCv._hoverX, RSH - RP.b); rsc.stroke();
                         rsc.restore();
                     }
+                } else {
+                    const toggleBtn = document.getElementById('fs-rscv-toggle-btn');
+                    if (toggleBtn) toggleBtn.style.display = 'none';
                 }
 
                 /* ════════════════════════════════════════
@@ -19249,6 +19338,7 @@
                 <canvas id="fs-chart-pcv" style="display:none;"></canvas>
                 <canvas id="fs-chart-vcv" style="display:none;"></canvas>
                 <canvas id="fs-chart-rscv" style="display:none;"></canvas>
+                <button id="fs-rscv-toggle-btn" style="display:none; position:absolute; left:8px; pointer-events:auto; z-index:20; font-size:10px; font-weight:600; padding:2px 5px; background:rgba(30,41,59,0.9); color:#e2e8f0; border:1px solid rgba(148,163,184,0.4); border-radius:4px; cursor:pointer;" onclick="window.fsToggleRscvMode()">MRS</button>
                 <!-- Drawing overlay -->
                 <canvas id="fs-draw-canvas"></canvas>
                 <!-- Transparent navigation buttons -->
@@ -19564,6 +19654,11 @@
                     });
                 }
                 window.renderFullScreenChart();
+            };
+
+            window.fsToggleRscvMode = function() {
+                window.fsRscvMode = (window.fsRscvMode === 'DELIV') ? 'MRS' : 'DELIV';
+                if (window.renderFullScreenChart) window.renderFullScreenChart();
             };
 
             window.fsToggleActiveFH = async function (type) {
