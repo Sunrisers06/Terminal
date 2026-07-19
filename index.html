@@ -10710,6 +10710,39 @@
                 return best;
             }
 
+            function getDelivVolumeSignal(r) {
+                const isUp = r.close > r.open;
+                const isDown = r.close < r.open;
+                const v = r.delivVol || 0;
+                const avgV = r.delivVolSma50 || 0;
+                const spread = r.high - r.low;
+                const body = Math.abs(r.close - r.open);
+                const atr = r.atr14 || 0;
+
+                let color = '#6b7280';
+                if (avgV && v > 2.5 * avgV) {
+                    color = isUp ? '#fbbf24' : '#991b1b';
+                } else if (avgV && v > 1.5 * avgV && ((atr && spread < atr * 0.6) || (spread && body < spread * 0.2))) {
+                    color = '#f97316';
+                } else if (isUp && v > r.delivHDnV15) {
+                    color = '#0ea5e9';
+                } else if (isDown && v > r.delivHUpV15) {
+                    color = '#a855f7';
+                } else if (avgV && v < 0.25 * avgV) {
+                    color = '#1e3a8a';
+                } else if (avgV && v < 0.5 * avgV) {
+                    color = '#cbd5e1';
+                } else if (avgV && isUp && v > avgV) {
+                    color = '#22c55e';
+                } else if (avgV && isDown && v > avgV) {
+                    color = '#ef4444';
+                } else {
+                    color = isUp ? '#22c55e' : '#ef4444';
+                }
+
+                return { color };
+            }
+
             function getVolumeSignal(r) {
                 const isUp = r.close > r.open;
                 const isDown = r.close < r.open;
@@ -12264,7 +12297,7 @@
 
                 // Pre-compute delivery percentage and volume signal colors for all visible candles
                 const delivMap = (isFs && window._fsDelivCache) ? window._fsDelivCache[UC] : null;
-                const reqStart = Math.max(0, actualStart - 8);
+                const reqStart = Math.max(0, actualStart - 65);
                 for (let k = reqStart; k < actualEnd; k++) {
                     const r = currentData[k];
                     let delivPer = 0;
@@ -12277,23 +12310,45 @@
                         delivPer = delivMap[mondayStr] || 0;
                     }
                     r.delivPer = delivPer;
+                    r.delivVol = r.vol ? r.vol * r.delivPer / 100 : 0;
                 }
 
                 raw.forEach((r, i) => {
                     const cIdx = actualStart + i;
                     let sum = 0, count = 0;
-                    for (let j = 0; j < 9; j++) {
+                    let sumDVol = 0, countDVol = 0;
+                    for (let j = 0; j < 50; j++) {
                         const idx = cIdx - j;
                         if (idx >= 0) {
-                            sum += currentData[idx].delivPer || 0;
-                            count++;
+                            if (j < 9) {
+                                sum += currentData[idx].delivPer || 0;
+                                count++;
+                            }
+                            sumDVol += currentData[idx].delivVol || 0;
+                            countDVol++;
                         }
                     }
                     r.delivSma9 = count > 0 ? sum / count : null;
+                    r.delivVolSma50 = countDVol > 0 ? sumDVol / countDVol : null;
+
+                    let hDn = 0, hUp = 0;
+                    for (let j = 1; j <= 15; j++) {
+                        const idx = cIdx - j;
+                        if (idx >= 0) {
+                            const pr = currentData[idx];
+                            if (pr.close < pr.open && pr.delivVol > hDn) hDn = pr.delivVol;
+                            if (pr.close > pr.open && pr.delivVol > hUp) hUp = pr.delivVol;
+                        }
+                    }
+                    r.delivHDnV15 = hDn;
+                    r.delivHUpV15 = hUp;
 
                     const volSig = getVolumeSignal(r);
                     r._vColor = volSig.color;
                     r._vDesc = volSig.label;
+                    
+                    const dSig = getDelivVolumeSignal(r);
+                    r._dColor = dSig.color;
                 });
 
                 loadEl.style.opacity = '0';
@@ -13389,7 +13444,7 @@
                     if (toggleBtn) {
                         toggleBtn.style.display = 'block';
                         toggleBtn.style.top = (PH + IH + 6) + 'px';
-                        toggleBtn.innerText = window.fsRscvMode === 'DELIV' ? 'Deliv %' : 'MRS';
+                        toggleBtn.innerText = window.fsRscvMode === 'DELIV' ? 'Deliv %' : window.fsRscvMode === 'DELIV_VOL' ? 'Deliv Vol' : 'MRS';
                     }
                     
                     window.fsRscvMode = window.fsRscvMode || 'MRS';
@@ -13440,7 +13495,7 @@
                             const bBot = zeroY;
                             const bH = Math.max(1, bBot - bTop);
                             const bW2 = Math.max(1.5, Math.min(8, (W / n) * 0.55));
-                            rsc.fillStyle = r._vColor || '#00bfff';
+                            rsc.fillStyle = r._dColor || '#00bfff';
                             rsc.fillRect(x - bW2 / 2, bTop, bW2, bH);
                         });
 
@@ -13466,7 +13521,7 @@
 
                         if (dVal !== null) {
                             const dStr = dVal.toFixed(1) + '%';
-                            rsc.fillStyle = '#00bfff';
+                            rsc.fillStyle = displayR._dColor || '#00bfff';
                             rsc.fillText(dStr, W - 4, dY);
                         }
 
@@ -13474,6 +13529,83 @@
                             const sStr = sVal.toFixed(1) + '%';
                             rsc.fillStyle = 'rgba(255, 255, 255, 0.8)';
                             rsc.fillText(sStr, W - 4, sY);
+                        }
+                    } else if (window.fsRscvMode === 'DELIV_VOL') {
+                        // Delivery Volume
+                        const delivVols = raw.map(r => r.delivVol).filter(v => v !== null && v !== undefined);
+                        let dMin = 0;
+                        let dMax = Math.max(1, ...delivVols);
+                        const dPad = Math.max(0.1, (dMax - dMin) * 0.1);
+                        dMin -= dPad; dMax += dPad;
+                        const dRange = dMax - dMin || 1;
+
+                        const toYD = v => RP.t + rH * (1 - (v - dMin) / dRange);
+                        const zeroY = toYD(0);
+
+                        rsc.strokeStyle = 'rgba(255,255,255,0.25)'; rsc.lineWidth = 0.6; rsc.setLineDash([4, 4]);
+                        rsc.beginPath(); rsc.moveTo(RP.l, zeroY); rsc.lineTo(W - RP.r, zeroY); rsc.stroke();
+                        rsc.setLineDash([]);
+
+                        // SMA 50 for Deliv Vol
+                        rsc.strokeStyle = 'rgba(255, 255, 255, 0.7)'; rsc.lineWidth = 1.2; rsc.setLineDash([4, 4]);
+                        rsc.beginPath();
+                        let stDSMA = false;
+                        raw.forEach((r, i) => {
+                            const v = r.delivVolSma50;
+                            if (v === null || v === undefined) { stDSMA = false; return; }
+                            const x = toX(i), y = toYD(v);
+                            stDSMA ? rsc.lineTo(x, y) : (rsc.moveTo(x, y), stDSMA = true);
+                        });
+                        rsc.stroke();
+                        rsc.setLineDash([]);
+
+                        raw.forEach((r, i) => {
+                            const v = r.delivVol;
+                            if (v === null || v === undefined) return;
+                            const x = toX(i);
+                            const bTop = toYD(v);
+                            const bBot = zeroY;
+                            const bH = Math.max(1, bBot - bTop);
+                            const bW2 = Math.max(1.5, Math.min(8, (W / n) * 0.55));
+                            rsc.fillStyle = r._dColor || '#00bfff';
+                            rsc.fillRect(x - bW2 / 2, bTop, bW2, bH);
+                        });
+
+                        // Current Deliv Vol value & SMA label
+                        const hoverIdx = pCv._hoverIdx;
+                        const lastR = raw[raw.length - 1];
+                        const displayR = (hoverIdx !== undefined && hoverIdx !== null) ? raw[hoverIdx] : lastR;
+                        const dVal = displayR && displayR.delivVol !== undefined ? displayR.delivVol : null;
+                        const sVal = displayR && displayR.delivVolSma50 !== undefined ? displayR.delivVolSma50 : null;
+
+                        let dY = dVal !== null ? toYD(dVal) : 0;
+                        let sY = sVal !== null ? toYD(sVal) : 0;
+
+                        // Avoid overlap
+                        if (dVal !== null && sVal !== null) {
+                            if (Math.abs(sY - dY) < 10) {
+                                sY += (sY > dY) ? 10 : -10;
+                            }
+                        }
+
+                        rsc.font = 'bold 9px "Lexend",monospace';
+                        rsc.textAlign = 'right'; rsc.textBaseline = 'middle';
+                        
+                        const fmtD = v => {
+                            if (v >= 1e7) return (v / 1e7).toFixed(2) + 'Cr';
+                            if (v >= 1e5) return (v / 1e5).toFixed(2) + 'L';
+                            if (v >= 1e3) return (v / 1e3).toFixed(1) + 'K';
+                            return v.toFixed(0);
+                        };
+
+                        if (dVal !== null) {
+                            rsc.fillStyle = displayR._dColor || '#00bfff';
+                            rsc.fillText(fmtD(dVal), W - 4, dY);
+                        }
+
+                        if (sVal !== null) {
+                            rsc.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                            rsc.fillText(fmtD(sVal), W - 4, sY);
                         }
                     } else {
                         // MRS
@@ -18947,9 +19079,35 @@
         }
 
         /* Mobile navigation overlay buttons */
-        .fs-nav-overlay-btn {
+        #fs-nav-overlay-container {
             position: absolute;
             left: 16px;
+            bottom: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 50;
+            align-items: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
+        }
+        
+        #fs-nav-drag-handle {
+            width: 24px;
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255,255,255,0.3);
+            cursor: grab;
+            touch-action: none;
+        }
+        
+        #fs-nav-drag-handle:active {
+            cursor: grabbing;
+            background: rgba(255,255,255,0.5);
+        }
+
+        .fs-nav-overlay-btn {
             width: 44px;
             height: 44px;
             border-radius: 50%;
@@ -18961,16 +19119,14 @@
             align-items: center;
             font-size: 16px;
             cursor: pointer;
-            z-index: 50;
             backdrop-filter: blur(4px);
-            transition: background 0.2s, color 0.2s, opacity 0.2s;
-            opacity: 0;
-            pointer-events: none;
+            transition: background 0.2s, color 0.2s;
+            pointer-events: auto;
         }
 
         @media (max-width: 1366px),
         (hover: none) and (pointer: coarse) {
-            .fs-nav-overlay-btn {
+            #fs-nav-overlay-container {
                 opacity: 1;
                 pointer-events: auto;
             }
@@ -18979,18 +19135,6 @@
         .fs-nav-overlay-btn:active {
             background: rgba(255, 255, 255, 0.15);
             color: #fff;
-        }
-
-        #fs-nav-up {
-            top: auto;
-            bottom: 70px;
-            margin-top: 0;
-        }
-
-        #fs-nav-down {
-            top: auto;
-            bottom: 16px;
-            margin-top: 0;
         }
 
         /* Force Landscape Mode on Portrait Mobile/Tablet */
@@ -19324,16 +19468,7 @@
                             H
                         </button>
                     </div>
-                    <!-- Live pattern recognition badge -->
-                    <div id="fs-pattern-badge"
-                        style="display: none; pointer-events: auto; align-items: center; gap: 7px; background: rgba(13,17,27,0.82); border: 1px solid rgba(148,163,184,0.22); border-radius: 8px; padding: 4px 10px; font-family: 'Lexend', sans-serif; cursor: default; backdrop-filter: blur(4px);">
-                        <span id="fs-pattern-badge-action"
-                            style="font-size: 10px; font-weight: 800; letter-spacing: 0.04em; white-space: nowrap;"></span>
-                        <span id="fs-pattern-badge-name"
-                            style="font-size: 10.5px; font-weight: 600; color: #e2e8f0; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis;"></span>
-                        <span id="fs-pattern-badge-score"
-                            style="font-size: 10px; font-weight: 800; white-space: nowrap;"></span>
-                    </div>
+
                 </div>
                 <canvas id="fs-chart-pcv" style="display:none;"></canvas>
                 <canvas id="fs-chart-vcv" style="display:none;"></canvas>
@@ -19341,9 +19476,12 @@
                 <button id="fs-rscv-toggle-btn" style="display:none; position:absolute; left:8px; pointer-events:auto; z-index:20; font-size:10px; font-weight:600; padding:2px 5px; background:rgba(30,41,59,0.9); color:#e2e8f0; border:1px solid rgba(148,163,184,0.4); border-radius:4px; cursor:pointer;" onclick="window.fsToggleRscvMode()">MRS</button>
                 <!-- Drawing overlay -->
                 <canvas id="fs-draw-canvas"></canvas>
-                <!-- Transparent navigation buttons -->
-                <button class="fs-nav-overlay-btn" id="fs-nav-up" onclick="window.fsNavTicker(-1)">▲</button>
-                <button class="fs-nav-overlay-btn" id="fs-nav-down" onclick="window.fsNavTicker(1)">▼</button>
+                <!-- Movable navigation buttons -->
+                <div id="fs-nav-overlay-container">
+                    <div id="fs-nav-drag-handle"></div>
+                    <button class="fs-nav-overlay-btn" id="fs-nav-up" onclick="window.fsNavTicker(-1)">▲</button>
+                    <button class="fs-nav-overlay-btn" id="fs-nav-down" onclick="window.fsNavTicker(1)">▼</button>
+                </div>
             </div>
         </div>
     </div>
@@ -19657,7 +19795,7 @@
             };
 
             window.fsToggleRscvMode = function() {
-                window.fsRscvMode = (window.fsRscvMode === 'DELIV') ? 'MRS' : 'DELIV';
+                window.fsRscvMode = (window.fsRscvMode === 'DELIV') ? 'DELIV_VOL' : (window.fsRscvMode === 'DELIV_VOL') ? 'MRS' : 'DELIV';
                 if (window.renderFullScreenChart) window.renderFullScreenChart();
             };
 
@@ -20030,15 +20168,27 @@
                         const sRnkCls = isNaN(sRnk) ? 'gray' : (sRnk <= 5 ? 'green' : (sRnk <= 10 ? 'blue' : (sRnk <= 15 ? 'orange' : 'red')));
                         const sRnkDisp = isNaN(sRnk) ? '-' : Math.round(sRnk);
 
-                        const fsDf = (v) => { const l = String(v || '').length; return l <= 2 ? 15 : l === 3 ? 12 : 10; };
+                        const cw = Math.max(34, Math.min(80, Math.round(window.innerWidth * 0.025)));
+                        const gap = Math.max(4, Math.round(cw * 0.12));
+                        cardEl.style.gridTemplateColumns = `repeat(2, ${cw}px)`;
+                        cardEl.style.gap = `${gap}px`;
+
+                        const fsDf = (v) => { 
+                            const l = String(v || '').length; 
+                            const baseFs = cw * 0.44; 
+                            return Math.round(l <= 2 ? baseFs : l === 3 ? baseFs * 0.8 : baseFs * 0.65); 
+                        };
+                        const lblFs = Math.max(8, Math.round(cw * 0.23));
+                        const srFs = Math.round(cw * 0.38);
+                        const srCw = Math.round(cw * 0.7);
 
                         cardEl.innerHTML = `
-                            ${r['EBITDA Performance'] ? `<div class="iscore ${getChipColor('Performance', r['EBITDA Performance'])}" style="width:34px; height:34px; min-width:0; padding:3px 4px; box-sizing:border-box; margin:0; justify-content:space-between; align-items:flex-start; overflow:hidden;"><span class="iscore-label" style="font-size:8px; margin-bottom:0; font-weight:800; line-height:1;">EBIT</span><span class="iscore-val" style="font-size:${fsDf(fmtWhole(r['EBITDA Performance']))}px; font-weight:800; line-height:1;">${fmtWhole(r['EBITDA Performance'])}</span></div>` : ''}
-                            ${r['Revenue Performance'] ? `<div class="iscore ${getChipColor('Performance', r['Revenue Performance'])}" style="width:34px; height:34px; min-width:0; padding:3px 4px; box-sizing:border-box; margin:0; justify-content:space-between; align-items:flex-end; overflow:hidden;"><span class="iscore-label" style="font-size:8px; margin-bottom:0; font-weight:800; line-height:1;">SALE</span><span class="iscore-val" style="font-size:${fsDf(fmtWhole(r['Revenue Performance']))}px; font-weight:800; line-height:1;">${fmtWhole(r['Revenue Performance'])}</span></div>` : ''}
-                            ${r['Net Profit Performance'] ? `<div class="iscore ${getChipColor('Performance', r['Net Profit Performance'])}" style="width:34px; height:34px; min-width:0; padding:3px 4px; box-sizing:border-box; margin:0; justify-content:space-between; align-items:flex-start; overflow:hidden;"><span class="iscore-label" style="font-size:8px; margin-bottom:0; font-weight:800; line-height:1;">NP</span><span class="iscore-val" style="font-size:${fsDf(fmtWhole(r['Net Profit Performance']))}px; font-weight:800; line-height:1;">${fmtWhole(r['Net Profit Performance'])}</span></div>` : ''}
-                            ${!isNaN(r._eps) ? `<div class="iscore ${getChipColor('EPS Rank', r._eps)}" style="width:34px; height:34px; min-width:0; padding:3px 4px; box-sizing:border-box; margin:0; justify-content:space-between; align-items:flex-end; overflow:hidden;"><span class="iscore-label" style="font-size:8px; margin-bottom:0; font-weight:800; line-height:1;">EPS</span><span class="iscore-val" style="font-size:${fsDf(fmtWhole(r._eps))}px; font-weight:800; line-height:1;">${fmtWhole(r._eps)}</span></div>` : ''}
-                            ${!isNaN(sRnk) ? `<div class="iscore ${sRnkCls}" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 24px; height: 24px; min-width: 0; box-sizing: border-box; margin: 0; display: flex; align-items: center; justify-content: center; padding: 0; border: 1.5px solid var(--bg); border-radius: 4px; z-index: 5; box-shadow: 0 1px 3px rgba(0,0,0,0.5);" title="Sector Rank">
-                                <span class="iscore-val" style="font-size: 13px; line-height: 1; margin: 0; font-weight: 800; color: #ffffff;">${sRnkDisp}</span>
+                            ${r['EBITDA Performance'] ? `<div class="iscore ${getChipColor('Performance', r['EBITDA Performance'])}" style="width:${cw}px; height:${cw}px; min-width:0; padding:3px 4px; box-sizing:border-box; margin:0; justify-content:space-between; align-items:flex-start; overflow:hidden;"><span class="iscore-label" style="font-size:${lblFs}px; margin-bottom:0; font-weight:800; line-height:1;">EBIT</span><span class="iscore-val" style="font-size:${fsDf(fmtWhole(r['EBITDA Performance']))}px; font-weight:800; line-height:1;">${fmtWhole(r['EBITDA Performance'])}</span></div>` : ''}
+                            ${r['Revenue Performance'] ? `<div class="iscore ${getChipColor('Performance', r['Revenue Performance'])}" style="width:${cw}px; height:${cw}px; min-width:0; padding:3px 4px; box-sizing:border-box; margin:0; justify-content:space-between; align-items:flex-end; overflow:hidden;"><span class="iscore-label" style="font-size:${lblFs}px; margin-bottom:0; font-weight:800; line-height:1;">SALE</span><span class="iscore-val" style="font-size:${fsDf(fmtWhole(r['Revenue Performance']))}px; font-weight:800; line-height:1;">${fmtWhole(r['Revenue Performance'])}</span></div>` : ''}
+                            ${r['Net Profit Performance'] ? `<div class="iscore ${getChipColor('Performance', r['Net Profit Performance'])}" style="width:${cw}px; height:${cw}px; min-width:0; padding:3px 4px; box-sizing:border-box; margin:0; justify-content:space-between; align-items:flex-start; overflow:hidden;"><span class="iscore-label" style="font-size:${lblFs}px; margin-bottom:0; font-weight:800; line-height:1;">NP</span><span class="iscore-val" style="font-size:${fsDf(fmtWhole(r['Net Profit Performance']))}px; font-weight:800; line-height:1;">${fmtWhole(r['Net Profit Performance'])}</span></div>` : ''}
+                            ${!isNaN(r._eps) ? `<div class="iscore ${getChipColor('EPS Rank', r._eps)}" style="width:${cw}px; height:${cw}px; min-width:0; padding:3px 4px; box-sizing:border-box; margin:0; justify-content:space-between; align-items:flex-end; overflow:hidden;"><span class="iscore-label" style="font-size:${lblFs}px; margin-bottom:0; font-weight:800; line-height:1;">EPS</span><span class="iscore-val" style="font-size:${fsDf(fmtWhole(r._eps))}px; font-weight:800; line-height:1;">${fmtWhole(r._eps)}</span></div>` : ''}
+                            ${!isNaN(sRnk) ? `<div class="iscore ${sRnkCls}" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: ${srCw}px; height: ${srCw}px; min-width: 0; box-sizing: border-box; margin: 0; display: flex; align-items: center; justify-content: center; padding: 0; border: 1.5px solid var(--bg); border-radius: 4px; z-index: 5; box-shadow: 0 1px 3px rgba(0,0,0,0.5);" title="Sector Rank">
+                                <span class="iscore-val" style="font-size: ${srFs}px; line-height: 1; margin: 0; font-weight: 800; color: #ffffff;">${sRnkDisp}</span>
                             </div>` : ''}
                         `;
                         cardEl.style.display = 'grid';
@@ -20064,70 +20214,10 @@
                     }
                 }
 
-                // Live pattern recognition badge (hidden in training/quiz modes to not leak answers)
-                window._fsUpdatePatternBadge(tkUpper);
+
             };
 
-            window._fsUpdatePatternBadge = function (tkUpper) {
-                const badge = document.getElementById('fs-pattern-badge');
-                if (!badge) return;
-                // Skip during sub-candle animation frames (60fps) — pattern only changes per candle
-                if (window._fsReplay && window._fsReplay.partialCandle) return;
-                if (window._fsTrainingMode || typeof window._fsBuildPriceActionAnalysis !== 'function') {
-                    badge.style.display = 'none';
-                    return;
-                }
-                let arr = null;
-                if (window._chartCalcCache) {
-                    for (const [, cached] of window._chartCalcCache) {
-                        if (cached.ticker === tkUpper && cached.fullProcessed && cached.fullProcessed.length > 0) {
-                            arr = cached.fullProcessed;
-                            break;
-                        }
-                    }
-                }
-                if (!arr) {
-                    // Cache not warm yet (first render still running) — retry shortly
-                    badge.style.display = 'none';
-                    clearTimeout(window._fsBadgeRetry);
-                    window._fsBadgeRetry = setTimeout(() => {
-                        const cur = document.getElementById('fs-ticker-select')?.value?.toUpperCase();
-                        if (cur === tkUpper) window._fsUpdatePatternBadge(tkUpper);
-                    }, 600);
-                    return;
-                }
-                // Respect replay truncation: analyze only what's visible
-                if (window._fsReplay && window._fsReplay.active && window._fsReplay.currentMaxDate) {
-                    let cut = arr.length;
-                    for (let k = arr.length - 1; k >= 0; k--) {
-                        if (arr[k].date.getTime() <= window._fsReplay.currentMaxDate) { cut = k + 1; break; }
-                        cut = k;
-                    }
-                    arr = arr.slice(0, cut);
-                }
-                if (arr.length < 12) { badge.style.display = 'none'; return; }
-                let pa = null;
-                try { pa = window._fsBuildPriceActionAnalysis(arr); } catch (e) { /* ignore */ }
-                if (!pa || !pa.lines || !pa.lines.length) { badge.style.display = 'none'; return; }
-                const actEl = document.getElementById('fs-pattern-badge-action');
-                const nameEl = document.getElementById('fs-pattern-badge-name');
-                const scEl = document.getElementById('fs-pattern-badge-score');
-                if (actEl) {
-                    actEl.textContent = pa.action || '';
-                    actEl.style.color = pa.actionColor || '#cbd5e1';
-                }
-                if (nameEl) {
-                    const top = pa.lines[0];
-                    nameEl.textContent = top.text;
-                    nameEl.title = pa.lines.slice(0, 5).map(l => l.text + (l.score ? ' (' + (l.score > 0 ? '+' : '') + l.score + ')' : '')).join('  |  ');
-                    nameEl.style.color = top.tone === 'bull' ? '#22c55e' : top.tone === 'bear' ? '#ef4444' : '#e2e8f0';
-                }
-                if (scEl) {
-                    scEl.textContent = pa.score + '/100';
-                    scEl.style.color = pa.score >= 62 ? '#22c55e' : pa.score <= 40 ? '#ef4444' : '#fbbf24';
-                }
-                badge.style.display = 'flex';
-            };
+
 
             // ── Candlestick Replay engine ──────────────────────────────────────────
             window._fsReplay = { timer: null, paused: false, active: false, currentMaxDate: 0, endDate: 0 };
@@ -21965,6 +22055,53 @@
                     window.fsNavTicker(e.key === 'ArrowUp' ? -1 : 1);
                 }
             });
+
+            // Make fs-nav-overlay-container draggable
+            setTimeout(() => {
+                const navContainer = document.getElementById('fs-nav-overlay-container');
+                const handle = document.getElementById('fs-nav-drag-handle');
+                if (navContainer && handle) {
+                    let isDragging = false;
+                    let startX, startY, initialLeft, initialTop;
+                    
+                    const onDown = (e) => {
+                        isDragging = true;
+                        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                        startX = clientX;
+                        startY = clientY;
+                        initialLeft = navContainer.offsetLeft;
+                        initialTop = navContainer.offsetTop;
+                        
+                        navContainer.style.bottom = 'auto';
+                        navContainer.style.right = 'auto';
+                        navContainer.style.left = initialLeft + 'px';
+                        navContainer.style.top = initialTop + 'px';
+                        e.preventDefault();
+                    };
+                    
+                    const onMove = (e) => {
+                        if (!isDragging) return;
+                        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                        const dx = clientX - startX;
+                        const dy = clientY - startY;
+                        navContainer.style.left = (initialLeft + dx) + 'px';
+                        navContainer.style.top = (initialTop + dy) + 'px';
+                    };
+                    
+                    const onUp = () => {
+                        isDragging = false;
+                    };
+                    
+                    handle.addEventListener('mousedown', onDown);
+                    handle.addEventListener('touchstart', onDown, {passive: false});
+                    document.addEventListener('mousemove', onMove);
+                    document.addEventListener('touchmove', onMove, {passive: false});
+                    document.addEventListener('mouseup', onUp);
+                    document.addEventListener('touchend', onUp);
+                }
+            }, 500);
         })();
     </script>
 
