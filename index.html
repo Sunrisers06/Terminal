@@ -9332,6 +9332,19 @@
                 if (typeof window._superstarInit === 'function') {
                     setTimeout(window._superstarInit, 500);
                 }
+
+                // Ensure active tab renders fully once data is loaded (fixes blank Superstar/Breadth on fast load or refresh)
+                setTimeout(() => {
+                    if (window._sidebarTab === 'breadth' && typeof window.renderBreadthTab === 'function') {
+                        window.renderBreadthTab(window._breadthSort || 'momentum', window._breadthDir || 1);
+                    }
+                    if (window._sidebarTab === 'superstar' && typeof window._superstarInit === 'function') {
+                        window._superstarInit();
+                    }
+                    if (window._sidebarTab === 'deals' && typeof window._dealBlockInit === 'function') {
+                        window._dealBlockInit();
+                    }
+                }, 600);
             } catch (err) {
                 document.getElementById('loading').style.display = 'none';
                 sb.className = 'sbox s-err'; sb.innerHTML = '❌ Error fetching data: ' + err.message;
@@ -17228,7 +17241,7 @@
                     return k ? String(row[k] || '').trim() : '';
                 };
                 return {
-                    Investor: getVal(/^investor$/i),
+                    Investor: getVal(/investor/i),
                     Ticker: getVal(/ticker/i),
                     Holding: getVal(/holding/i),
                     Change: getVal(/change/i)
