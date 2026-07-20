@@ -5980,6 +5980,8 @@
         <div class="top-panel-section">
             <span class="top-panel-label">Return Duration</span>
             <div class="top-pill-group" id="top-duration-pills">
+                <button class="top-pill" onclick="selectTopDuration('1w', this)">1W</button>
+                <button class="top-pill" onclick="selectTopDuration('2w', this)">2W</button>
                 <button class="top-pill" onclick="selectTopDuration('1m', this)">1M</button>
                 <button class="top-pill active-pill" onclick="selectTopDuration('3m', this)">3M</button>
                 <button class="top-pill" onclick="selectTopDuration('6m', this)">6M</button>
@@ -6015,7 +6017,8 @@
 
             <div class="sidebar-tabs">
                 <button class="mobile-back-btn" onclick="toggleNewsPanel()">← Back</button>
-                <button class="sidebar-tab tab-insights active" id="tab-insights-btn" onclick="switchSidebarTab('insights')">
+                <button class="sidebar-tab tab-insights active" id="tab-insights-btn"
+                    onclick="switchSidebarTab('insights')">
                     <div style="display:flex; align-items:center; gap:4px;"><span class="tab-dot"></span> Insights</div>
                     <span class="tab-count" id="insights-count">1,417</span>
                 </button>
@@ -6024,19 +6027,24 @@
                     <span class="tab-count" id="news-count">62,070</span>
                 </button>
                 <button class="sidebar-tab tab-nsenews" id="tab-nsenews-btn" onclick="switchSidebarTab('nsenews')">
-                    <div style="display:flex; align-items:center; gap:4px;"><span class="tab-dot" style="background:#eab308;box-shadow:0 0 6px rgba(234,179,8,0.6);"></span> NSE</div>
+                    <div style="display:flex; align-items:center; gap:4px;"><span class="tab-dot"
+                            style="background:#eab308;box-shadow:0 0 6px rgba(234,179,8,0.6);"></span> NSE</div>
                     <span class="tab-count" id="nsenews-count">—</span>
                 </button>
                 <button class="sidebar-tab tab-deals" id="tab-deals-btn" onclick="switchSidebarTab('deals')">
-                    <div style="display:flex; align-items:center; gap:4px;"><span class="tab-dot" style="background:#f59e0b;box-shadow:0 0 6px rgba(245,158,11,0.6);"></span> Deals</div>
+                    <div style="display:flex; align-items:center; gap:4px;"><span class="tab-dot"
+                            style="background:#f59e0b;box-shadow:0 0 6px rgba(245,158,11,0.6);"></span> Deals</div>
                     <span class="tab-count" id="deals-count">—</span>
                 </button>
-                <button class="sidebar-tab tab-superstar" id="tab-superstar-btn" onclick="switchSidebarTab('superstar')">
-                    <div style="display:flex; align-items:center; gap:4px;"><span class="tab-dot" style="background:#10b981;box-shadow:0 0 6px rgba(16,185,129,0.6);"></span> SuperStar</div>
+                <button class="sidebar-tab tab-superstar" id="tab-superstar-btn"
+                    onclick="switchSidebarTab('superstar')">
+                    <div style="display:flex; align-items:center; gap:4px;"><span class="tab-dot"
+                            style="background:#10b981;box-shadow:0 0 6px rgba(16,185,129,0.6);"></span> SuperStar</div>
                     <span class="tab-count" id="superstar-count">—</span>
                 </button>
                 <button class="sidebar-tab tab-breadth" id="tab-breadth-btn" onclick="switchSidebarTab('breadth')">
-                    <div style="display:flex; align-items:center; gap:4px;"><span class="tab-dot" style="background:#818cf8;box-shadow:0 0 6px rgba(129,140,248,0.6);"></span> Breadth</div>
+                    <div style="display:flex; align-items:center; gap:4px;"><span class="tab-dot"
+                            style="background:#818cf8;box-shadow:0 0 6px rgba(129,140,248,0.6);"></span> Breadth</div>
                 </button>
             </div>
             <div class="swipe-dots" id="swipe-dots">
@@ -7498,8 +7506,8 @@
             // Return mini-cards (shown in top mode)
             let returnMiniCards = '';
             if (topMode) {
-                const durations = ['1m', '3m', '6m', '1y'];
-                const labels = ['1M', '3M', '6M', '1Y'];
+                const durations = ['1w', '2w', '1m', '3m', '6m', '1y'];
+                const labels = ['1W', '2W', '1M', '3M', '6M', '1Y'];
                 const miniItems = durations.map((d, i) => {
                     const v = getReturnValue(r, d);
                     const isNa = isNaN(v);
@@ -9369,6 +9377,8 @@
 
         function getReturnValue(row, duration) {
             // Use pre-cached values set from OHLCV data
+            if (duration === '1w') return isNaN(row._ret1w) ? NaN : row._ret1w;
+            if (duration === '2w') return isNaN(row._ret2w) ? NaN : row._ret2w;
             if (duration === '1m') return isNaN(row._ret1m) ? NaN : row._ret1m;
             if (duration === '3m') return isNaN(row._ret3m) ? NaN : row._ret3m;
             if (duration === '6m') return isNaN(row._ret6m) ? NaN : row._ret6m;
@@ -9380,43 +9390,27 @@
         /* Calculate returns from OHLCV close prices for all stocks */
         function calcOHLCVReturns() {
             if (!window._ohlcvTickers || !allData.length) return;
-            const now = new Date();
-
-            // Duration → milliseconds ago
-            const durations = {
-                '1m': 30 * 24 * 3600 * 1000,
-                '3m': 91 * 24 * 3600 * 1000,
-                '6m': 182 * 24 * 3600 * 1000,
-                '1y': 365 * 24 * 3600 * 1000,
-                '2y': 730 * 24 * 3600 * 1000
-            };
-
             allData.forEach(r => {
                 const arr = window._ohlcvTickers.get(String(r._ticker).toUpperCase());
                 if (!arr || arr.length < 2) return;
 
                 const lastClose = arr[arr.length - 1].close;
-                const nowTs = now.getTime();
 
-                Object.entries(durations).forEach(([dur, ms]) => {
-                    const targetTs = nowTs - ms;
-                    // Find the closest candle at or before targetTs
-                    let lo = 0, hi = arr.length - 1, idx = -1;
-                    while (lo <= hi) {
-                        const mid = (lo + hi) >> 1;
-                        if (arr[mid].date.getTime() <= targetTs) { idx = mid; lo = mid + 1; }
-                        else hi = mid - 1;
-                    }
-                    if (idx < 0) return; // no data that far back
-                    const baseClose = arr[idx].close;
-                    if (!baseClose) return;
-                    const ret = ((lastClose - baseClose) / baseClose) * 100;
-                    if (dur === '1m') r._ret1m = ret;
-                    else if (dur === '3m') r._ret3m = ret;
-                    else if (dur === '6m') r._ret6m = ret;
-                    else if (dur === '1y') r._ret1y = ret;
-                    else if (dur === '2y') r._ret2y = ret;
-                });
+                // Exact indices for weekly candles
+                // 1W = 1 wk, 2W = 2 wks, 1M = 4 wks, 3M = 13 wks, 6M = 26 wks, 1Y = 52 wks, 2Y = 104 wks
+                const getRet = (weeks) => {
+                    const idx = arr.length - 1 - weeks;
+                    if (idx < 0 || !arr[idx].close) return NaN;
+                    return ((lastClose - arr[idx].close) / arr[idx].close) * 100;
+                };
+
+                r._ret1w = getRet(1);
+                r._ret2w = getRet(2) || r._ret1w;
+                r._ret1m = getRet(4);
+                r._ret3m = getRet(13);
+                r._ret6m = getRet(26);
+                r._ret1y = getRet(52);
+                r._ret2y = getRet(104);
             });
 
             // ── Pivot Distance Calculation (for Proximity-to-Pivot screener filter) ──
@@ -9608,7 +9602,7 @@
 
             // ── Toolbar ──
             const idxNames = window.indexDataMap ? Object.keys(window.indexDataMap).sort() : [];
-            const idxOptions = `<option value="all">All Indices</option>` + 
+            const idxOptions = `<option value="all">All Indices</option>` +
                 idxNames.map(idx => `<option value="${idx}" ${window._breadthIndex === idx ? 'selected' : ''}>${idx}</option>`).join('');
 
             const toolbar = `<div class="breadth-toolbar">
@@ -9926,7 +9920,7 @@
             // Reset pills UI
             document.querySelectorAll('#top-duration-pills .top-pill').forEach(p => p.classList.remove('active-pill'));
             const pills = document.querySelectorAll('#top-duration-pills .top-pill');
-            if (pills[1]) pills[1].classList.add('active-pill'); // default 3M
+            if (pills[3]) pills[3].classList.add('active-pill'); // default 3M
             doFilter();
         }
 
@@ -12355,7 +12349,7 @@
                     const volSig = getVolumeSignal(r);
                     r._vColor = volSig.color;
                     r._vDesc = volSig.label;
-                    
+
                     const dSig = getDelivVolumeSignal(r);
                     r._dColor = dSig.color;
                 });
@@ -13455,7 +13449,7 @@
                         toggleBtn.style.top = (PH + IH + 6) + 'px';
                         toggleBtn.innerText = window.fsRscvMode === 'DELIV' ? 'Deliv %' : window.fsRscvMode === 'DELIV_VOL' ? 'Deliv Vol' : 'MRS';
                     }
-                    
+
                     window.fsRscvMode = window.fsRscvMode || 'MRS';
                     const RP = { t: 6, b: 8, l: 8, r: 70 };
                     const rH = RSH - RP.t - RP.b;
@@ -13599,7 +13593,7 @@
 
                         rsc.font = 'bold 9px "Lexend",monospace';
                         rsc.textAlign = 'right'; rsc.textBaseline = 'middle';
-                        
+
                         const fmtD = v => {
                             if (v >= 1e7) return (v / 1e7).toFixed(2) + 'Cr';
                             if (v >= 1e5) return (v / 1e5).toFixed(2) + 'L';
@@ -19101,19 +19095,19 @@
             pointer-events: none;
             transition: opacity 0.2s;
         }
-        
+
         #fs-nav-drag-handle {
             width: 24px;
             height: 6px;
             border-radius: 3px;
-            background: rgba(255,255,255,0.3);
+            background: rgba(255, 255, 255, 0.3);
             cursor: grab;
             touch-action: none;
         }
-        
+
         #fs-nav-drag-handle:active {
             cursor: grabbing;
-            background: rgba(255,255,255,0.5);
+            background: rgba(255, 255, 255, 0.5);
         }
 
         .fs-nav-overlay-btn {
@@ -19482,7 +19476,9 @@
                 <canvas id="fs-chart-pcv" style="display:none;"></canvas>
                 <canvas id="fs-chart-vcv" style="display:none;"></canvas>
                 <canvas id="fs-chart-rscv" style="display:none;"></canvas>
-                <button id="fs-rscv-toggle-btn" style="display:none; position:absolute; left:8px; pointer-events:auto; z-index:20; font-size:10px; font-weight:600; padding:2px 5px; background:rgba(30,41,59,0.9); color:#e2e8f0; border:1px solid rgba(148,163,184,0.4); border-radius:4px; cursor:pointer;" onclick="window.fsToggleRscvMode()">MRS</button>
+                <button id="fs-rscv-toggle-btn"
+                    style="display:none; position:absolute; left:8px; pointer-events:auto; z-index:20; font-size:10px; font-weight:600; padding:2px 5px; background:rgba(30,41,59,0.9); color:#e2e8f0; border:1px solid rgba(148,163,184,0.4); border-radius:4px; cursor:pointer;"
+                    onclick="window.fsToggleRscvMode()">MRS</button>
                 <!-- Drawing overlay -->
                 <canvas id="fs-draw-canvas"></canvas>
             </div>
@@ -19803,7 +19799,7 @@
                 window.renderFullScreenChart();
             };
 
-            window.fsToggleRscvMode = function() {
+            window.fsToggleRscvMode = function () {
                 window.fsRscvMode = (window.fsRscvMode === 'DELIV') ? 'DELIV_VOL' : (window.fsRscvMode === 'DELIV_VOL') ? 'MRS' : 'DELIV';
                 if (window.renderFullScreenChart) window.renderFullScreenChart();
             };
@@ -20182,10 +20178,10 @@
                         cardEl.style.gridTemplateColumns = `repeat(2, ${cw}px)`;
                         cardEl.style.gap = `${gap}px`;
 
-                        const fsDf = (v) => { 
-                            const l = String(v || '').length; 
-                            const baseFs = cw * 0.44; 
-                            return Math.round(l <= 2 ? baseFs : l === 3 ? baseFs * 0.8 : baseFs * 0.65); 
+                        const fsDf = (v) => {
+                            const l = String(v || '').length;
+                            const baseFs = cw * 0.44;
+                            return Math.round(l <= 2 ? baseFs : l === 3 ? baseFs * 0.8 : baseFs * 0.65);
                         };
                         const lblFs = Math.max(8, Math.round(cw * 0.23));
                         const srFs = Math.round(cw * 0.38);
@@ -22072,7 +22068,7 @@
                 if (navContainer && handle) {
                     let isDragging = false;
                     let startX, startY, initialLeft, initialTop;
-                    
+
                     const onDown = (e) => {
                         isDragging = true;
                         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -22081,14 +22077,14 @@
                         startY = clientY;
                         initialLeft = navContainer.offsetLeft;
                         initialTop = navContainer.offsetTop;
-                        
+
                         navContainer.style.bottom = 'auto';
                         navContainer.style.right = 'auto';
                         navContainer.style.left = initialLeft + 'px';
                         navContainer.style.top = initialTop + 'px';
                         e.preventDefault();
                     };
-                    
+
                     const onMove = (e) => {
                         if (!isDragging) return;
                         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -22098,15 +22094,15 @@
                         navContainer.style.left = (initialLeft + dx) + 'px';
                         navContainer.style.top = (initialTop + dy) + 'px';
                     };
-                    
+
                     const onUp = () => {
                         isDragging = false;
                     };
-                    
+
                     handle.addEventListener('mousedown', onDown);
-                    handle.addEventListener('touchstart', onDown, {passive: false});
+                    handle.addEventListener('touchstart', onDown, { passive: false });
                     document.addEventListener('mousemove', onMove);
-                    document.addEventListener('touchmove', onMove, {passive: false});
+                    document.addEventListener('touchmove', onMove, { passive: false });
                     document.addEventListener('mouseup', onUp);
                     document.addEventListener('touchend', onUp);
                 }
