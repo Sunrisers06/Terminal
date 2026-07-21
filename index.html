@@ -6376,13 +6376,57 @@
                     <div style="flex:1;"></div>
                     <button class="fs-btn" onclick="toggleNewsFS('breadth-section', this)" title="Fullscreen">⛶</button>
                     <button class="deal-refresh-btn"
-                        onclick="renderBreadthTab(window._breadthSort||'momentum',window._breadthDir||1)"
+                        onclick="refreshActiveBreadth()"
                         title="Refresh">↻</button>
+                </div>
+                <!-- Top-level breadth mode: Technical (price/volume) vs Fundamental (earnings) -->
+                <div class="breadth-mode-bar">
+                    <button class="breadth-mode-btn active" id="breadth-mode-tech"
+                        onclick="switchBreadthMode('tech')" title="Price / volume breadth">📈 Technical</button>
+                    <button class="breadth-mode-btn" id="breadth-mode-fund"
+                        onclick="switchBreadthMode('fund')" title="Earnings &amp; revenue growth from quarterly results">💰 Fundamental</button>
                 </div>
                 <div class="deal-sub-pane active-sub-pane" style="overflow-y:auto;flex:1;">
                     <div id="breadth-content" style="padding:8px;">
                         <div style="color:rgba(255,255,255,0.4);text-align:center;padding:40px 20px;font-size:12px;">
                             Breadth data will load after OHLCV data is ready…</div>
+                    </div>
+                    <!-- Fundamental breadth = Results Analysis, inline -->
+                    <div id="breadth-fundamental" style="display:none;">
+                        <div id="rd-fund-head">
+                            <span class="rd-title-dot"></span>
+                            <span style="font-weight:800;color:#fff;font-size:12px;">Results Analysis</span>
+                            <span id="rd-qtr-chip">—</span>
+                        </div>
+                        <div id="rd-controls">
+                            <div class="rd-seg" id="rd-dim-seg">
+                                <button data-v="sector" class="rd-on">Sectors</button>
+                                <button data-v="industry">Industries</button>
+                                <button data-v="index">Indices</button>
+                            </div>
+                            <div class="rd-seg" id="rd-agg-seg" title="Aggregate = size-weighted (Σ current vs Σ year-ago). Median = typical company, robust to outliers.">
+                                <button data-v="agg" class="rd-on">Aggregate</button>
+                                <button data-v="med">Median</button>
+                            </div>
+                            <select id="rd-mcap" class="rd-mcap-sel" title="Minimum market cap filter">
+                                <option value="0">All MCap</option>
+                                <option value="500">MCap ≥ 500 Cr</option>
+                                <option value="2000">MCap ≥ 2,000 Cr</option>
+                                <option value="10000">MCap ≥ 10,000 Cr</option>
+                            </select>
+                            <select id="rd-qtr" class="rd-mcap-sel" title="Analyze a specific result quarter">
+                                <option value="latest">Latest Quarter</option>
+                            </select>
+                        </div>
+                        <div id="rd-kpis"></div>
+                        <div id="rd-podium"></div>
+                        <div id="rd-table-wrap">
+                            <table class="rd-table">
+                                <thead id="rd-thead"></thead>
+                                <tbody id="rd-tbody"></tbody>
+                            </table>
+                            <div id="rd-empty">No groups match the current filters.</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -9566,6 +9610,32 @@
         window._breadthView = window._breadthView || 'table';
         window._breadthTab = window._breadthTab || 'sector';
         window._breadthExpanded = window._breadthExpanded || {};
+        window._breadthMode = window._breadthMode || 'tech';
+
+        // Toggle between Technical (price/volume) and Fundamental (earnings) breadth
+        function switchBreadthMode(mode) {
+            window._breadthMode = mode;
+            const techBtn = document.getElementById('breadth-mode-tech');
+            const fundBtn = document.getElementById('breadth-mode-fund');
+            const techPane = document.getElementById('breadth-content');
+            const fundPane = document.getElementById('breadth-fundamental');
+            if (techBtn) techBtn.classList.toggle('active', mode === 'tech');
+            if (fundBtn) fundBtn.classList.toggle('active', mode === 'fund');
+            if (techPane) techPane.style.display = mode === 'tech' ? '' : 'none';
+            if (fundPane) fundPane.style.display = mode === 'fund' ? '' : 'none';
+            if (mode === 'fund' && typeof window.refreshResultsDash === 'function') window.refreshResultsDash();
+        }
+        window.switchBreadthMode = switchBreadthMode;
+
+        // Refresh whichever breadth mode is currently active (used by the ↻ button)
+        function refreshActiveBreadth() {
+            if (window._breadthMode === 'fund') {
+                if (typeof window.refreshResultsDash === 'function') window.refreshResultsDash();
+            } else {
+                renderBreadthTab(window._breadthSort || 'momentum', window._breadthDir || 1);
+            }
+        }
+        window.refreshActiveBreadth = refreshActiveBreadth;
 
         function renderBreadthTab(sortKey, sortDir) {
             sortKey = sortKey || window._breadthSort || 'momentum';
@@ -16345,6 +16415,901 @@
         })();
     </script>
 
+
+    <!-- ══════════════════════════════════════════════════════
+     RESULTS ANALYSIS DASHBOARD  (R button)
+     Sector / Industry / Index earnings & revenue growth engine
+══════════════════════════════════════════════════════ -->
+    <style>
+        /* ── Breadth mode bar: Technical | Fundamental ── */
+        .breadth-mode-bar {
+            display: flex;
+            gap: 6px;
+            padding: 7px 8px 3px;
+            flex-shrink: 0;
+        }
+
+        .breadth-mode-btn {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: rgba(255, 255, 255, 0.5);
+            font-family: 'Lexend', sans-serif;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 7px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .breadth-mode-btn:hover {
+            color: #fff;
+            border-color: rgba(255, 255, 255, 0.18);
+        }
+
+        .breadth-mode-btn.active {
+            background: rgba(168, 85, 247, 0.18);
+            border-color: rgba(168, 85, 247, 0.55);
+            color: #c084fc;
+        }
+
+        /* Fundamental (Results Analysis) — inline inside the Breadth pane */
+        #breadth-fundamental {
+            font-family: 'Lexend', sans-serif;
+        }
+
+        #rd-fund-head {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 4px 2px;
+            flex-shrink: 0;
+        }
+
+        .rd-title-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #a855f7, #6366f1);
+            box-shadow: 0 0 12px rgba(168, 85, 247, 0.6);
+            flex-shrink: 0;
+        }
+
+        #rd-qtr-chip {
+            font-size: 9.5px;
+            font-weight: 700;
+            color: #c084fc;
+            background: rgba(168, 85, 247, 0.12);
+            border: 1px solid rgba(168, 85, 247, 0.3);
+            border-radius: 10px;
+            padding: 2px 8px;
+            white-space: nowrap;
+        }
+
+        /* Controls row */
+        #rd-controls {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 4px;
+            flex-wrap: wrap;
+            flex-shrink: 0;
+        }
+
+        .rd-seg {
+            display: flex;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.09);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .rd-seg button {
+            background: transparent;
+            border: none;
+            color: rgba(255, 255, 255, 0.45);
+            font-family: 'Lexend', sans-serif;
+            font-size: 10.5px;
+            font-weight: 700;
+            padding: 6px 12px;
+            cursor: pointer;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+
+        .rd-seg button:hover {
+            color: #fff;
+        }
+
+        .rd-seg button.rd-on {
+            background: rgba(168, 85, 247, 0.22);
+            color: #c084fc;
+        }
+
+        .rd-mcap-sel {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.09);
+            border-radius: 8px;
+            color: #e8e8ed;
+            font-family: 'Lexend', sans-serif;
+            font-size: 10.5px;
+            font-weight: 600;
+            padding: 6px 9px;
+            cursor: pointer;
+            outline: none;
+        }
+
+        .rd-mcap-sel option {
+            background: #16161e;
+        }
+
+        /* KPI strip */
+        #rd-kpis {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 6px;
+            padding: 8px 4px 4px;
+            flex-shrink: 0;
+        }
+
+        .rd-kpi {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 11px;
+            padding: 9px 10px 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .rd-kpi-val {
+            font-size: 17px;
+            font-weight: 800;
+            line-height: 1.1;
+            color: #e8e8ed;
+        }
+
+        .rd-kpi-lbl {
+            font-size: 8.5px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: rgba(255, 255, 255, 0.35);
+        }
+
+        .rd-kpi-sub {
+            font-size: 8.5px;
+            color: rgba(255, 255, 255, 0.3);
+        }
+
+        /* Podium */
+        #rd-podium {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 6px;
+            padding: 6px 4px 4px;
+            flex-shrink: 0;
+        }
+
+        .rd-pod {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            background: linear-gradient(135deg, rgba(168, 85, 247, 0.09), rgba(59, 130, 246, 0.05));
+            border: 1px solid rgba(168, 85, 247, 0.22);
+            border-radius: 11px;
+            padding: 8px 11px;
+            cursor: pointer;
+            transition: all 0.15s;
+            min-width: 0;
+        }
+
+        .rd-pod:hover {
+            border-color: rgba(168, 85, 247, 0.55);
+            transform: translateY(-1px);
+        }
+
+        .rd-pod-medal {
+            font-size: 19px;
+            flex-shrink: 0;
+        }
+
+        .rd-pod-name {
+            font-size: 11px;
+            font-weight: 700;
+            color: #f1f5f9;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .rd-pod-stats {
+            font-size: 9px;
+            color: rgba(255, 255, 255, 0.45);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .rd-pod-mom {
+            margin-left: auto;
+            flex-shrink: 0;
+        }
+
+        /* Table */
+        #rd-table-wrap {
+            overflow-x: auto;
+            padding: 6px 2px 16px;
+            scrollbar-width: none;
+        }
+
+        #rd-table-wrap::-webkit-scrollbar {
+            display: none;
+        }
+
+        .rd-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+
+        .rd-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 3;
+            background: #101018;
+            color: rgba(255, 255, 255, 0.42);
+            font-size: 8.5px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 8px 6px;
+            text-align: right;
+            white-space: nowrap;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .rd-table thead th:first-child {
+            text-align: left;
+        }
+
+        .rd-table thead th:hover {
+            color: #c084fc;
+        }
+
+        .rd-table tbody td {
+            padding: 7px 6px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+            text-align: right;
+            white-space: nowrap;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.75);
+        }
+
+        .rd-table tbody td:first-child {
+            text-align: left;
+        }
+
+        .rd-row {
+            cursor: pointer;
+            transition: background 0.12s;
+        }
+
+        .rd-row:hover td {
+            background: rgba(255, 255, 255, 0.035);
+        }
+
+        .rd-gname {
+            font-weight: 700;
+            color: #e8e8ed;
+            max-width: 190px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: inline-block;
+            vertical-align: middle;
+        }
+
+        .rd-exp-ico {
+            color: rgba(255, 255, 255, 0.25);
+            font-size: 8px;
+            margin-right: 5px;
+        }
+
+        .rd-gbar {
+            display: inline-block;
+            vertical-align: middle;
+            width: 44px;
+            height: 5px;
+            background: rgba(255, 255, 255, 0.06);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-left: 6px;
+        }
+
+        .rd-gbar>i {
+            display: block;
+            height: 100%;
+            border-radius: 3px;
+        }
+
+        .rd-mom-badge {
+            display: inline-block;
+            min-width: 26px;
+            text-align: center;
+            font-size: 10px;
+            font-weight: 800;
+            padding: 2px 6px;
+            border-radius: 5px;
+            color: #fff;
+        }
+
+        /* Expanded detail row */
+        .rd-detail td {
+            padding: 0 !important;
+            background: rgba(168, 85, 247, 0.04);
+        }
+
+        .rd-detail-inner {
+            padding: 10px 14px 12px;
+            border-left: 2px solid rgba(168, 85, 247, 0.4);
+            text-align: left;
+        }
+
+        .rd-detail-stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 9px;
+        }
+
+        .rd-ds {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 7px;
+            padding: 5px 9px;
+            display: flex;
+            flex-direction: column;
+            min-width: 74px;
+        }
+
+        .rd-ds-l {
+            font-size: 8px;
+            color: rgba(255, 255, 255, 0.35);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            font-weight: 700;
+        }
+
+        .rd-ds-v {
+            font-size: 12px;
+            font-weight: 800;
+            color: #e8e8ed;
+        }
+
+        .rd-contrib-lbl {
+            font-size: 8.5px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: rgba(255, 255, 255, 0.35);
+            margin: 3px 0 5px;
+        }
+
+        .rd-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+
+        .rd-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 9.5px;
+            font-weight: 700;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            padding: 3px 8px;
+            cursor: pointer;
+            transition: all 0.13s;
+            color: #cbd5e1;
+        }
+
+        .rd-chip:hover {
+            background: rgba(96, 165, 250, 0.14);
+            border-color: rgba(96, 165, 250, 0.45);
+            color: #93c5fd;
+        }
+
+        .rd-pos { color: #00e676; }
+        .rd-neg { color: #ff4d4f; }
+        .rd-neu { color: rgba(255, 255, 255, 0.4); }
+
+        #rd-empty {
+            padding: 46px 20px;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.35);
+            font-size: 13px;
+            display: none;
+        }
+
+        @media (max-width: 900px) {
+            #rd-kpis { grid-template-columns: repeat(2, 1fr); }
+            #rd-podium { grid-template-columns: 1fr; }
+            .rd-table thead th, .rd-table tbody td { padding: 6px 4px; font-size: 9.5px; }
+        }
+    </style>
+
+    <script>
+        /* ══════════════════════════════════════════════════════
+           RESULTS ANALYSIS ENGINE
+           Computes per-group (sector / industry / index) earnings &
+           revenue growth from the imported quarterly results:
+             • Aggregate growth  — size-weighted: Σcurrent vs Σyear-ago
+             • Median growth     — the "typical company", outlier-proof
+             • Breadth           — % of companies growing profits
+             • Acceleration      — % growing YoY *and* sequentially (QoQ)
+             • Margin trend      — aggregate EBITDA margin now vs year-ago
+             • Turnarounds       — loss → profit flips (and the reverse)
+             • Momentum score    — 0-100 composite for instant ranking
+        ══════════════════════════════════════════════════════ */
+        (function () {
+            'use strict';
+
+            const ST = {
+                dim: 'sector',      // sector | industry | index
+                agg: 'agg',         // agg | med
+                mcap: 0,
+                minN: 1,
+                qtr: 'latest',      // 'latest' | specific quarter name
+                sortKey: 'mom',
+                sortDir: -1,
+                expanded: {}
+            };
+
+            const pf = v => { const x = parseFloat(v); return isNaN(x) ? null : x; };
+            const median = arr => {
+                if (!arr.length) return null;
+                const a = arr.slice().sort((x, y) => x - y);
+                const m = a.length >> 1;
+                return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+            };
+            const growth = (c, y) => {
+                if (c === null || y === null || y === 0) return null;
+                return ((c - y) / Math.abs(y)) * 100;
+            };
+            const clampG = g => g === null ? null : Math.max(-999, Math.min(999, g));
+            const nrm = (v, lo, hi) => v === null ? 0.5 : Math.max(0, Math.min(1, (v - lo) / (hi - lo)));
+
+            function fmtG(g, plain) {
+                if (g === null || !isFinite(g)) return '<span class="rd-neu">—</span>';
+                const v = clampG(g);
+                const txt = (v > 0 ? '+' : '') + (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1)) + '%' + (Math.abs(g) > 999 ? '+' : '');
+                if (plain) return txt;
+                const cls = v > 0.5 ? 'rd-pos' : v < -0.5 ? 'rd-neg' : 'rd-neu';
+                return '<span class="' + cls + '">' + txt + '</span>';
+            }
+            function fmtPct(v) {
+                if (v === null) return '<span class="rd-neu">—</span>';
+                const cls = v >= 60 ? 'rd-pos' : v <= 40 ? 'rd-neg' : 'rd-neu';
+                return '<span class="' + cls + '">' + Math.round(v) + '%</span>';
+            }
+            function fmtBps(v) {
+                if (v === null || !isFinite(v)) return '<span class="rd-neu">—</span>';
+                const cls = v > 10 ? 'rd-pos' : v < -10 ? 'rd-neg' : 'rd-neu';
+                return '<span class="' + cls + '">' + (v > 0 ? '+' : '') + Math.round(v) + '</span>';
+            }
+            function momColor(m) {
+                return m >= 70 ? 'linear-gradient(135deg,#00e676,#00b35c)'
+                    : m >= 55 ? 'linear-gradient(135deg,#3b82f6,#2563eb)'
+                        : m >= 40 ? 'linear-gradient(135deg,#f59e0b,#d97706)'
+                            : 'linear-gradient(135deg,#ff4d4f,#dc2626)';
+            }
+            const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+            /* ── Extract one company's result numbers ── */
+            function rowNums(r) {
+                return {
+                    tk: r._ticker,
+                    name: r._coName,
+                    mcap: isNaN(r._mcap) ? 0 : r._mcap,
+                    score: r._score,
+                    sC: pf(r['Sales (Current)']), sP: pf(r['Sales (Previous)']), sY: pf(r['Sales (YoY Qtr)']),
+                    eC: pf(r['EBIDT (Current)']), eY: pf(r['EBIDT (YoY Qtr)']),
+                    nC: pf(r['Net Profit (Current)']), nP: pf(r['Net Profit (Previous)']), nY: pf(r['Net Profit (YoY Qtr)']),
+                    pC: pf(r['EPS (Current)']), pY: pf(r['EPS (YoY Qtr)'])
+                };
+            }
+
+            /* ── Aggregate one group of company rows ── */
+            function aggGroup(rows) {
+                const g = {
+                    n: rows.length,
+                    sSC: 0, sSY: 0, sEC: 0, sEY: 0, sNC: 0, sNY: 0,
+                    hasS: 0, hasN: 0,
+                    salesGs: [], npGs: [], epsGs: [],
+                    posNP: 0, accel: 0, accelDen: 0,
+                    turn: 0, newLoss: 0, goodBest: 0,
+                    contrib: []
+                };
+                rows.forEach(x => {
+                    if (x.sC !== null && x.sY !== null) { g.sSC += x.sC; g.sSY += x.sY; g.hasS++; }
+                    if (x.eC !== null && x.eY !== null) { g.sEC += x.eC; g.sEY += x.eY; }
+                    if (x.nC !== null && x.nY !== null) { g.sNC += x.nC; g.sNY += x.nY; g.hasN++; }
+                    const sg = growth(x.sC, x.sY), ng = growth(x.nC, x.nY), pg = growth(x.pC, x.pY);
+                    if (sg !== null) g.salesGs.push(clampG(sg));
+                    if (ng !== null) { g.npGs.push(clampG(ng)); if (ng > 0) g.posNP++; }
+                    if (pg !== null) g.epsGs.push(clampG(pg));
+                    // Acceleration: YoY positive AND sequential (QoQ) positive
+                    if (x.nC !== null && x.nP !== null && x.nY !== null) {
+                        g.accelDen++;
+                        if (x.nC > x.nY && x.nC > x.nP) g.accel++;
+                    }
+                    if (x.nY !== null && x.nC !== null) {
+                        if (x.nY < 0 && x.nC > 0) g.turn++;
+                        if (x.nY > 0 && x.nC < 0) g.newLoss++;
+                    }
+                    if (x.score >= 3) g.goodBest++;
+                    // Contributor weight: absolute NP swing (Cr) — who moved the needle
+                    const delta = (x.nC !== null && x.nY !== null) ? x.nC - x.nY : 0;
+                    g.contrib.push({ tk: x.tk, name: x.name, delta, ng: ng, sg: sg });
+                });
+
+                const out = {};
+                out.n = g.n;
+                out.aggSales = g.hasS >= 2 && Math.abs(g.sSY) > 0.01 ? growth(g.sSC, g.sSY) : null;
+                out.aggNP = g.hasN >= 2 && Math.abs(g.sNY) > 0.01 ? growth(g.sNC, g.sNY) : null;
+                out.medSales = median(g.salesGs);
+                out.medNP = median(g.npGs);
+                out.medEPS = median(g.epsGs);
+                out.breadth = g.npGs.length ? (g.posNP / g.npGs.length) * 100 : null;
+                out.accelPct = g.accelDen ? (g.accel / g.accelDen) * 100 : null;
+                out.turn = g.turn;
+                out.newLoss = g.newLoss;
+                out.goodBestPct = g.n ? (g.goodBest / g.n) * 100 : 0;
+                // Aggregate EBITDA margin now vs year-ago (bps)
+                const mNow = g.sSC > 0.01 ? (g.sEC / g.sSC) * 100 : null;
+                const mYoY = g.sSY > 0.01 ? (g.sEY / g.sSY) * 100 : null;
+                out.mNow = mNow; out.mYoY = mYoY;
+                out.marginBps = (mNow !== null && mYoY !== null) ? (mNow - mYoY) * 100 : null;
+                // Momentum 0-100
+                out.mom = Math.round(
+                    nrm(out.medSales, -25, 40) * 18 +
+                    nrm(out.medNP, -40, 70) * 22 +
+                    nrm(out.aggNP, -40, 80) * 15 +
+                    (out.breadth === null ? 0.5 : out.breadth / 100) * 20 +
+                    nrm(out.marginBps, -250, 250) * 12 +
+                    (out.accelPct === null ? 0.5 : out.accelPct / 100) * 13
+                );
+                // Top movers by absolute NP swing
+                g.contrib.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+                out.contrib = g.contrib.slice(0, 8);
+                return out;
+            }
+
+            /* allData is a `let` inside the app script (not a window prop);
+               the app exposes it as window._peerAllData after load */
+            function _rdData() {
+                return window._peerAllData || window.allData || [];
+            }
+
+            /* Quarter name → sortable timestamp ("Jun 2026", "Sep 2025", …) */
+            const _QMON = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+            function qtrTs(q) {
+                const m = String(q || '').trim().match(/([a-z]{3})[a-z]*[\s\-']*(\d{2,4})/i);
+                if (!m) return 0;
+                let y = +m[2]; if (y < 100) y += 2000;
+                const mo = _QMON[m[1].toLowerCase()];
+                return mo === undefined ? 0 : y * 12 + mo;
+            }
+            function latestQtr() {
+                const data = _rdData();
+                let best = null, bestTs = -1;
+                const seen = new Set();
+                data.forEach(r => {
+                    const q = r._qtr;
+                    if (!q || seen.has(q)) return;
+                    seen.add(q);
+                    const ts = qtrTs(q);
+                    if (ts > bestTs) { bestTs = ts; best = q; }
+                });
+                return best;
+            }
+            function activeQtr() {
+                return ST.qtr === 'latest' ? latestQtr() : ST.qtr;
+            }
+            function populateQtrSelect() {
+                const sel = document.getElementById('rd-qtr');
+                if (!sel) return;
+                const data = _rdData();
+                const qs = [...new Set(data.map(r => r._qtr).filter(Boolean))]
+                    .sort((a, b) => qtrTs(b) - qtrTs(a));
+                const prev = sel.value;
+                sel.innerHTML = '<option value="latest">Latest Quarter</option>' +
+                    qs.map(q => '<option value="' + esc(q) + '">' + esc(q) + '</option>').join('');
+                // Keep selection if still valid, else fall back to latest
+                if (prev && (prev === 'latest' || qs.indexOf(prev) !== -1)) sel.value = prev;
+                else { sel.value = 'latest'; ST.qtr = 'latest'; }
+            }
+
+            /* ── Build all groups for the active dimension ── */
+            function computeGroups() {
+                const q = activeQtr();
+                const data = _rdData().filter(r => {
+                    if (q && r._qtr !== q) return false;
+                    if (ST.mcap > 0 && (isNaN(r._mcap) || r._mcap < ST.mcap)) return false;
+                    return true;
+                });
+                const nums = [];
+                data.forEach(r => {
+                    const x = rowNums(r);
+                    if (x.sC === null && x.nC === null) return; // no usable result
+                    x._sec = r._sec; x._ind = r._ind;
+                    nums.push(x);
+                });
+
+                const buckets = {};
+                if (ST.dim === 'index') {
+                    const idxMap = window.indexDataMap || {};
+                    const byTk = {};
+                    nums.forEach(x => { byTk[String(x.tk).toUpperCase()] = x; });
+                    Object.keys(idxMap).forEach(idxName => {
+                        const rows = [];
+                        idxMap[idxName].forEach(tk => { const x = byTk[tk]; if (x) rows.push(x); });
+                        if (rows.length) buckets[idxName] = rows;
+                    });
+                } else {
+                    const key = ST.dim === 'sector' ? '_sec' : '_ind';
+                    nums.forEach(x => {
+                        const k = x[key];
+                        if (!k) return;
+                        (buckets[k] = buckets[k] || []).push(x);
+                    });
+                }
+
+                const groups = [];
+                Object.keys(buckets).forEach(name => {
+                    const rows = buckets[name];
+                    if (rows.length < ST.minN) return;
+                    const g = aggGroup(rows);
+                    g.name = name;
+                    groups.push(g);
+                });
+                return { groups, universe: nums };
+            }
+
+            /* ── Market-wide KPI strip ── */
+            function renderKpis(universe) {
+                const el = document.getElementById('rd-kpis');
+                if (!el) return;
+                const salesGs = [], npGs = [];
+                let posNP = 0, nNP = 0, turn = 0, newLoss = 0, accel = 0, accelDen = 0;
+                let sNC = 0, sNY = 0, hasN = 0;
+                universe.forEach(x => {
+                    const sg = growth(x.sC, x.sY), ng = growth(x.nC, x.nY);
+                    if (sg !== null) salesGs.push(clampG(sg));
+                    if (ng !== null) { npGs.push(clampG(ng)); nNP++; if (ng > 0) posNP++; }
+                    if (x.nC !== null && x.nY !== null) { sNC += x.nC; sNY += x.nY; hasN++; }
+                    if (x.nY !== null && x.nC !== null) {
+                        if (x.nY < 0 && x.nC > 0) turn++;
+                        if (x.nY > 0 && x.nC < 0) newLoss++;
+                    }
+                    if (x.nC !== null && x.nP !== null && x.nY !== null) {
+                        accelDen++;
+                        if (x.nC > x.nY && x.nC > x.nP) accel++;
+                    }
+                });
+                const aggNPmkt = hasN >= 2 && Math.abs(sNY) > 0.01 ? growth(sNC, sNY) : null;
+                const breadth = nNP ? (posNP / nNP) * 100 : null;
+                const accelPct = accelDen ? (accel / accelDen) * 100 : null;
+                const kpi = (val, lbl, sub) =>
+                    '<div class="rd-kpi"><div class="rd-kpi-val">' + val + '</div><div class="rd-kpi-lbl">' + lbl + '</div>' +
+                    (sub ? '<div class="rd-kpi-sub">' + sub + '</div>' : '') + '</div>';
+                el.innerHTML =
+                    kpi(universe.length.toLocaleString(), 'Companies', 'with results' + (ST.mcap ? ' · ≥' + ST.mcap.toLocaleString() + ' Cr' : '')) +
+                    kpi(fmtG(median(salesGs)), 'Median Sales YoY', 'typical company') +
+                    kpi(fmtG(median(npGs)), 'Median Profit YoY', 'typical company') +
+                    kpi(fmtG(aggNPmkt), 'Aggregate Profit YoY', 'Σ market earnings') +
+                    kpi(fmtPct(breadth), 'Earnings Breadth', '% growing profits') +
+                    kpi(fmtPct(accelPct), 'Accelerating', 'up YoY and QoQ');
+            }
+
+            /* ── Podium: top 3 groups by momentum ── */
+            function renderPodium(groups) {
+                const el = document.getElementById('rd-podium');
+                if (!el) return;
+                const top = groups.slice().sort((a, b) => b.mom - a.mom).slice(0, 3);
+                const medals = ['🥇', '🥈', '🥉'];
+                el.innerHTML = top.map((g, i) =>
+                    '<div class="rd-pod" onclick="window._rdFilterGroup(\'' + esc(g.name).replace(/'/g, "\\'") + '\')" title="Click to filter the terminal to ' + esc(g.name) + '">' +
+                    '<span class="rd-pod-medal">' + medals[i] + '</span>' +
+                    '<div style="min-width:0;"><div class="rd-pod-name">' + esc(g.name) + '</div>' +
+                    '<div class="rd-pod-stats">Sales ' + fmtG(ST.agg === 'agg' ? g.aggSales : g.medSales, true) +
+                    ' · NP ' + fmtG(ST.agg === 'agg' ? g.aggNP : g.medNP, true) +
+                    ' · Breadth ' + (g.breadth === null ? '—' : Math.round(g.breadth) + '%') + '</div></div>' +
+                    '<span class="rd-pod-mom rd-mom-badge" style="background:' + momColor(g.mom) + '">' + g.mom + '</span>' +
+                    '</div>'
+                ).join('');
+            }
+
+            /* ── Ranking table ── */
+            const COLS = [
+                { k: 'name', l: 'Group', tip: 'Sector / industry / index — click a row to expand contributors' },
+                { k: 'n', l: '#', tip: 'Companies with reported results' },
+                { k: 'sales', l: 'Sales', tip: 'Revenue growth YoY (Aggregate or Median per the toggle)' },
+                { k: 'np', l: 'Net Profit', tip: 'Profit growth YoY (Aggregate or Median per the toggle)' },
+                { k: 'medEPS', l: 'EPS', tip: 'Median EPS growth YoY' },
+                { k: 'breadth', l: 'Breadth', tip: '% of companies with profit growth > 0' },
+                { k: 'accelPct', l: 'Accel', tip: '% of companies growing YoY AND sequentially (QoQ)' },
+                { k: 'marginBps', l: 'Margin Δbps', tip: 'Aggregate EBITDA margin change vs year-ago, basis points' },
+                { k: 'turn', l: '↺', tip: 'Turnarounds: loss → profit' },
+                { k: 'mom', l: 'Mom', tip: 'Momentum score 0-100 (growth + breadth + margins + acceleration)' }
+            ];
+            function sortVal(g, key) {
+                if (key === 'sales') return ST.agg === 'agg' ? g.aggSales : g.medSales;
+                if (key === 'np') return ST.agg === 'agg' ? g.aggNP : g.medNP;
+                return g[key];
+            }
+            function renderTable(groups) {
+                const thead = document.getElementById('rd-thead');
+                const tbody = document.getElementById('rd-tbody');
+                const empty = document.getElementById('rd-empty');
+                if (!thead || !tbody) return;
+
+                thead.innerHTML = '<tr>' + COLS.map(c =>
+                    '<th onclick="window._rdSort(\'' + c.k + '\')" title="' + esc(c.tip) + '">' + c.l +
+                    (ST.sortKey === c.k ? (ST.sortDir < 0 ? ' ▼' : ' ▲') : '') + '</th>'
+                ).join('') + '</tr>';
+
+                const sorted = groups.slice().sort((a, b) => {
+                    if (ST.sortKey === 'name') return String(a.name).localeCompare(String(b.name)) * -ST.sortDir;
+                    let va = sortVal(a, ST.sortKey), vb = sortVal(b, ST.sortKey);
+                    va = (va === null || va === undefined || isNaN(va)) ? -Infinity : va;
+                    vb = (vb === null || vb === undefined || isNaN(vb)) ? -Infinity : vb;
+                    return (va - vb) * ST.sortDir; // sortDir -1 = descending
+                });
+
+                if (!sorted.length) {
+                    tbody.innerHTML = '';
+                    empty.style.display = 'block';
+                    return;
+                }
+                empty.style.display = 'none';
+
+                // Bar scale from the displayed sales metric
+                const salesVals = sorted.map(g => sortVal(g, 'sales')).filter(v => v !== null && isFinite(v));
+                const maxAbs = Math.max(10, ...salesVals.map(Math.abs));
+
+                tbody.innerHTML = sorted.map(g => {
+                    const gid = ST.dim + '|' + g.name;
+                    const isExp = !!ST.expanded[gid];
+                    const salesShown = sortVal(g, 'sales');
+                    const npShown = sortVal(g, 'np');
+                    const barPct = salesShown === null ? 0 : Math.min(100, Math.abs(clampG(salesShown)) / maxAbs * 100);
+                    const barClr = salesShown === null ? 'transparent' : salesShown >= 0 ? '#00e676' : '#ff4d4f';
+
+                    let html = '<tr class="rd-row" onclick="window._rdToggle(\'' + esc(gid).replace(/'/g, "\\'") + '\')">' +
+                        '<td><span class="rd-exp-ico">' + (isExp ? '▼' : '▶') + '</span><span class="rd-gname" title="' + esc(g.name) + '">' + esc(g.name) + '</span>' +
+                        '<span class="rd-gbar"><i style="width:' + barPct.toFixed(0) + '%;background:' + barClr + '"></i></span></td>' +
+                        '<td style="color:rgba(255,255,255,0.4);">' + g.n + '</td>' +
+                        '<td>' + fmtG(salesShown) + '</td>' +
+                        '<td>' + fmtG(npShown) + '</td>' +
+                        '<td>' + fmtG(g.medEPS) + '</td>' +
+                        '<td>' + fmtPct(g.breadth) + '</td>' +
+                        '<td>' + fmtPct(g.accelPct) + '</td>' +
+                        '<td>' + fmtBps(g.marginBps) + '</td>' +
+                        '<td>' + (g.turn ? '<span class="rd-pos">' + g.turn + '</span>' : '<span class="rd-neu">—</span>') + '</td>' +
+                        '<td><span class="rd-mom-badge" style="background:' + momColor(g.mom) + '">' + g.mom + '</span></td>' +
+                        '</tr>';
+
+                    if (isExp) {
+                        const ds = (l, v) => '<div class="rd-ds"><span class="rd-ds-l">' + l + '</span><span class="rd-ds-v">' + v + '</span></div>';
+                        const chips = g.contrib.map(c => {
+                            const cls = c.delta > 0 ? 'rd-pos' : c.delta < 0 ? 'rd-neg' : 'rd-neu';
+                            const gTxt = c.ng === null ? '—' : (c.ng > 0 ? '+' : '') + clampG(c.ng).toFixed(0) + '%';
+                            return '<span class="rd-chip" onclick="event.stopPropagation(); window._rdOpenStock(\'' + esc(c.tk) + '\')" title="' + esc(c.name) + ' — NP swing ' + (c.delta > 0 ? '+' : '') + c.delta.toFixed(0) + ' Cr">' +
+                                '<b>' + esc(c.tk) + '</b><span class="' + cls + '">' + gTxt + '</span></span>';
+                        }).join('');
+                        html += '<tr class="rd-detail"><td colspan="' + COLS.length + '"><div class="rd-detail-inner">' +
+                            '<div class="rd-detail-stats">' +
+                            ds('Agg Sales', fmtG(g.aggSales)) + ds('Med Sales', fmtG(g.medSales)) +
+                            ds('Agg NP', fmtG(g.aggNP)) + ds('Med NP', fmtG(g.medNP)) +
+                            ds('EBITDA Mgn', (g.mNow === null ? '—' : g.mNow.toFixed(1) + '%') + ' <span style="color:rgba(255,255,255,0.3);font-size:9px;">vs ' + (g.mYoY === null ? '—' : g.mYoY.toFixed(1) + '%') + '</span>') +
+                            ds('↺ Turnarounds', '<span class="rd-pos">' + g.turn + '</span>') +
+                            ds('⚠ New Losses', g.newLoss ? '<span class="rd-neg">' + g.newLoss + '</span>' : '—') +
+                            ds('Good+Best %', Math.round(g.goodBestPct) + '%') +
+                            '</div>' +
+                            '<div class="rd-contrib-lbl">Biggest profit movers (₹ Cr swing) — click to open</div>' +
+                            '<div class="rd-chips">' + chips + '</div>' +
+                            '<div style="margin-top:8px;"><span class="rd-chip" style="background:rgba(168,85,247,0.12);border-color:rgba(168,85,247,0.4);color:#c084fc;" onclick="event.stopPropagation(); window._rdFilterGroup(\'' + esc(g.name).replace(/'/g, "\\'") + '\')">⤷ Filter terminal to ' + esc(g.name) + '</span></div>' +
+                            '</div></td></tr>';
+                    }
+                    return html;
+                }).join('');
+            }
+
+            /* ── Full refresh ── */
+            function refresh() {
+                const data = _rdData();
+                if (!data.length) {
+                    document.getElementById('rd-kpis').innerHTML =
+                        '<div class="rd-kpi" style="grid-column:1/-1;"><div class="rd-kpi-val" style="font-size:13px;color:rgba(255,255,255,0.5);">⏳ Waiting for results data to load…</div></div>';
+                    // Retry while the app is still fetching, as long as Fundamental view is showing
+                    clearTimeout(window._rdRetryTimer);
+                    window._rdRetryTimer = setTimeout(function () {
+                        const box = document.getElementById('breadth-fundamental');
+                        if (box && box.style.display !== 'none') refresh();
+                    }, 1200);
+                    return;
+                }
+                // Quarter dropdown + header chip showing the analyzed quarter
+                populateQtrSelect();
+                const q = activeQtr();
+                const chip = document.getElementById('rd-qtr-chip');
+                if (chip) chip.textContent = q ? q + (ST.qtr === 'latest' ? ' (latest)' : '') : '—';
+
+                const { groups, universe } = computeGroups();
+                renderKpis(universe);
+                renderPodium(groups);
+                renderTable(groups);
+            }
+
+            /* ── Public handlers ── */
+            window._rdSort = function (key) {
+                if (ST.sortKey === key) ST.sortDir = -ST.sortDir;
+                else { ST.sortKey = key; ST.sortDir = -1; }
+                refresh();
+            };
+            window._rdToggle = function (gid) {
+                ST.expanded[gid] = !ST.expanded[gid];
+                refresh();
+            };
+            window._rdOpenStock = function (tk) {
+                if (typeof window.searchStock === 'function') window.searchStock(tk);
+            };
+            window._rdFilterGroup = function (name) {
+                if (ST.dim === 'sector' && typeof window.setSectorFilter === 'function') window.setSectorFilter(name);
+                else if (ST.dim === 'industry' && typeof window.setIndustryFilter === 'function') window.setIndustryFilter(name);
+                else if (ST.dim === 'index') {
+                    const sel = document.getElementById('index-filter');
+                    if (sel) {
+                        sel.value = name;
+                        if (sel.value !== name) sel.value = 'all'; // option missing safety
+                        if (typeof doFilter === 'function') doFilter();
+                    }
+                }
+            };
+
+            /* ── Controls wiring ── */
+            function wireSeg(segId, stKey) {
+                const seg = document.getElementById(segId);
+                if (!seg) return;
+                seg.querySelectorAll('button').forEach(btn => {
+                    btn.addEventListener('click', function () {
+                        seg.querySelectorAll('button').forEach(b => b.classList.remove('rd-on'));
+                        this.classList.add('rd-on');
+                        ST[stKey] = this.dataset.v;
+                        if (stKey === 'dim') ST.expanded = {};
+                        refresh();
+                    });
+                });
+            }
+            wireSeg('rd-dim-seg', 'dim');
+            wireSeg('rd-agg-seg', 'agg');
+            const mcapSel = document.getElementById('rd-mcap');
+            if (mcapSel) mcapSel.addEventListener('change', function () { ST.mcap = parseFloat(this.value) || 0; refresh(); });
+            const qtrSel = document.getElementById('rd-qtr');
+            if (qtrSel) qtrSel.addEventListener('change', function () { ST.qtr = this.value; ST.expanded = {}; refresh(); });
+
+            /* ── Inline lifecycle ── */
+            // Called by switchBreadthMode('fund') when the Fundamental tab is shown.
+            window.refreshResultsDash = function () { refresh(); };
+        })();
+    </script>
 
     <!-- ══════════════════════════════════════════════════════
      INDEXEDDB + GZIP CACHE ENGINE
