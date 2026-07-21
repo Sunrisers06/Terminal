@@ -160,8 +160,6 @@
             background: none;
         }
 
-
-
         /* ══════════════════════════════
    SCROLL TO TOP BUTTON
 ══════════════════════════════ */
@@ -641,8 +639,6 @@
             height: 40px;
             filter: brightness(0) invert(1);
         }
-
-
 
         .search-wrap {
             position: relative;
@@ -1185,7 +1181,6 @@
             color: var(--red);
             border-color: var(--vweak-brd);
         }
-
 
         /* ══════════════════════════════
    NEWS SIDEBAR — REDESIGNED
@@ -4341,7 +4336,6 @@
             }
         }
 
-
         /* ── Favorite / Holding Filter Buttons ── */
         .fh-filter-btn {
             height: 30px;
@@ -4804,7 +4798,6 @@
             opacity: 0.3;
             cursor: not-allowed;
         }
-
 
         /* ══════════════════════════════════════════════════════
    PEER COMPARISON OCTAGON POPUP
@@ -5285,8 +5278,6 @@
                 --4k-scale: 1.45;
                 /* base multiplier for most text / spacing */
             }
-
-
 
             /* ── Top bar ── */
             .topbar {
@@ -5960,10 +5951,6 @@
         }
     </style>
 
-
-
-
-
     <div id="top-filter-panel">
         <div class="top-panel-header">
             <span class="top-panel-title">🏆 Top Performers</span>
@@ -6117,8 +6104,6 @@
                         title="Refresh NSE News">↻</button>
                     <button class="fs-btn" onclick="toggleNewsFS('nsenews-section', this)" title="Fullscreen">⛶</button>
                 </div>
-
-
 
                 <div class="news-list" id="nsenews-list"></div>
             </div>
@@ -6676,6 +6661,8 @@
         window.resetAllAppFilters = function () {
             const searchInput = document.getElementById('search-input');
             if (searchInput) searchInput.value = '';
+            var dealSearchNode = document.getElementById('deal-search');
+            if (dealSearchNode) dealSearchNode.value = '';
 
             const clearBtn = document.getElementById('clear-search-btn');
             if (clearBtn) clearBtn.style.display = 'none';
@@ -6683,15 +6670,19 @@
             const wrap = document.getElementById('search-wrap');
             if (wrap) wrap.classList.remove('mob-expanded');
 
-            // Task 1: Also clear pane-level search inputs and reset their filtered data
+            // Clear pane-level search inputs and reset their filtered data
             const insightsSearch = document.getElementById('insights-search');
             if (insightsSearch) insightsSearch.value = '';
             const newsSearch = document.getElementById('news-search');
             if (newsSearch) newsSearch.value = '';
-            const dealSearch = document.getElementById('deal-search');
-            if (dealSearch) dealSearch.value = '';
+            var dealSearchNode = document.getElementById('deal-search');
+            if (dealSearchNode) dealSearchNode.value = '';
+            const nsenewsSearch = document.getElementById('nsenews-search');
+            if (nsenewsSearch) nsenewsSearch.value = '';
+            const superstarSearch = document.getElementById('superstar-search');
+            if (superstarSearch) superstarSearch.value = '';
 
-            ['qtr-filter', 'sec-filter', 'ind-filter', 'investor-filter'].forEach(id => {
+            ['qtr-filter', 'sec-filter', 'ind-filter', 'investor-filter', 'superstar-inv-filter', 'superstar-chg-filter'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.value = 'all';
             });
@@ -6722,22 +6713,37 @@
             window._breadthTab = 'sector';
             window._breadthIndex = 'Nifty_ALL';
             const breadthIdx = document.getElementById('breadth-index-select');
-            if (breadthIdx) breadthIdx.value = 'Nifty_ALL';
+            if (breadthIdx) {
+                breadthIdx.value = Array.from(breadthIdx.options).some(o => o.value === 'Nifty_ALL') ? 'Nifty_ALL' : 'all';
+                window._breadthIndex = breadthIdx.value;
+            }
             window._breadthExpanded = {};
 
             // Reset active tab to default (insights)
             if (typeof switchSidebarTab === 'function') switchSidebarTab('insights');
 
-            selectedCardTicker = null;
-            // Only remove news-selected from the one card that had it — no need to scan all
-            const prevSelected = document.getElementById('cards')?.querySelector('.stock-card.news-selected');
-            if (prevSelected) prevSelected.classList.remove('news-selected');
+            window.selectedCardTicker = null;
+            const prevSelected = document.getElementById('cards')?.querySelectorAll('.stock-card.news-selected');
+            if (prevSelected) prevSelected.forEach(el => el.classList.remove('news-selected'));
             const chip = document.getElementById('active-company-chip');
             if (chip) chip.classList.remove('show');
 
             if (typeof setFilterById === 'function') {
                 setFilterById('all');
             }
+
+            // Refresh dependent sections AFTER state reset
+            try {
+                if (typeof filterSuperstarBlock === 'function') {
+                    filterSuperstarBlock();
+                } else if (typeof renderSuperstarBlock === 'function') {
+                    renderSuperstarBlock();
+                }
+            } catch (e) { console.error(e); }
+            try { if (typeof calcSectorBreadth === 'function') calcSectorBreadth(); } catch (e) { console.error(e); }
+            try { if (typeof window.refreshActiveBreadth === 'function') window.refreshActiveBreadth(); } catch (e) { console.error(e); }
+            if (typeof filterBothNews === 'function') filterBothNews(null);
+            if (typeof window.filterDealBlock === 'function') window.filterDealBlock();
         };
 
         /* ══════════════════════════════════════════════════════
@@ -6781,8 +6787,8 @@
 
             function restoreScroll() {
                 // Most robust method: scroll directly to the DOM element they clicked
-                if (typeof selectedCardTicker !== 'undefined' && selectedCardTicker) {
-                    const selCard = document.querySelector(`.stock-card[data-ticker="${selectedCardTicker}"]`);
+                if (typeof window.selectedCardTicker !== 'undefined' && window.selectedCardTicker) {
+                    const selCard = document.querySelector(`.stock-card[data-ticker="${window.selectedCardTicker}"]`);
                     if (selCard) {
                         selCard.scrollIntoView({ behavior: 'instant', block: 'center' });
                         return;
@@ -7398,12 +7404,42 @@
             clearTimeout(debTimer); // cancel any pending debounced filter — clear is instant
             const searchInput = document.getElementById('search-input');
             if (searchInput) searchInput.value = '';
+            var dealSearchNode = document.getElementById('deal-search');
+            if (dealSearchNode) dealSearchNode.value = '';
             const clearBtn = document.getElementById('clear-search-btn');
             if (clearBtn) clearBtn.style.display = 'none';
             const wrap = document.getElementById('search-wrap');
             if (wrap) wrap.classList.remove('mob-expanded');
+
+            window.selectedCardTicker = null;
+            const chip = document.getElementById('active-company-chip');
+            if (chip) chip.classList.remove('show');
+            const prevSelected = document.getElementById('cards')?.querySelectorAll('.stock-card.news-selected');
+            if (prevSelected) prevSelected.forEach(el => el.classList.remove('news-selected'));
+
+            // Reset superstar inputs BEFORE filtering
+            const ssSearch = document.getElementById('superstar-search');
+            if (ssSearch) ssSearch.value = '';
+            const ssInvFilter = document.getElementById('superstar-inv-filter');
+            if (ssInvFilter) ssInvFilter.value = 'all';
+            const ssChgFilter = document.getElementById('superstar-chg-filter');
+            if (ssChgFilter) ssChgFilter.value = 'all';
+
+            try {
+                if (typeof filterSuperstarBlock === 'function') {
+                    filterSuperstarBlock();
+                } else if (typeof renderSuperstarBlock === 'function') {
+                    renderSuperstarBlock();
+                }
+            } catch (e) { console.error(e); }
+            try { if (typeof calcSectorBreadth === 'function') calcSectorBreadth(); } catch (e) { console.error(e); }
+            try { if (typeof window.refreshActiveBreadth === 'function') window.refreshActiveBreadth(); } catch (e) { console.error(e); }
+
             // Re-filter without touching any other filters
             doFilter();
+            if (typeof filterBothNews === 'function') filterBothNews(null);
+            if (typeof window.filterDealBlock === 'function') window.filterDealBlock();
+
             // If peer popup was open, rebuild it with the restored (full) filter set
             const peerPopup = document.getElementById('peer-popup');
             if (peerPopup && peerPopup.style.display !== 'none' && typeof window._peerRebuildPeers === 'function') {
@@ -7496,7 +7532,7 @@
     </div>`;
         }
 
-        let selectedCardTicker = null;
+        window.selectedCardTicker = null;
         function buildCard(r, idx) {
             const score = r._score, si = SI[score];
 
@@ -7538,7 +7574,7 @@
                 const bars = buildZeroBaselineChart(yv, m.p, cv, r['Qtr Name (YoY)'], r['Qtr Name (Previous)'], r['Qtr Name (Current)']);
                 return `<div class="metric-cell"><div class="mc-top"><span class="mc-label">${m.l}</span><span class="ybadge ${yf.c}">${yf.t}</span></div><div class="mc-val ${valCls(m.c)}">${fmt(m.c)}</div>${bars}</div>`;
             }).join('');
-            const selClass = selectedCardTicker === r._ticker ? ' news-selected' : '';
+            const selClass = window.selectedCardTicker === r._ticker ? ' news-selected' : '';
 
             // ── Latest Result vs Chart view (toggle in filter bar) ──
             const cardViewMode = (window._cardViewMode === 'chart') ? 'chart' : 'latest';
@@ -8413,8 +8449,8 @@
 
         function onCardClick(coName, ticker, event) {
             if (event && event.target.tagName.toLowerCase() === 'a') return;
-            const prev = selectedCardTicker;
-            selectedCardTicker = ticker;
+            const prev = window.selectedCardTicker;
+            window.selectedCardTicker = ticker;
             // Only touch the cards that need class changes — avoid iterating all cards
             const cards = document.getElementById('cards');
             if (cards) {
@@ -8436,6 +8472,8 @@
             filterBothNews(newsQuery);
 
             // Clear superstar internal filters to ensure the selected company's data is not hidden
+            var dealSearchNode = document.getElementById('deal-search');
+            if (dealSearchNode) dealSearchNode.value = '';
             const ssSearch = document.getElementById('superstar-search');
             if (ssSearch) ssSearch.value = '';
             const ssInvFilter = document.getElementById('superstar-inv-filter');
@@ -8458,17 +8496,19 @@
         }
 
         function clearNewsFilter() {
-            if (selectedCardTicker) {
+            if (window.selectedCardTicker) {
                 const cards = document.getElementById('cards');
                 if (cards) {
-                    const sel = cards.querySelector(`.stock-card[data-ticker="${selectedCardTicker}"]`);
+                    const sel = cards.querySelector(`.stock-card[data-ticker="${window.selectedCardTicker}"]`);
                     if (sel) sel.classList.remove('news-selected');
                 }
             }
-            selectedCardTicker = null;
+            window.selectedCardTicker = null;
             const chip = document.getElementById('active-company-chip');
             if (chip) chip.classList.remove('show');
             // Also reset all superstar internal filters
+            var dealSearchNode = document.getElementById('deal-search');
+            if (dealSearchNode) dealSearchNode.value = '';
             const ssSearch = document.getElementById('superstar-search');
             if (ssSearch) ssSearch.value = '';
             const ssInvFilter = document.getElementById('superstar-inv-filter');
@@ -8477,7 +8517,15 @@
             if (ssChgFilter) ssChgFilter.value = 'all';
             // Restore news to match whatever is in the search bar
             filterBothNews(null);
-            renderSuperstarBlock();
+            try {
+                if (typeof filterSuperstarBlock === 'function') {
+                    filterSuperstarBlock();
+                } else if (typeof renderSuperstarBlock === 'function') {
+                    renderSuperstarBlock();
+                }
+            } catch (e) { console.error(e); }
+            try { if (typeof calcSectorBreadth === 'function') calcSectorBreadth(); } catch (e) { console.error(e); }
+            try { if (typeof window.refreshActiveBreadth === 'function') window.refreshActiveBreadth(); } catch (e) { console.error(e); }
             closeMobileNews();
         }
 
@@ -8568,6 +8616,33 @@
             const clearBtn = document.getElementById('clear-search-btn');
             if (clearBtn) clearBtn.style.display = q ? 'flex' : 'none';
             if (q) { const w = document.getElementById('search-wrap'); if (w) w.classList.add('mob-expanded'); }
+
+            // If search is cleared manually, also clear the active card selection and refresh dependent panes
+            if (!q) {
+                window.selectedCardTicker = null;
+                const chip = document.getElementById('active-company-chip');
+                if (chip) chip.classList.remove('show');
+                const prevSelected = document.getElementById('cards')?.querySelectorAll('.stock-card.news-selected');
+                if (prevSelected) prevSelected.forEach(el => el.classList.remove('news-selected'));
+
+                var dealSearchNode = document.getElementById('deal-search');
+                if (dealSearchNode) dealSearchNode.value = '';
+                const ssSearch = document.getElementById('superstar-search');
+                if (ssSearch) ssSearch.value = '';
+                const ssInvFilter = document.getElementById('superstar-inv-filter');
+                if (ssInvFilter) ssInvFilter.value = 'all';
+                const ssChgFilter = document.getElementById('superstar-chg-filter');
+                if (ssChgFilter) ssChgFilter.value = 'all';
+
+                if (typeof filterSuperstarBlock === 'function') {
+                    filterSuperstarBlock();
+                } else if (typeof renderSuperstarBlock === 'function') {
+                    renderSuperstarBlock();
+                }
+                if (typeof calcSectorBreadth === 'function') calcSectorBreadth();
+                if (typeof window.refreshActiveBreadth === 'function') window.refreshActiveBreadth();
+            }
+
             clearTimeout(debTimer);
             debTimer = setTimeout(function () { doFilter(); }, IS_MOBILE ? MOBILE_DEBOUNCE : 60);
         }
@@ -10091,12 +10166,6 @@
         };
     </script>
 
-
-
-
-
-
-
     <script>
         /* ══════════════════════════════════════════════════════
            FAVORITE / HOLDING TICKER FILTER
@@ -10180,7 +10249,6 @@
                     window._fhTickers.H = new Set(window._sheetHolds || []);
                 }
             };
-
 
             let _favTypeResolve = null;
             window.promptFavType = function (tk, isFF, isTF) {
@@ -10345,10 +10413,10 @@
                         _prevDoFilter();
                         // Reset news, insights, nse news if F/H deactivated
                         if (typeof filterBothNews === 'function') {
-                            if (typeof selectedCardTicker !== 'undefined' && selectedCardTicker) {
-                                const selCard = allData.find(r => r._ticker === selectedCardTicker);
+                            if (typeof window.selectedCardTicker !== 'undefined' && window.selectedCardTicker) {
+                                const selCard = allData.find(r => r._ticker === window.selectedCardTicker);
                                 const coName = selCard ? selCard._coName : '';
-                                filterBothNews(`${String(selectedCardTicker).trim()} | ${String(coName).trim()}`);
+                                filterBothNews(`${String(window.selectedCardTicker).trim()} | ${String(coName).trim()}`);
                             } else {
                                 filterBothNews();
                             }
@@ -14091,11 +14159,7 @@
     </script>
     <script></script>
 
-
-
     <script></script>
-
-
 
     <!-- ══════════════════════════════════════════════════════
      MOBILE: Pull-to-Refresh Block + Swipe Back/Forward
@@ -14946,7 +15010,6 @@
         })();
     </script>
 
-
     <script>// Write JavaScript here</script>
     <script>
         /* (patchMcapBoxes removed as hover is now in Compare button) */        /* ══════════════════════════════════════════════════════
@@ -15015,8 +15078,6 @@
         })();
     </script>
 
-
-
     <!-- ══════════════════════════════════════════════════════
      DEAL BLOCK ENGINE — modular, no existing code touched
 ══════════════════════════════════════════════════════ -->
@@ -15064,7 +15125,6 @@
 
             /* ── Pagination state: offset per sub-section ── */
             let _renderOffset = { insider: 0, bulk: 0, block: 0, sast: 0 };
-
 
             /* ── CSV splitter (handles quoted commas) ── */
             function splitLine(line) {
@@ -15302,7 +15362,12 @@
 
             /* ── Global search bar handler ── */
             window.filterDealBlock = function () {
-                _globalQ = document.getElementById('deal-search') ? document.getElementById('deal-search').value.trim().toLowerCase() : '';
+                const ds = document.getElementById('deal-search');
+                _globalQ = ds ? ds.value.trim().toLowerCase() : '';
+                if (!_globalQ && window.selectedCardTicker && typeof clearMainSearch === 'function') {
+                    clearMainSearch();
+                    return;
+                }
                 // Apply filters for ALL subs in one pass
                 ['insider', 'bulk', 'block', 'sast'].forEach(sub => applyFilters(sub));
                 // Update ALL sub-tab counts immediately
@@ -15464,7 +15529,8 @@
                 const personLink = row['Person Link']
                     ? `<a class="dt-person dt-link" href="${escH(row['Person Link'])}" target="_blank" rel="noopener">${person}</a>`
                     : `<span class="dt-person">${person}</span>`;
-                const tickerEl = `<span class="dt-ticker" onclick="setDealTickerFilter('${ticker}')">${ticker}</span>`;
+                const safeTicker = ticker.replace(/'/g, "\\'");
+                const tickerEl = `<span class="dt-ticker" onclick="setDealTickerFilter('${safeTicker}')">${ticker}</span>`;
 
                 if (sub === 'insider') {
                     // Task 1: Handle mixed VALUE types — numeric (Lacs) or alphanumeric (e.g. "59.2 crore")
@@ -15549,8 +15615,27 @@
                 inp.value = ticker;
                 const clrBtn = document.getElementById('clear-search-btn');
                 if (clrBtn) clrBtn.style.display = 'flex';
+
+                var dealSearchNode = document.getElementById('deal-search');
+                if (dealSearchNode) dealSearchNode.value = ticker;
+
+                window.selectedCardTicker = String(ticker).trim();
+
+                // Clear superstar inputs before filtering for the new ticker
+                var dealSearchNode = document.getElementById('deal-search');
+                if (dealSearchNode) dealSearchNode.value = '';
+                const ssSearch = document.getElementById('superstar-search');
+                if (ssSearch) ssSearch.value = '';
+                const ssInvFilter = document.getElementById('superstar-inv-filter');
+                if (ssInvFilter) ssInvFilter.value = 'all';
+                const ssChgFilter = document.getElementById('superstar-chg-filter');
+                if (ssChgFilter) ssChgFilter.value = 'all';
+
+                if (typeof filterSuperstarBlock === 'function') filterSuperstarBlock();
+                if (typeof window.refreshActiveBreadth === 'function') window.refreshActiveBreadth();
+
                 if (typeof doFilter === 'function') doFilter();
-                filterDealBlock();
+                if (typeof window.filterDealBlock === 'function') window.filterDealBlock();
             };
 
             /* ── HTML escape helper ── */
@@ -15613,7 +15698,7 @@
             if (typeof _origFBN === 'function') {
                 window.filterBothNews = function (forcedQuery) {
                     // Check if F/H filter is active and should override standard behavior
-                    const isCardSelected = typeof selectedCardTicker !== 'undefined' && selectedCardTicker;
+                    const isCardSelected = typeof window.selectedCardTicker !== 'undefined' && window.selectedCardTicker;
                     const fhActive = window._fhState && window._fhState.active;
 
                     if (!isCardSelected && fhActive && window._fhLoaded && window._fhTickers && window._fhTickers[fhActive] && window._fhTickers[fhActive].size) {
@@ -15689,24 +15774,9 @@
                 _syncDeals();
             };
 
-            /* ── Patch resetAllAppFilters (Issue 3) ──────────────────────
-               The logo click and Clear button call resetAllAppFilters.
-               It clears the stock cards and calls doFilter() but never
-               calls filterBothNews, so the deal block is never reset.
-            ─────────────────────────────────────────────────────────────── */
-            var _prevReset = window.resetAllAppFilters;
-            window.resetAllAppFilters = function () {
-                window._dealCardQ = null; // clear override so applyFilters reads the (now-empty) search bar
-                // Also clear deal pane search state
-                const dealSearch = document.getElementById('deal-search');
-                if (dealSearch) dealSearch.value = '';
-                _prevReset();
-                _syncDeals();
-            };
-
         })();
     </script>
-    ══════════════════════════════════════════════════════ -->
+    <!-- ══════════════════════════════════════════════════════ -->
     <script>
         (function () {
             'use strict';
@@ -16417,7 +16487,6 @@
 
         })();
     </script>
-
 
     <!-- ══════════════════════════════════════════════════════
      RESULTS ANALYSIS DASHBOARD  (R button)
@@ -18080,8 +18149,6 @@
             color: #fff;
         }
 
-
-
         /* ── Surveillance Flags column (right side, next to tech-score-box) ── */
         .surv-flags-col {
             display: flex;
@@ -18177,7 +18244,7 @@
     </style>
 
     <!-- SuperStar Analytics Popup -->
-    <div id="superstar-analytics-popup">
+    <div id="superstar-analytics-popup" style="display: none;">
         <div class="sa-header">
             <span>SuperStar Analytics</span>
             <span class="sa-close" onclick="closeSuperstarAnalytics()">✕</span>
@@ -18293,8 +18360,8 @@
                 }
             }
 
-            if (typeof selectedCardTicker !== 'undefined' && selectedCardTicker) {
-                const tk = selectedCardTicker.toLowerCase().trim().replace(/\.ns$/, '');
+            if (typeof window.selectedCardTicker !== 'undefined' && window.selectedCardTicker) {
+                const tk = window.selectedCardTicker.toLowerCase().trim().replace(/\.ns$/, '');
                 data = data.filter(r => {
                     const rtk = String(r.Ticker || '').toLowerCase().trim().replace(/\.ns$/, '');
                     return rtk === tk;
@@ -18329,8 +18396,8 @@
             }
 
             data.sort((a, b) => {
-                let va = a[ssSortCol] || '';
-                let vb = b[ssSortCol] || '';
+                let va = String(a[ssSortCol] || '');
+                let vb = String(b[ssSortCol] || '');
 
                 if (ssSortCol === 'Holding' || ssSortCol === 'Change') {
                     const na = parseFloat(va.replace(/[^0-9.-]/g, '')) || 0;
@@ -18460,22 +18527,6 @@
             }
         };
 
-        // Patch resetAllAppFilters to also reset superstar section
-        const _origResetSuperstar = window.resetAllAppFilters;
-        window.resetAllAppFilters = function () {
-            if (typeof _origResetSuperstar === 'function') _origResetSuperstar();
-
-            const ssInput = document.getElementById('superstar-search');
-            if (ssInput) ssInput.value = '';
-
-            const ssInv = document.getElementById('superstar-inv-filter');
-            if (ssInv) ssInv.value = 'all';
-
-            const ssChg = document.getElementById('superstar-chg-filter');
-            if (ssChg) ssChg.value = 'all';
-
-            if (typeof filterSuperstarBlock === 'function') filterSuperstarBlock();
-        };
     </script>
     <style>
         /* ══════════════════════════════════════════════════════
@@ -19447,7 +19498,6 @@
             color: #e8e8ed;
         }
 
-
         #fs-replay-status {
             font-size: 9px;
             color: rgba(255, 255, 255, 0.28);
@@ -19598,7 +19648,6 @@
         .fs-pt-analysis-card.red .fs-pt-analysis-card-value {
             color: #f43f5e;
         }
-
 
         #fs-pt-pnl {
             font-size: 11px;
@@ -19938,8 +19987,6 @@
         #fs-drum-x {
             color: rgba(255, 255, 255, 0.4);
         }
-
-
 
         /* ═══ SIDEBAR REDESIGN ═══ */
         #fs-sidebar {
@@ -20446,8 +20493,6 @@
                 </div>
             </div>
 
-
-
         </div>
 
         <!-- Right Chart Area — edge-to-edge, zero padding -->
@@ -20743,7 +20788,6 @@
                     <option value="favorites">Favorites</option>
                     <option value="holdings">Holdings</option>
                 `;
-
 
                 // Add individual indices if available
                 if (window.indexDataMap) {
@@ -21227,10 +21271,7 @@
                     }
                 }
 
-
             };
-
-
 
             // ── Candlestick Replay engine ──────────────────────────────────────────
             window._fsReplay = { timer: null, paused: false, active: false, currentMaxDate: 0, endDate: 0 };
