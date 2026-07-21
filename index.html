@@ -12052,6 +12052,12 @@
                     }
                 }
 
+                const isFs = pCv.id === 'fs-chart-pcv';
+                const _rsCvEl = isFs ? document.getElementById('fs-chart-rscv') : null;
+                if (_rsCvEl && indCv && _rsCvEl.parentNode === indCv.parentNode) {
+                    _rsCvEl.parentNode.insertBefore(_rsCvEl, indCv);
+                }
+
                 if (!allRaw.length) {
                     loadEl.innerHTML = '<span style="color:#f43f5e;font-size:11px;">No data for ' + ticker + '</span>';
                     loadEl.style.display = 'flex'; pCv.style.display = 'none'; vCv.style.display = 'none';
@@ -12339,8 +12345,6 @@
                     return;
                 }
 
-                const isFs = (pCv && pCv.id === 'fs-chart-pcv');
-
                 // ── Period Slicing (6m, 1y, etc.) looking backward from the END of the valid data ──
                 const months = period === '5y' ? 60 : period === '4y' ? 48 : period === '3y' ? 36 : period === '2y' ? 24 : period === '1y' ? 12 : 6;
                 const lastDate = currentData[currentData.length - 1].date;
@@ -12464,16 +12468,30 @@
                 let W = widthEl ? (widthEl.offsetWidth || (isMobile ? 300 : 380)) : (isMobile ? 300 : 380);
 
                 let PH, VH, IH, RSH;
-                const _rsCvEl = isFs ? document.getElementById('fs-chart-rscv') : null;
                 if (pCv.id === 'fs-chart-pcv') {
-                    const parentH = (widthEl && widthEl.parentElement) ? widthEl.parentElement.clientHeight : (window.innerHeight - 40);
-                    const hasDeals = dealCv && dealCv.style.display !== 'none';
-                    const constantH = 10 + (hasDeals ? 15 : 0) + 15; // 15px margins/safety
-                    const remH = Math.max(parentH - constantH, 300);
-                    PH = Math.round(remH * 0.76);  // slightly smaller to give MRS more space
+                    const parentH = (widthEl && widthEl.parentElement) ? widthEl.parentElement.clientHeight : window.innerHeight;
+                    let hasDealsReal = false;
+                    if (window._dealData) {
+                        const uc = ticker.toUpperCase();
+                        hasDealsReal = ['insider', 'bulk', 'block', 'sast'].some(sub =>
+                            (window._dealData[sub] || []).some(r => String(r['Ticker'] || '').trim().toUpperCase() === uc)
+                        );
+                    }
+                    const dealH = hasDealsReal ? 12 : 0;
+                    const remH = Math.max(parentH - dealH, 300);
                     VH = 0; // hide volume pane in full screen
-                    IH = Math.round(remH * 0.12);
-                    RSH = remH - PH - IH; // Shift extra space into RS pane
+
+                    if (!window.fsRscvMode) window.fsRscvMode = 'DELIV';
+                    const isRsActive = _rsCvEl !== null;
+                    if (isRsActive) {
+                        PH = Math.round(remH * 0.80);
+                        IH = Math.round(remH * 0.12);
+                        RSH = remH - PH - IH;
+                    } else {
+                        IH = Math.round(remH * 0.14);
+                        PH = remH - IH;
+                        RSH = 0;
+                    }
                 } else {
                     PH = Math.round(W * 0.62);   // ~8:5 ratio — taller, more chart real-estate
                     VH = Math.round(W * 0.14);   // volume panel ~14% of width
@@ -12660,6 +12678,7 @@
                 wireCrosshair(pCv);
                 if (vCv) wireCrosshair(vCv);
                 if (indCv) wireCrosshair(indCv);
+                if (_rsCvEl) wireCrosshair(_rsCvEl);
 
                 // Background — pure dark black
                 pc.fillStyle = '#000000'; pc.fillRect(0, 0, W, PH);
@@ -13466,25 +13485,7 @@
                     const displayAd = (hoverIdx !== undefined && hoverIdx !== null) ? raw[hoverIdx].ad : lastAd;
                     const displayObv = (hoverIdx !== undefined && hoverIdx !== null) ? raw[hoverIdx].obv : lastObv;
 
-                    const adText = 'A/D: ' + fmtV(displayAd);
-                    const obvText = 'OBV: ' + fmtV(displayObv);
-
-                    // Indicator labels / legend (A/D and OBV key in top left)
-                    ic.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 7.5px "Lexend",monospace';
-                    ic.textAlign = 'left';
-                    ic.textBaseline = 'top';
-
-                    ic.fillStyle = '#ff00ff';
-                    ic.fillText(adText, IP.l + 2, IP.t + (isFs ? 2 : 1));
-
-                    const adTextWidth = ic.measureText(adText).width;
-                    ic.fillStyle = 'rgba(255,255,255,0.25)';
-                    ic.fillText(' | ', IP.l + 2 + adTextWidth, IP.t + (isFs ? 2 : 1));
-
-                    const sepWidth = ic.measureText(' | ').width;
-                    ic.fillStyle = '#00ccff';
-                    ic.fillText(obvText, IP.l + 2 + adTextWidth + sepWidth, IP.t + (isFs ? 2 : 1));
-
+                    // Right-side indicator scale labels
                     ic.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 7px "Lexend",monospace';
                     ic.textAlign = 'right';
                     ic.textBaseline = 'middle';
@@ -13536,9 +13537,14 @@
                 if (rsc && RSH > 0) {
                     const toggleBtn = document.getElementById('fs-rscv-toggle-btn');
                     if (toggleBtn) {
-                        toggleBtn.style.display = 'block';
-                        toggleBtn.style.top = (PH + IH + 6) + 'px';
-                        toggleBtn.innerText = window.fsRscvMode === 'DELIV' ? 'Deliv %' : window.fsRscvMode === 'DELIV_VOL' ? 'Deliv Vol' : 'MRS';
+                        const isSm = W < 500 || window.innerWidth < 768;
+                        toggleBtn.style.display = 'flex';
+                        toggleBtn.style.left = isSm ? '6px' : '12px';
+                        toggleBtn.style.right = 'auto';
+                        toggleBtn.style.top = (PH + VH + (isSm ? 3 : 6)) + 'px';
+                        toggleBtn.style.fontSize = isSm ? '8.5px' : '10.5px';
+                        toggleBtn.style.padding = isSm ? '2px 5px' : '4px 9px';
+                        toggleBtn.innerText = window.fsRscvMode === 'DELIV' ? '📊 Deliv %' : window.fsRscvMode === 'DELIV_VOL' ? '📦 Deliv Vol' : '📈 MRS';
                     }
 
                     window.fsRscvMode = window.fsRscvMode || 'MRS';
@@ -13770,7 +13776,7 @@
                 ════════════════════════════════════════ */
                 if (dealCv) {
                     dealCv.style.display = 'block';
-                    const SH = 15;
+                    const SH = 12;
                     dealCv.style.width = W + 'px';
                     dealCv.style.height = SH + 'px';
                     dealCv.width = W * DPR;
@@ -15845,7 +15851,7 @@
 
                 const popup = document.getElementById('csp-hover-popup');
                 const W = popup ? (popup.offsetWidth || 380) : 380;
-                const SH = 22;
+                const SH = 14;
                 const DPR = Math.min(window.devicePixelRatio || 1, 2);
 
                 cv.style.width = W + 'px';
@@ -20257,6 +20263,50 @@
             color: #fff;
         }
 
+
+        /* ── Mobile enhancements for Fullscreen Chart ── */
+        @media screen and (max-width: 768px) {
+            #fs-sidebar {
+                width: 140px !important;
+                min-width: 140px !important;
+                font-size: 10px;
+            }
+
+            .fs-sel {
+                font-size: 10px !important;
+                padding: 4px 18px 4px 6px !important;
+            }
+
+            .fs-pill {
+                padding: 3px 6px !important;
+                font-size: 9px !important;
+            }
+
+            .fs-ticker-item {
+                padding: 6px 10px !important;
+                font-size: 11px !important;
+            }
+
+            #fs-ticker-search {
+                font-size: 11px !important;
+                padding: 6px 10px !important;
+            }
+
+            #fs-sidebar-header img {
+                height: 16px !important;
+            }
+
+            /* Reduce replay buttons */
+            .fs-drum-trigger {
+                padding: 6px !important;
+                font-size: 10px !important;
+            }
+
+            .fs-section-label {
+                font-size: 11px !important;
+            }
+        }
+
         /* Force Landscape Mode on Portrait Mobile/Tablet */
         @media screen and (max-width: 1024px) and (orientation: portrait) {
             #fs-chart-modal {
@@ -20594,8 +20644,8 @@
                 <canvas id="fs-chart-vcv" style="display:none;"></canvas>
                 <canvas id="fs-chart-rscv" style="display:none;"></canvas>
                 <button id="fs-rscv-toggle-btn"
-                    style="display:none; position:absolute; left:8px; pointer-events:auto; z-index:20; font-size:10px; font-weight:600; padding:2px 5px; background:rgba(30,41,59,0.9); color:#e2e8f0; border:1px solid rgba(148,163,184,0.4); border-radius:4px; cursor:pointer;"
-                    onclick="window.fsToggleRscvMode()">MRS</button>
+                    style="display:flex; align-items:center; gap:4px; position:absolute; left:12px; top:12px; pointer-events:auto; z-index:25; font-size:10.5px; font-weight:700; padding:4px 9px; background:rgba(15,23,42,0.92); color:#38bdf8; border:1px solid rgba(56,189,248,0.4); border-radius:6px; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.4);"
+                    onclick="window.fsToggleRscvMode()">📊 Deliv %</button>
                 <!-- Drawing overlay -->
                 <canvas id="fs-draw-canvas"></canvas>
             </div>
@@ -20917,7 +20967,17 @@
             };
 
             window.fsToggleRscvMode = function () {
-                window.fsRscvMode = (window.fsRscvMode === 'DELIV') ? 'DELIV_VOL' : (window.fsRscvMode === 'DELIV_VOL') ? 'MRS' : 'DELIV';
+                if (!window.fsRscvMode || window.fsRscvMode === 'DELIV') {
+                    window.fsRscvMode = 'DELIV_VOL';
+                } else if (window.fsRscvMode === 'DELIV_VOL') {
+                    window.fsRscvMode = 'MRS';
+                } else {
+                    window.fsRscvMode = 'DELIV';
+                }
+                const btn = document.getElementById('fs-rscv-toggle-btn');
+                if (btn) {
+                    btn.textContent = window.fsRscvMode === 'DELIV' ? '📊 Deliv %' : (window.fsRscvMode === 'DELIV_VOL' ? '📦 Deliv Vol' : '📈 MRS');
+                }
                 if (window.renderFullScreenChart) window.renderFullScreenChart();
             };
 
