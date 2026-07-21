@@ -6375,16 +6375,14 @@
                         SECTOR &amp; INDUSTRY BREADTH</span>
                     <div style="flex:1;"></div>
                     <button class="fs-btn" onclick="toggleNewsFS('breadth-section', this)" title="Fullscreen">⛶</button>
-                    <button class="deal-refresh-btn"
-                        onclick="refreshActiveBreadth()"
-                        title="Refresh">↻</button>
+                    <button class="deal-refresh-btn" onclick="refreshActiveBreadth()" title="Refresh">↻</button>
                 </div>
                 <!-- Top-level breadth mode: Technical (price/volume) vs Fundamental (earnings) -->
                 <div class="breadth-mode-bar">
-                    <button class="breadth-mode-btn active" id="breadth-mode-tech"
-                        onclick="switchBreadthMode('tech')" title="Price / volume breadth">📈 Technical</button>
-                    <button class="breadth-mode-btn" id="breadth-mode-fund"
-                        onclick="switchBreadthMode('fund')" title="Earnings &amp; revenue growth from quarterly results">💰 Fundamental</button>
+                    <button class="breadth-mode-btn active" id="breadth-mode-tech" onclick="switchBreadthMode('tech')"
+                        title="Price / volume breadth">📈 Technical</button>
+                    <button class="breadth-mode-btn" id="breadth-mode-fund" onclick="switchBreadthMode('fund')"
+                        title="Earnings &amp; revenue growth from quarterly results">💰 Fundamental</button>
                 </div>
                 <div class="deal-sub-pane active-sub-pane" style="overflow-y:auto;flex:1;">
                     <div id="breadth-content" style="padding:8px;">
@@ -6404,7 +6402,8 @@
                                 <button data-v="industry">Industries</button>
                                 <button data-v="index">Indices</button>
                             </div>
-                            <div class="rd-seg" id="rd-agg-seg" title="Aggregate = size-weighted (Σ current vs Σ year-ago). Median = typical company, robust to outliers.">
+                            <div class="rd-seg" id="rd-agg-seg"
+                                title="Aggregate = size-weighted (Σ current vs Σ year-ago). Median = typical company, robust to outliers.">
                                 <button data-v="agg" class="rd-on">Aggregate</button>
                                 <button data-v="med">Median</button>
                             </div>
@@ -6416,6 +6415,7 @@
                             </select>
                             <select id="rd-qtr" class="rd-mcap-sel" title="Analyze a specific result quarter">
                                 <option value="latest">Latest Quarter</option>
+                                <option value="all">all Quaters</option>
                             </select>
                         </div>
                         <div id="rd-kpis"></div>
@@ -16825,9 +16825,17 @@
             color: #93c5fd;
         }
 
-        .rd-pos { color: #00e676; }
-        .rd-neg { color: #ff4d4f; }
-        .rd-neu { color: rgba(255, 255, 255, 0.4); }
+        .rd-pos {
+            color: #00e676;
+        }
+
+        .rd-neg {
+            color: #ff4d4f;
+        }
+
+        .rd-neu {
+            color: rgba(255, 255, 255, 0.4);
+        }
 
         #rd-empty {
             padding: 46px 20px;
@@ -16838,9 +16846,19 @@
         }
 
         @media (max-width: 900px) {
-            #rd-kpis { grid-template-columns: repeat(2, 1fr); }
-            #rd-podium { grid-template-columns: 1fr; }
-            .rd-table thead th, .rd-table tbody td { padding: 6px 4px; font-size: 9.5px; }
+            #rd-kpis {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            #rd-podium {
+                grid-template-columns: 1fr;
+            }
+
+            .rd-table thead th,
+            .rd-table tbody td {
+                padding: 6px 4px;
+                font-size: 9.5px;
+            }
         }
     </style>
 
@@ -17030,9 +17048,10 @@
                     .sort((a, b) => qtrTs(b) - qtrTs(a));
                 const prev = sel.value;
                 sel.innerHTML = '<option value="latest">Latest Quarter</option>' +
+                    '<option value="all">all Wquaters</option>' +
                     qs.map(q => '<option value="' + esc(q) + '">' + esc(q) + '</option>').join('');
                 // Keep selection if still valid, else fall back to latest
-                if (prev && (prev === 'latest' || qs.indexOf(prev) !== -1)) sel.value = prev;
+                if (prev && (prev === 'latest' || prev === 'all' || qs.indexOf(prev) !== -1)) sel.value = prev;
                 else { sel.value = 'latest'; ST.qtr = 'latest'; }
             }
 
@@ -17040,7 +17059,7 @@
             function computeGroups() {
                 const q = activeQtr();
                 const data = _rdData().filter(r => {
-                    if (q && r._qtr !== q) return false;
+                    if (q && q !== 'all' && r._qtr !== q) return false;
                     if (ST.mcap > 0 && (isNaN(r._mcap) || r._mcap < ST.mcap)) return false;
                     return true;
                 });
