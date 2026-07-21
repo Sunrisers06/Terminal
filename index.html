@@ -6413,6 +6413,9 @@
                                 <option value="2000">MCap ≥ 2,000 Cr</option>
                                 <option value="10000">MCap ≥ 10,000 Cr</option>
                             </select>
+                            <select id="rd-idx" class="rd-mcap-sel" title="Filter by Index">
+                                <option value="all">All Indices</option>
+                            </select>
                             <select id="rd-qtr" class="rd-mcap-sel" title="Analyze a specific result quarter">
                                 <option value="latest">Latest Quarter</option>
                                 <option value="all">all Quaters</option>
@@ -16882,6 +16885,7 @@
                 dim: 'sector',      // sector | industry | index
                 agg: 'agg',         // agg | med
                 mcap: 0,
+                idxFilter: 'all',   // indices filter
                 minN: 1,
                 qtr: 'latest',      // 'latest' | specific quarter name
                 sortKey: 'mom',
@@ -17048,11 +17052,22 @@
                     .sort((a, b) => qtrTs(b) - qtrTs(a));
                 const prev = sel.value;
                 sel.innerHTML = '<option value="latest">Latest Quarter</option>' +
-                    '<option value="all">all Wquaters</option>' +
+                    '<option value="all">all Quaters</option>' +
                     qs.map(q => '<option value="' + esc(q) + '">' + esc(q) + '</option>').join('');
                 // Keep selection if still valid, else fall back to latest
                 if (prev && (prev === 'latest' || prev === 'all' || qs.indexOf(prev) !== -1)) sel.value = prev;
                 else { sel.value = 'latest'; ST.qtr = 'latest'; }
+            }
+
+            function populateIdxSelect() {
+                const sel = document.getElementById('rd-idx');
+                if (!sel) return;
+                const idxNames = window.indexDataMap ? Object.keys(window.indexDataMap).sort() : [];
+                const prev = sel.value;
+                sel.innerHTML = '<option value="all">All Indices</option>' +
+                    idxNames.map(name => '<option value="' + esc(name) + '">' + esc(name) + '</option>').join('');
+                if (prev && (prev === 'all' || idxNames.includes(prev))) sel.value = prev;
+                else { sel.value = 'all'; ST.idxFilter = 'all'; }
             }
 
             /* ── Build all groups for the active dimension ── */
@@ -17061,6 +17076,12 @@
                 const data = _rdData().filter(r => {
                     if (q && q !== 'all' && r._qtr !== q) return false;
                     if (ST.mcap > 0 && (isNaN(r._mcap) || r._mcap < ST.mcap)) return false;
+                    if (ST.idxFilter !== 'all') {
+                        const tk = String(r._ticker).toUpperCase().replace(/\.NS$/i, '');
+                        if (!window.indexDataMap || !window.indexDataMap[ST.idxFilter] || !window.indexDataMap[ST.idxFilter].has(tk)) {
+                            return false;
+                        }
+                    }
                     return true;
                 });
                 const nums = [];
@@ -17267,6 +17288,7 @@
                 }
                 // Quarter dropdown + header chip showing the analyzed quarter
                 populateQtrSelect();
+                populateIdxSelect();
                 const q = activeQtr();
                 const chip = document.getElementById('rd-qtr-chip');
                 if (chip) chip.textContent = q ? q + (ST.qtr === 'latest' ? ' (latest)' : '') : '—';
@@ -17323,6 +17345,8 @@
             if (mcapSel) mcapSel.addEventListener('change', function () { ST.mcap = parseFloat(this.value) || 0; refresh(); });
             const qtrSel = document.getElementById('rd-qtr');
             if (qtrSel) qtrSel.addEventListener('change', function () { ST.qtr = this.value; ST.expanded = {}; refresh(); });
+            const idxSel = document.getElementById('rd-idx');
+            if (idxSel) idxSel.addEventListener('change', function () { ST.idxFilter = this.value; ST.expanded = {}; refresh(); });
 
             /* ── Inline lifecycle ── */
             // Called by switchBreadthMode('fund') when the Fundamental tab is shown.
