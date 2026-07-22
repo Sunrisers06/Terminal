@@ -4067,6 +4067,7 @@
         .deal-table-wrap {
             flex: 1;
             overflow: auto;
+            min-width: 0;
         }
 
         .deal-table,
@@ -4076,6 +4077,19 @@
             border-collapse: collapse;
             font-family: 'Lexend', sans-serif;
             font-size: 10px;
+        }
+
+        .ss-table {
+            min-width: 420px;
+            table-layout: fixed;
+        }
+
+        .ss-table tbody td {
+            max-width: none;
+        }
+
+        .ss-table .ss-inv-name {
+            max-width: none;
         }
 
         .deal-table thead th,
@@ -4230,11 +4244,22 @@
         @media(max-width:600px) {
 
             /* Task 3: Mobile-friendly deal table — compact, readable, reduced whitespace */
-            .deal-table,
+            /* min-width forces the table wider than the viewport so
+               .deal-table-wrap's overflow-x:auto kicks in and scrolls
+               horizontally instead of squeezing every column to fit. */
+            .deal-table {
+                font-size: 9px;
+                table-layout: fixed;
+                min-width: 560px;
+            }
+
+            /* .breadth-table and .ss-table use their own column-width strategy
+               (colgroup / sticky name column) and horizontal scroll — do NOT
+               force table-layout:fixed or cap cell max-width here, or their
+               columns get squeezed/hidden on narrow screens. */
             .breadth-table,
             .ss-table {
                 font-size: 9px;
-                table-layout: fixed;
             }
 
             .deal-table thead th,
@@ -4247,12 +4272,16 @@
                 text-overflow: ellipsis;
             }
 
-            .deal-table tbody td,
+            .deal-table tbody td {
+                padding: 4px 4px;
+                font-size: 9px;
+                max-width: 90px;
+            }
+
             .breadth-table td,
             .ss-table tbody td {
                 padding: 4px 4px;
                 font-size: 9px;
-                max-width: 90px;
             }
 
             .deal-table .dt-ticker {
@@ -6354,6 +6383,12 @@
                     <div class="deal-sub-pane active-sub-pane" id="superstar-sub-pane">
                         <div class="deal-table-wrap">
                             <table class="deal-table ss-table" id="superstar-table">
+                                <colgroup>
+                                    <col style="width:40%;">
+                                    <col style="width:19%;">
+                                    <col style="width:20%;">
+                                    <col style="width:21%;">
+                                </colgroup>
                                 <thead>
                                     <tr>
                                         <th onclick="sortSuperstar('Investor')" style="cursor:pointer;text-align:left;">
@@ -9767,7 +9802,7 @@
                 }).join('')}</div>`;
             } else {
                 // ── TABLE VIEW ──
-                content = `<table class="breadth-table breadth-table-rich">
+                content = `<div class="breadth-table-wrap"><table class="breadth-table breadth-table-rich">
                     <thead><tr>
                         <th onclick="${onSrt('name')}" style="cursor:pointer;text-align:left;">Name${hdr('name')}</th>
                         <th onclick="${onSrt('total')}" style="cursor:pointer;" title="Total stocks">#${hdr('total')}</th>
@@ -9840,7 +9875,7 @@
                         </tr>${expandRow}`;
                 }).join('')}
                     </tbody>
-                </table>`;
+                </table></div>`;
             }
 
             pane.innerHTML = toolbar + summaryStrip + `<div style="padding:0 4px 8px;">` + content + `</div>`;
@@ -17894,8 +17929,19 @@
         }
 
         /* ── Table ── */
+        .breadth-table-wrap {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+        }
+
+        .breadth-table-wrap::-webkit-scrollbar {
+            display: none;
+        }
+
         .breadth-table {
             width: 100%;
+            min-width: 620px;
             border-collapse: collapse;
             font-size: 11px;
             font-family: 'Inter', sans-serif;
@@ -17940,11 +17986,23 @@
         .breadth-name {
             font-weight: 600;
             color: #e2e8f0;
-            max-width: 110px;
+            min-width: 130px;
             white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
             font-size: 11px;
+            position: sticky;
+            left: 0;
+            z-index: 1;
+            background: #0a0a0e;
+        }
+
+        .breadth-main-row:hover .breadth-name {
+            background: #14141c;
+        }
+
+        .breadth-table thead th:first-child {
+            position: sticky;
+            left: 0;
+            z-index: 3;
         }
 
         .breadth-expand-icon {
@@ -18883,7 +18941,8 @@
                 font-size: 9px !important;
             }
 
-            .deal-table-wrap {
+            .deal-table-wrap,
+            .breadth-table-wrap {
                 overflow-x: auto !important;
                 -webkit-overflow-scrolling: touch !important;
             }
