@@ -14310,18 +14310,9 @@
     <script>
         (function () {
             let tooltip = null;
-            document.addEventListener('mouseover', function (e) {
-                const flag = e.target.closest('.surv-flag');
-                if (!flag) return;
+            let activeFlag = null;
 
-                const text = flag.getAttribute('title') || flag.getAttribute('data-title');
-                if (!text) return;
-
-                if (flag.getAttribute('title')) {
-                    flag.setAttribute('data-title', text);
-                    flag.removeAttribute('title');
-                }
-
+            function ensureTooltip() {
                 if (!tooltip) {
                     tooltip = document.createElement('div');
                     tooltip.id = 'surv-flag-tooltip';
@@ -14338,17 +14329,42 @@
                     tooltip.style.boxShadow = '0 2px 5px rgba(0,0,0,0.3)';
                     document.body.appendChild(tooltip);
                 }
+                return tooltip;
+            }
 
-                tooltip.textContent = text;
-                tooltip.style.display = 'block';
+            function showTooltipFor(flag) {
+                const text = flag.getAttribute('title') || flag.getAttribute('data-title');
+                if (!text) return;
+
+                if (flag.getAttribute('title')) {
+                    flag.setAttribute('data-title', text);
+                    flag.removeAttribute('title');
+                }
+
+                const tip = ensureTooltip();
+                tip.textContent = text;
+                tip.style.display = 'block';
 
                 const rect = flag.getBoundingClientRect();
-                const tooltipRect = tooltip.getBoundingClientRect();
+                const tooltipRect = tip.getBoundingClientRect();
                 const left = rect.left + (rect.width - tooltipRect.width) / 2;
                 const top = rect.top - tooltipRect.height - 6;
 
-                tooltip.style.left = Math.max(10, Math.min(window.innerWidth - tooltipRect.width - 10, left)) + 'px';
-                tooltip.style.top = Math.max(10, top) + 'px';
+                tip.style.left = Math.max(10, Math.min(window.innerWidth - tooltipRect.width - 10, left)) + 'px';
+                tip.style.top = Math.max(10, top) + 'px';
+
+                activeFlag = flag;
+            }
+
+            function hideTooltip() {
+                if (tooltip) tooltip.style.display = 'none';
+                activeFlag = null;
+            }
+
+            document.addEventListener('mouseover', function (e) {
+                const flag = e.target.closest('.surv-flag');
+                if (!flag) return;
+                showTooltipFor(flag);
             });
 
             document.addEventListener('mouseout', function (e) {
@@ -14359,10 +14375,25 @@
                 if (text) {
                     flag.setAttribute('title', text);
                 }
-                if (tooltip) {
-                    tooltip.style.display = 'none';
-                }
+                hideTooltip();
             });
+
+            // Touch support (mobile / iPad): tap a flag to show its tooltip,
+            // tap it again or tap elsewhere to dismiss it.
+            document.addEventListener('touchstart', function (e) {
+                const flag = e.target.closest('.surv-flag');
+                if (!flag) {
+                    if (activeFlag) hideTooltip();
+                    return;
+                }
+
+                if (activeFlag === flag) {
+                    hideTooltip();
+                } else {
+                    e.preventDefault();
+                    showTooltipFor(flag);
+                }
+            }, { passive: false });
         })();
     </script>
 
