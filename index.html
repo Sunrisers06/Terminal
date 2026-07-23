@@ -20189,6 +20189,25 @@
             color: #f87171;
         }
 
+        #fs-fullscreen-btn:hover {
+            background: rgba(34, 211, 238, 0.14);
+            border-color: rgba(34, 211, 238, 0.5);
+            color: #fff;
+        }
+
+        #fs-fullscreen-btn.fs-active {
+            background: rgba(34, 211, 238, 0.18);
+            border-color: rgba(34, 211, 238, 0.55);
+            color: #22d3ee;
+        }
+
+        /* Browsers that lack element-level Fullscreen API (iPhone Safari/Chrome)
+           get this class instead — dimmed, not clickable-looking as a promise
+           it can't keep. Tap still works and shows the Add-to-Home-Screen tip. */
+        #fs-fullscreen-btn.fs-unsupported {
+            opacity: 0.45;
+        }
+
         /* Ticker list grows to fill free vertical space */
         .fs-ticker-block {
             flex: 1 1 auto;
@@ -20289,8 +20308,7 @@
         #fs-flashcard-ui,
         #fs-pattern-quiz-ui,
         #fs-decision-ui,
-        #fs-volread-ui,
-        #fs-exit-ui {
+        #fs-volread-ui {
             background: rgba(30, 41, 59, 0.55) !important;
             border: 1px solid rgba(148, 163, 184, 0.15);
         }
@@ -20417,9 +20435,11 @@
         <!-- Left Panel: Apple-style sidebar -->
         <div id="fs-sidebar">
             <!-- Header: Logo -->
-            <div id="fs-sidebar-header">
+            <div id="fs-sidebar-header" style="position:relative;">
                 <img src="https://lh3.googleusercontent.com/d/1pPqrvLPPH2Mh9aqjQgG1eAnoziFAxtWg" alt="Sundarx Quantara"
                     onclick="closeFullScreenChart()" title="Close Charts" style="cursor:pointer;">
+                <button id="fs-fullscreen-btn" onclick="window.toggleFsBrowserFullscreen()" title="Fullscreen"
+                    style="position:absolute; top:6px; right:6px; width:26px; height:26px; border-radius:7px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:rgba(255,255,255,0.55); display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:13px; transition:all 0.15s; padding:0;">⛶</button>
             </div>
 
             <!-- Search bar at top -->
@@ -20531,12 +20551,9 @@
                             <span class="tb-ico">🎯</span><span class="tb-lbl">Decision</span>
                         </button>
                         <button class="fs-trainer-btn" id="fs-volread-btn" onclick="window.fsVolReadTraining()"
+                            style="grid-column: 1 / -1;"
                             title="Read the last candle's price + volume: accumulation, distribution, dry-up or churn?">
                             <span class="tb-ico">🔊</span><span class="tb-lbl">Volume Read</span>
-                        </button>
-                        <button class="fs-trainer-btn" id="fs-exit-btn" onclick="window.fsExitTraining()"
-                            title="Hold, trim or sell? You're already in this trade — read the current chart, not the entry.">
-                            <span class="tb-ico">🚪</span><span class="tb-lbl">Exit</span>
                         </button>
                     </div>
                     <div id="fs-flashcard-ui"
@@ -20649,34 +20666,6 @@
                         <button id="fs-volread-next-btn" onclick="window.fsVolReadTraining()"
                             style="display: none; margin-top: 8px; background: #0ea5e9; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; width: 100%; font-weight: 700;">Next
                             Candle 🔊</button>
-                    </div>
-                    <div id="fs-exit-ui"
-                        style="display:none; margin-top: 4px; padding: 10px; border-radius: 8px; text-align: center;">
-                        <div style="font-size: 12px; font-weight: bold; margin-bottom: 6px; color: #f8fafc;">🚪 Exit
-                            Discipline</div>
-                        <div style="font-size: 10px; margin-bottom: 8px; color: #94a3b8;">You're already in this
-                            trade. Read the <b>current</b> chart, not the entry — Hold, Trim into strength, or Sell
-                            All?</div>
-                        <div id="fs-exit-banner"
-                            style="margin-bottom: 8px; padding: 5px 8px; background: rgba(148,163,184,0.08); border-radius: 6px; font-size: 10.5px; color: #cbd5e1;">
-                        </div>
-                        <div style="display: flex; gap: 6px; justify-content: center;">
-                            <button onclick="window.fsExitGuess('hold')"
-                                style="flex:1; background: #3b82f6; color: white; border: none; padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 10.5px; font-weight: bold;">Hold</button>
-                            <button onclick="window.fsExitGuess('trim')"
-                                style="flex:1; background: #f59e0b; color: white; border: none; padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 10.5px; font-weight: bold;">Trim</button>
-                            <button onclick="window.fsExitGuess('sell')"
-                                style="flex:1; background: #ef4444; color: white; border: none; padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 10.5px; font-weight: bold;">Sell
-                                All</button>
-                        </div>
-                        <div id="fs-exit-result" style="margin-top: 8px; font-size: 11px; font-weight: bold;"></div>
-                        <div id="fs-exit-explain"
-                            style="margin-top: 6px; font-size: 9.5px; color: #cbd5e1; text-align: left; line-height: 1.55;">
-                        </div>
-                        <div id="fs-exit-stats" style="margin-top: 6px; font-size: 9px; color: #94a3b8;"></div>
-                        <button id="fs-exit-next-btn" onclick="window.fsExitTraining()"
-                            style="display: none; margin-top: 8px; background: #f97316; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; width: 100%; font-weight: 700;">Next
-                            Position 🚪</button>
                     </div>
                 </div>
             </div>
@@ -21072,8 +21061,84 @@
 
             window.closeFullScreenChart = function () {
                 window.stopFsReplay();
+                if (document.fullscreenElement || document.webkitFullscreenElement) {
+                    (document.exitFullscreen || document.webkitExitFullscreen || function () { }).call(document);
+                }
                 document.getElementById('fs-chart-modal').style.display = 'none';
             };
+
+            /* ═══ BROWSER FULLSCREEN (real Fullscreen API, not the CSS overlay) ═══
+               Some mobile browsers give no menu option to fullscreen a page, so
+               this button drives the Fullscreen API directly on #fs-chart-modal.
+               iPhone Safari/Chrome (WebKit) do NOT implement requestFullscreen on
+               non-video elements — el.requestFullscreen is simply undefined there,
+               which we feature-detect (no UA sniffing) and fall back to a tip
+               about Add to Home Screen, the actual working fix on iPhone. */
+            window.toggleFsBrowserFullscreen = function () {
+                const el = document.getElementById('fs-chart-modal');
+                const isActive = document.fullscreenElement || document.webkitFullscreenElement;
+
+                if (!isActive) {
+                    const req = el.requestFullscreen || el.webkitRequestFullscreen
+                        || el.mozRequestFullScreen || el.msRequestFullscreen;
+                    if (!req) {
+                        _fsFullscreenUnsupportedTip();
+                        return;
+                    }
+                    Promise.resolve(req.call(el)).then(function () {
+                        // Best-effort landscape lock — works on Android Chrome inside
+                        // fullscreen, silently no-ops everywhere else (incl. iPhone/iPad
+                        // Safari, which don't support orientation.lock at all). The
+                        // existing portrait-rotate CSS hack below still covers those.
+                        try {
+                            if (screen.orientation && screen.orientation.lock && window.innerWidth < 1024) {
+                                screen.orientation.lock('landscape').catch(function () { });
+                            }
+                        } catch (e) { }
+                    }).catch(function () {
+                        _fsFullscreenUnsupportedTip();
+                    });
+                } else {
+                    (document.exitFullscreen || document.webkitExitFullscreen
+                        || document.mozCancelFullScreen || document.msExitFullscreen || function () { }).call(document);
+                    try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) { }
+                }
+            };
+
+            let _fsFullscreenTipShown = false;
+            function _fsFullscreenUnsupportedTip() {
+                if (_fsFullscreenTipShown) return;
+                _fsFullscreenTipShown = true;
+                alert('Your browser doesn\'t allow fullscreen for a page section (iPhone Safari/Chrome block this).\n\nFor a true fullscreen feel on iPhone: Share ↗ → "Add to Home Screen" — the app icon opens with no address bar at all.');
+            }
+
+            function _fsSyncFullscreenBtn() {
+                const btn = document.getElementById('fs-fullscreen-btn');
+                if (!btn) return;
+                const active = !!(document.fullscreenElement || document.webkitFullscreenElement);
+                btn.classList.toggle('fs-active', active);
+                btn.title = active ? 'Exit Fullscreen' : 'Fullscreen';
+                // Redraw belt-and-braces — resize listener normally covers this,
+                // but fire it directly too since not every browser dispatches
+                // 'resize' in perfect sync with the fullscreenchange transition.
+                if (window.renderFullScreenChart) window.renderFullScreenChart();
+                if (typeof _fsPaintDrawings === 'function') _fsPaintDrawings();
+            }
+            ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange']
+                .forEach(evt => document.addEventListener(evt, _fsSyncFullscreenBtn));
+
+            // Mark the button dimmed up front on browsers where we already know
+            // (via feature detection) that fullscreen won't work — e.g. iPhone.
+            (function () {
+                const supported = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled
+                    || document.mozFullScreenEnabled || document.msFullscreenEnabled);
+                if (!supported) {
+                    document.addEventListener('DOMContentLoaded', function () {
+                        const btn = document.getElementById('fs-fullscreen-btn');
+                        if (btn) btn.classList.add('fs-unsupported');
+                    });
+                }
+            })();
 
             window.selectFsDuration = function (val) {
                 const input = document.getElementById('fs-duration-select');
@@ -21765,23 +21830,12 @@
                 return a;
             }
 
-            const _FS_TRAINSTATS_KEY = 'sundarx_fs_trainstats';
             window._fsTrainStats = {
                 flash: { c: 0, t: 0, s: 0, bs: 0 },
                 quiz: { c: 0, t: 0, s: 0, bs: 0 },
                 decide: { c: 0, t: 0, s: 0, bs: 0, pnl: 0 },
-                vol: { c: 0, t: 0, s: 0, bs: 0 },
-                exit: { c: 0, t: 0, s: 0, bs: 0, pnl: 0 }
+                vol: { c: 0, t: 0, s: 0, bs: 0 }
             };
-            // Restore saved training stats, if any, keeping the default shape for missing/new modes
-            try {
-                const saved = JSON.parse(localStorage.getItem(_FS_TRAINSTATS_KEY));
-                if (saved && typeof saved === 'object') {
-                    Object.keys(window._fsTrainStats).forEach(mode => {
-                        if (saved[mode]) Object.assign(window._fsTrainStats[mode], saved[mode]);
-                    });
-                }
-            } catch (e) { }
 
             function _fsRecordStat(mode, correct, extra) {
                 const st = window._fsTrainStats[mode];
@@ -21789,7 +21843,6 @@
                 if (correct) { st.c++; st.s++; if (st.s > st.bs) st.bs = st.s; }
                 else st.s = 0;
                 if (extra && typeof extra.pnl === 'number') st.pnl += extra.pnl;
-                try { localStorage.setItem(_FS_TRAINSTATS_KEY, JSON.stringify(window._fsTrainStats)); } catch (e) { }
                 return st;
             }
 
@@ -21807,7 +21860,7 @@
                 // Make sure the Trainers section is expanded so its result panel is visible
                 const sec = document.getElementById('fs-sec-train');
                 if (sec) sec.classList.add('expanded');
-                ['fs-flashcard-ui', 'fs-pattern-quiz-ui', 'fs-decision-ui', 'fs-volread-ui', 'fs-exit-ui'].forEach(id => {
+                ['fs-flashcard-ui', 'fs-pattern-quiz-ui', 'fs-decision-ui', 'fs-volread-ui'].forEach(id => {
                     if (id === except) return;
                     const el = document.getElementById(id);
                     if (el) el.style.display = 'none';
@@ -21964,8 +22017,7 @@
                     breakoutIdx: chosen.idx,
                     pivot: chosen.pivot,
                     outcome: chosen.outcome,
-                    raw: chosenRaw,
-                    answered: false
+                    raw: chosenRaw
                 };
                 // The breakout candle itself is visible — the drill is judging its QUALITY
                 _fsEnterTrainingReplay(chosenTicker, chosenRaw, chosen.idx, 'Flashcard Mode', 'TICKER_A');
@@ -21973,8 +22025,7 @@
             };
 
             window.fsFlashcardGuess = function (guessSucceeds) {
-                if (!window._fsFlashcardState || window._fsFlashcardState.answered) return; // one answer per question — no stat double-counting
-                window._fsFlashcardState.answered = true;
+                if (!window._fsFlashcardState) return;
                 const { raw, breakoutIdx, pivot, outcome, ticker } = window._fsFlashcardState;
 
                 // Reveal the full 5-week resolution window
@@ -22045,14 +22096,13 @@
                 const statsEl = document.getElementById('fs-pattern-quiz-stats');
                 if (statsEl) statsEl.innerHTML = _fsStatHtml(window._fsTrainStats.quiz);
 
-                let found = null, scanned = 0;
+                let found = null;
                 const keys = _fsShuffleArr(Array.from(window._ohlcvTickers.keys()))
                     .filter(k => _FS_INDEX_TICKERS.indexOf(k) === -1);
                 outer:
                 for (const k of keys) {
                     const data = window._ohlcvTickers.get(k);
                     if (!data || data.length < 90) continue;
-                    scanned++;
                     for (let attempt = 0; attempt < 25; attempt++) {
                         const rIdx = 70 + Math.floor(Math.random() * (data.length - 70));
                         const snippet = data.slice(0, rIdx + 1);
@@ -22071,7 +22121,6 @@
                         };
                         break outer;
                     }
-                    if (scanned >= 40) break; // safety cap — avoid scanning the entire ticker universe
                 }
                 if (!found) {
                     if (result) result.textContent = 'No clear pattern found. Try again.';
@@ -22085,16 +22134,14 @@
                     truePattern: found.pattern,
                     trueGroup: found.group,
                     detail: found.detail,
-                    others: found.others,
-                    answered: false
+                    others: found.others
                 };
                 _fsEnterTrainingReplay(found.ticker, found.raw, found.idx, 'Pattern Quiz Mode', 'PATTERN_QUIZ');
                 if (result) result.textContent = '';
             };
 
             window.fsPatternQuizGuess = function (guessKey) {
-                if (!window._fsPatternQuizState || window._fsPatternQuizState.answered) return; // one answer per question — no stat double-counting
-                window._fsPatternQuizState.answered = true;
+                if (!window._fsPatternQuizState) return;
                 const { truePattern, trueGroup, ticker, detail, others } = window._fsPatternQuizState;
 
                 const isCorrect = guessKey === trueGroup;
@@ -22141,14 +22188,13 @@
                 const statsEl = document.getElementById('fs-decision-stats');
                 if (statsEl) statsEl.innerHTML = _fsStatHtml(window._fsTrainStats.decide, true);
 
-                let found = null, scanned = 0;
+                let found = null;
                 const keys = _fsShuffleArr(Array.from(window._ohlcvTickers.keys()))
                     .filter(k => _FS_INDEX_TICKERS.indexOf(k) === -1);
                 outer:
                 for (const k of keys) {
                     const data = window._ohlcvTickers.get(k);
                     if (!data || data.length < 110) continue;
-                    scanned++;
                     for (let attempt = 0; attempt < 20; attempt++) {
                         const idx = 70 + Math.floor(Math.random() * (data.length - 80));
                         if (idx >= data.length - 9) continue;
@@ -22161,7 +22207,6 @@
                         found = { ticker: k, idx: idx, raw: data, analysis: analysis };
                         break outer;
                     }
-                    if (scanned >= 40) break; // safety cap — avoid scanning the entire ticker universe
                 }
                 if (!found) {
                     if (result) result.textContent = 'No setup found. Try again.';
@@ -22195,16 +22240,14 @@
                     stopped: stopped,
                     exitIdx: exitIdx,
                     action: found.analysis.action,
-                    score: found.analysis.score,
-                    answered: false
+                    score: found.analysis.score
                 };
                 _fsEnterTrainingReplay(found.ticker, raw, idx, 'Decision Trainer', 'TICKER_A');
                 if (result) result.textContent = '';
             };
 
             window.fsDecisionGuess = function (buys) {
-                if (!window._fsDecisionState || window._fsDecisionState.answered) return; // one answer per question — no stat double-counting
-                window._fsDecisionState.answered = true;
+                if (!window._fsDecisionState) return;
                 const { ticker, idx, raw, pnl, stopped, action, score } = window._fsDecisionState;
 
                 // Reveal the full 8-week outcome window
@@ -22424,170 +22467,6 @@
                 if (tickerSearch) tickerSearch.value = ticker; // reveal ticker
 
                 const nextBtn = document.getElementById('fs-volread-next-btn');
-                if (nextBtn) nextBtn.style.display = 'block';
-
-                window.renderFullScreenChart();
-            };
-
-            /* ═══ 🚪 EXIT DISCIPLINE TRAINER ═══
-               Mid-trade drill, not pre-trade: you're already in a position that
-               was a genuine buy-quality setup N weeks ago, with a running P&L.
-               Hold, Trim into strength, or Sell All? Only clean, unambiguous
-               cases are asked — and every one is forward-confirmed over the next
-               4 weeks — so the "correct" call is defensible, never a coin flip. */
-            const _FS_EXIT_HOLD_ACTIONS = ['BUY', 'BUY WATCH', 'HOLD / WATCH', 'HOLD (Extended)', 'ADD-ON / BUY WATCH', 'LOW-RISK WATCH'];
-            const _FS_EXIT_LABELS = { hold: 'Hold', trim: 'Trim', sell: 'Sell All' };
-            // Easy toggle: treat Trim and Sell All as interchangeable "reduce risk"
-            // calls. Left strict by default per the trainer's grading philosophy.
-            const _FS_EXIT_RELAX_TRIM_SELL = false;
-
-            window.fsExitTraining = function () {
-                if (!window._ohlcvTickers || window._ohlcvTickers.size === 0) {
-                    alert("Data not fully loaded yet.");
-                    return;
-                }
-                _fsCloseTrainingUIs('fs-exit-ui');
-                const ui = document.getElementById('fs-exit-ui');
-                if (ui) ui.style.display = 'block';
-                const nextBtn = document.getElementById('fs-exit-next-btn');
-                if (nextBtn) nextBtn.style.display = 'none';
-                const result = document.getElementById('fs-exit-result');
-                if (result) result.textContent = 'Searching for a position…';
-                const explain = document.getElementById('fs-exit-explain');
-                if (explain) explain.innerHTML = '';
-                const banner = document.getElementById('fs-exit-banner');
-                if (banner) banner.innerHTML = '';
-                const statsEl = document.getElementById('fs-exit-stats');
-                if (statsEl) statsEl.innerHTML = _fsStatHtml(window._fsTrainStats.exit, true);
-
-                let found = null, scanned = 0;
-                const keys = _fsShuffleArr(Array.from(window._ohlcvTickers.keys()))
-                    .filter(k => _FS_INDEX_TICKERS.indexOf(k) === -1);
-
-                outer:
-                for (const k of keys) {
-                    const data = window._ohlcvTickers.get(k);
-                    if (!data || data.length < 130) continue;
-                    scanned++;
-                    for (let attempt = 0; attempt < 25; attempt++) {
-                        const idx0 = 60 + Math.floor(Math.random() * (data.length - 90));
-                        const entrySnippet = data.slice(0, idx0 + 1);
-                        const entryAnalysis = window._fsBuildPriceActionAnalysis ? window._fsBuildPriceActionAnalysis(entrySnippet) : null;
-                        if (!entryAnalysis) continue;
-                        // "Where you got in" — require a real buy-quality setup, not a guess
-                        if (entryAnalysis.score < 55 || entryAnalysis.action.indexOf('BUY') === -1) continue;
-
-                        const maxAllowed = data.length - idx0 - 5; // idx0 + holdWeeks + 4 < data.length
-                        if (maxAllowed < 4) continue;
-                        const holdRange = Math.min(12, maxAllowed - 3);
-                        const holdWeeks = 4 + Math.floor(Math.random() * holdRange);
-                        const idx1 = idx0 + holdWeeks;
-                        if (idx1 + 4 >= data.length) continue;
-
-                        const analysisNow = window._fsBuildPriceActionAnalysis(data.slice(0, idx1 + 1));
-                        if (!analysisNow) continue;
-
-                        const entry = data[idx0].close;
-                        const runningPnL = entry ? ((data[idx1].close - entry) / entry) * 100 : 0;
-
-                        // Classify into a clean, unambiguous label — reject anything murkier
-                        const climaxLine = analysisNow.lines.find(l => l.text === 'Climax Top / Exhaustion');
-                        let label = null;
-                        if (climaxLine && runningPnL >= 15) label = 'trim';
-                        else if (analysisNow.action === 'SELL / AVOID') label = 'sell';
-                        else if (_FS_EXIT_HOLD_ACTIONS.indexOf(analysisNow.action) !== -1 && runningPnL > -8) label = 'hold';
-                        if (!label) continue;
-
-                        // Forward-confirm: the "correct" answer must actually have played out
-                        const idx2 = Math.min(idx1 + 4, data.length - 1);
-                        const confirmMove = (data[idx2].close - data[idx1].close) / data[idx1].close;
-                        if ((label === 'trim' || label === 'sell') && confirmMove > -0.03) continue;
-                        if (label === 'hold' && confirmMove < -0.02) continue;
-
-                        found = { ticker: k, raw: data, idx0, idx1, idx2, entry, holdWeeks, runningPnL, label, analysisNow, confirmMove };
-                        break outer;
-                    }
-                    if (scanned >= 40) break; // safety cap — avoid scanning the entire ticker universe
-                }
-                if (!found) {
-                    if (result) result.textContent = 'No clean position found. Try again.';
-                    return;
-                }
-
-                window._fsExitState = {
-                    ticker: found.ticker, raw: found.raw, idx0: found.idx0, idx1: found.idx1, idx2: found.idx2,
-                    entry: found.entry, holdWeeks: found.holdWeeks, runningPnL: found.runningPnL,
-                    label: found.label, analysisNow: found.analysisNow, confirmMove: found.confirmMove,
-                    answered: false
-                };
-
-                if (banner) {
-                    const pcol = found.runningPnL >= 0 ? '#22c55e' : '#f43f5e';
-                    banner.innerHTML = 'Entered <b>' + found.holdWeeks + 'w</b> ago at ₹' + found.entry.toFixed(2) +
-                        ' · Running: <b style="color:' + pcol + '">' + (found.runningPnL >= 0 ? '+' : '') +
-                        found.runningPnL.toFixed(1) + '%</b>';
-                }
-
-                _fsEnterTrainingReplay(found.ticker, found.raw, found.idx1, 'Exit Discipline — bought ' + found.holdWeeks + 'w ago', 'TICKER_A');
-                if (result) result.textContent = '';
-            };
-
-            window.fsExitGuess = function (choice) {
-                const state = window._fsExitState;
-                if (!state || state.answered) return; // one answer per question — no stat double-counting
-                state.answered = true;
-                const { ticker, raw, idx2, label, analysisNow, confirmMove } = state;
-
-                // Reveal the 4-week confirmation window on the chart
-                window._fsReplay.currentMaxDate = raw[idx2].date.getTime();
-
-                const correct = choice === label ||
-                    (_FS_EXIT_RELAX_TRIM_SELL && ((label === 'trim' && choice === 'sell') || (label === 'sell' && choice === 'trim')));
-                const pnlImpact = choice === 'hold' ? confirmMove * 100 : 0;
-                const st = _fsRecordStat('exit', correct, { pnl: pnlImpact });
-
-                const result = document.getElementById('fs-exit-result');
-                if (result) {
-                    result.innerHTML = correct
-                        ? '<span style="color:#22c55e;">✅ Correct — ' + _FS_EXIT_LABELS[label] + ' was right</span>'
-                        : '<span style="color:#ef4444;">❌ You said "' + _FS_EXIT_LABELS[choice] + '" — correct call was <span style="color:#e2e8f0;">' + _FS_EXIT_LABELS[label] + '</span></span>';
-                }
-
-                // ── Structured explanation — teach the why, not just right/wrong ──
-                const climaxLine = analysisNow.lines.find(l => l.text === 'Climax Top / Exhaustion');
-                const confirmPct = confirmMove * 100;
-                const sg = v => (v >= 0 ? '+' : '');
-                const row = 'display:flex; gap:6px; margin-top:3px;';
-                const key = 'color:#64748b; min-width:56px; flex-shrink:0; font-weight:700;';
-                const lines = [
-                    '<div style="' + row + '"><span style="' + key + '">Now reads</span><span><b style="color:' +
-                    analysisNow.actionColor + '">' + analysisNow.action + '</b> (' + analysisNow.score + '/100)</span></div>'
-                ];
-                if (climaxLine) {
-                    lines.push('<div style="' + row + '"><span style="' + key + '">Flagged</span><span>' +
-                        climaxLine.text + ' — ' + climaxLine.detail + '</span></div>');
-                }
-                lines.push('<div style="' + row + '"><span style="' + key + '">Next 4w</span><span><b style="color:' +
-                    (confirmPct >= 0 ? '#4ade80' : '#f87171') + ';">' + sg(confirmPct) + confirmPct.toFixed(1) +
-                    '%</b> — the market confirmed this read (now revealed on the chart)</span></div>');
-                const principle = label === 'trim'
-                    ? 'A climax run on heavy volume after a big advance is often the last gasp of a move. Selling into that strength — instead of waiting for the reversal to prove itself — locks in the gain.'
-                    : label === 'sell'
-                        ? 'Once the weekly chart flips to distribution, the trend that justified the buy is gone. Holding and hoping just adds risk to a broken thesis.'
-                        : 'The trend was still healthy and the drawdown was shallow. Exiting a working trade on noise is how good trades get cut short.';
-                lines.push('<div style="margin-top:7px; padding:6px 8px; background:rgba(148,163,184,0.08); border-left:2px solid ' +
-                    analysisNow.actionColor + '; border-radius:0 5px 5px 0; color:#e2e8f0;">' + _FS_EXIT_LABELS[label] + ': ' + principle + '</div>');
-
-                const explain = document.getElementById('fs-exit-explain');
-                if (explain) explain.innerHTML = lines.join('');
-
-                const statsEl = document.getElementById('fs-exit-stats');
-                if (statsEl) statsEl.innerHTML = _fsStatHtml(st, true);
-
-                const tickerSearch = document.getElementById('fs-ticker-search');
-                if (tickerSearch) tickerSearch.value = ticker; // reveal ticker
-
-                const nextBtn = document.getElementById('fs-exit-next-btn');
                 if (nextBtn) nextBtn.style.display = 'block';
 
                 window.renderFullScreenChart();
