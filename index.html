@@ -21765,6 +21765,7 @@
                 return a;
             }
 
+            const _FS_TRAINSTATS_KEY = 'sundarx_fs_trainstats';
             window._fsTrainStats = {
                 flash: { c: 0, t: 0, s: 0, bs: 0 },
                 quiz: { c: 0, t: 0, s: 0, bs: 0 },
@@ -21772,6 +21773,15 @@
                 vol: { c: 0, t: 0, s: 0, bs: 0 },
                 exit: { c: 0, t: 0, s: 0, bs: 0, pnl: 0 }
             };
+            // Restore saved training stats, if any, keeping the default shape for missing/new modes
+            try {
+                const saved = JSON.parse(localStorage.getItem(_FS_TRAINSTATS_KEY));
+                if (saved && typeof saved === 'object') {
+                    Object.keys(window._fsTrainStats).forEach(mode => {
+                        if (saved[mode]) Object.assign(window._fsTrainStats[mode], saved[mode]);
+                    });
+                }
+            } catch (e) { }
 
             function _fsRecordStat(mode, correct, extra) {
                 const st = window._fsTrainStats[mode];
@@ -21779,6 +21789,7 @@
                 if (correct) { st.c++; st.s++; if (st.s > st.bs) st.bs = st.s; }
                 else st.s = 0;
                 if (extra && typeof extra.pnl === 'number') st.pnl += extra.pnl;
+                try { localStorage.setItem(_FS_TRAINSTATS_KEY, JSON.stringify(window._fsTrainStats)); } catch (e) { }
                 return st;
             }
 
@@ -21953,7 +21964,8 @@
                     breakoutIdx: chosen.idx,
                     pivot: chosen.pivot,
                     outcome: chosen.outcome,
-                    raw: chosenRaw
+                    raw: chosenRaw,
+                    answered: false
                 };
                 // The breakout candle itself is visible — the drill is judging its QUALITY
                 _fsEnterTrainingReplay(chosenTicker, chosenRaw, chosen.idx, 'Flashcard Mode', 'TICKER_A');
@@ -21961,7 +21973,8 @@
             };
 
             window.fsFlashcardGuess = function (guessSucceeds) {
-                if (!window._fsFlashcardState) return;
+                if (!window._fsFlashcardState || window._fsFlashcardState.answered) return; // one answer per question — no stat double-counting
+                window._fsFlashcardState.answered = true;
                 const { raw, breakoutIdx, pivot, outcome, ticker } = window._fsFlashcardState;
 
                 // Reveal the full 5-week resolution window
@@ -22032,13 +22045,14 @@
                 const statsEl = document.getElementById('fs-pattern-quiz-stats');
                 if (statsEl) statsEl.innerHTML = _fsStatHtml(window._fsTrainStats.quiz);
 
-                let found = null;
+                let found = null, scanned = 0;
                 const keys = _fsShuffleArr(Array.from(window._ohlcvTickers.keys()))
                     .filter(k => _FS_INDEX_TICKERS.indexOf(k) === -1);
                 outer:
                 for (const k of keys) {
                     const data = window._ohlcvTickers.get(k);
                     if (!data || data.length < 90) continue;
+                    scanned++;
                     for (let attempt = 0; attempt < 25; attempt++) {
                         const rIdx = 70 + Math.floor(Math.random() * (data.length - 70));
                         const snippet = data.slice(0, rIdx + 1);
@@ -22057,6 +22071,7 @@
                         };
                         break outer;
                     }
+                    if (scanned >= 40) break; // safety cap — avoid scanning the entire ticker universe
                 }
                 if (!found) {
                     if (result) result.textContent = 'No clear pattern found. Try again.';
@@ -22070,14 +22085,16 @@
                     truePattern: found.pattern,
                     trueGroup: found.group,
                     detail: found.detail,
-                    others: found.others
+                    others: found.others,
+                    answered: false
                 };
                 _fsEnterTrainingReplay(found.ticker, found.raw, found.idx, 'Pattern Quiz Mode', 'PATTERN_QUIZ');
                 if (result) result.textContent = '';
             };
 
             window.fsPatternQuizGuess = function (guessKey) {
-                if (!window._fsPatternQuizState) return;
+                if (!window._fsPatternQuizState || window._fsPatternQuizState.answered) return; // one answer per question — no stat double-counting
+                window._fsPatternQuizState.answered = true;
                 const { truePattern, trueGroup, ticker, detail, others } = window._fsPatternQuizState;
 
                 const isCorrect = guessKey === trueGroup;
@@ -22124,13 +22141,14 @@
                 const statsEl = document.getElementById('fs-decision-stats');
                 if (statsEl) statsEl.innerHTML = _fsStatHtml(window._fsTrainStats.decide, true);
 
-                let found = null;
+                let found = null, scanned = 0;
                 const keys = _fsShuffleArr(Array.from(window._ohlcvTickers.keys()))
                     .filter(k => _FS_INDEX_TICKERS.indexOf(k) === -1);
                 outer:
                 for (const k of keys) {
                     const data = window._ohlcvTickers.get(k);
                     if (!data || data.length < 110) continue;
+                    scanned++;
                     for (let attempt = 0; attempt < 20; attempt++) {
                         const idx = 70 + Math.floor(Math.random() * (data.length - 80));
                         if (idx >= data.length - 9) continue;
@@ -22143,6 +22161,7 @@
                         found = { ticker: k, idx: idx, raw: data, analysis: analysis };
                         break outer;
                     }
+                    if (scanned >= 40) break; // safety cap — avoid scanning the entire ticker universe
                 }
                 if (!found) {
                     if (result) result.textContent = 'No setup found. Try again.';
@@ -22176,14 +22195,16 @@
                     stopped: stopped,
                     exitIdx: exitIdx,
                     action: found.analysis.action,
-                    score: found.analysis.score
+                    score: found.analysis.score,
+                    answered: false
                 };
                 _fsEnterTrainingReplay(found.ticker, raw, idx, 'Decision Trainer', 'TICKER_A');
                 if (result) result.textContent = '';
             };
 
             window.fsDecisionGuess = function (buys) {
-                if (!window._fsDecisionState) return;
+                if (!window._fsDecisionState || window._fsDecisionState.answered) return; // one answer per question — no stat double-counting
+                window._fsDecisionState.answered = true;
                 const { ticker, idx, raw, pnl, stopped, action, score } = window._fsDecisionState;
 
                 // Reveal the full 8-week outcome window
@@ -22439,7 +22460,7 @@
                 const statsEl = document.getElementById('fs-exit-stats');
                 if (statsEl) statsEl.innerHTML = _fsStatHtml(window._fsTrainStats.exit, true);
 
-                let found = null;
+                let found = null, scanned = 0;
                 const keys = _fsShuffleArr(Array.from(window._ohlcvTickers.keys()))
                     .filter(k => _FS_INDEX_TICKERS.indexOf(k) === -1);
 
@@ -22447,6 +22468,7 @@
                 for (const k of keys) {
                     const data = window._ohlcvTickers.get(k);
                     if (!data || data.length < 130) continue;
+                    scanned++;
                     for (let attempt = 0; attempt < 25; attempt++) {
                         const idx0 = 60 + Math.floor(Math.random() * (data.length - 90));
                         const entrySnippet = data.slice(0, idx0 + 1);
@@ -22485,6 +22507,7 @@
                         found = { ticker: k, raw: data, idx0, idx1, idx2, entry, holdWeeks, runningPnL, label, analysisNow, confirmMove };
                         break outer;
                     }
+                    if (scanned >= 40) break; // safety cap — avoid scanning the entire ticker universe
                 }
                 if (!found) {
                     if (result) result.textContent = 'No clean position found. Try again.';
