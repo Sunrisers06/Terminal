@@ -7057,6 +7057,7 @@
             const PARQUET_FILES = {
                 results: 'Results.parquet',
                 indices: 'indices.parquet',
+                indexHistory: 'nse_index_history_weekly.parquet',
                 news: 'news.parquet',
                 insights: 'insights.parquet',
                 namesMap: 'namesMap.parquet',
@@ -10230,43 +10231,9 @@
                     window._fhTickers.FF = new Set(window._sheetFF || []);
                     window._fhTickers.TF = new Set(window._sheetTF || []);
                     window._fhTickers.F = new Set(window._sheetFavs || []);
-            window._fhTickers.H = new Set(window._sheetHolds || []);
+                    window._fhTickers.H = new Set(window._sheetHolds || []);
                 }
             };
-
-            window.isHoldingTicker = function (ticker) {
-                if (!ticker) return false;
-                const clean = String(ticker).replace(/\.NS$/i, '').trim().toUpperCase();
-                if (window._fhTickers && window._fhTickers.H) {
-                    if (window._fhTickers.H.has(clean) || window._fhTickers.H.has(clean + '.NS')) return true;
-                }
-                if (window._remoteHolds) {
-                    if (window._remoteHolds instanceof Set && (window._remoteHolds.has(clean) || window._remoteHolds.has(clean + '.NS'))) return true;
-                    if (Array.isArray(window._remoteHolds) && (window._remoteHolds.includes(clean) || window._remoteHolds.includes(clean + '.NS'))) return true;
-                }
-                if (window._sheetHolds) {
-                    if (window._sheetHolds instanceof Set && (window._sheetHolds.has(clean) || window._sheetHolds.has(clean + '.NS'))) return true;
-                    if (Array.isArray(window._sheetHolds) && (window._sheetHolds.includes(clean) || window._sheetHolds.includes(clean + '.NS'))) return true;
-                }
-                if (window.stockData && Array.isArray(window.stockData)) {
-                    const found = window.stockData.find(s => String(s._ticker || s.Ticker || '').toUpperCase() === clean);
-                    if (found && found.Holding && String(found.Holding).trim() !== '' && String(found.Holding).trim() !== '0' && String(found.Holding).trim() !== 'NO') return true;
-                }
-                return false;
-            };
-
-            window.setAtrMult = function (val) {
-                window._atrMult = parseFloat(val);
-                try { localStorage.setItem('atr_mult', String(val)); } catch (e) { }
-                if (window._chartCalcCache) window._chartCalcCache.clear();
-                if (window._currentTick && typeof drawChart === 'function') {
-                    delete _canvasCache[window._currentTick + '_' + (_currentPeriod === '6m' ? '1y' : '6m')];
-                    delete _canvasCache[window._currentTick + '_' + _currentPeriod];
-                    drawChart(window._currentTick);
-                }
-            };
-
-
 
 
             let _favTypeResolve = null;
@@ -12122,7 +12089,9 @@
                 }
 
                 const isFs = pCv.id === 'fs-chart-pcv';
-                const _rsCvEl = isFs ? document.getElementById('fs-chart-rscv') : null;
+                const groupSel = isFs ? document.getElementById('fs-group-select') : null;
+                const isIdxMain = groupSel && groupSel.value === 'index_main';
+                const _rsCvEl = (isFs && !isIdxMain) ? document.getElementById('fs-chart-rscv') : null;
                 if (_rsCvEl && indCv && _rsCvEl.parentNode === indCv.parentNode) {
                     _rsCvEl.parentNode.insertBefore(_rsCvEl, indCv);
                 }
@@ -12213,55 +12182,6 @@
                         }
                     }
                     const atr14full = sma(trFull, 14);
-
-                    // ── Calculate ATR-based Stop Loss Trend (Tight ATR SL - default 2.0x ATR14) ──
-                    const atrMult = (window._atrMult !== undefined ? window._atrMult : parseFloat(localStorage.getItem('atr_mult') || '2.0'));
-                    const stTrendArr = new Array(allRaw.length);
-                    const stStopLossArr = new Array(allRaw.length);
-                    let _prevFub = 0, _prevFlb = 0, _prevSt = 0, _prevTrend = 1;
-                    for (let i = 0; i < allRaw.length; i++) {
-                        const r = allRaw[i];
-                        let atr = atr14full[i];
-                        if (!atr || isNaN(atr)) {
-                            let sumTr = 0;
-                            for (let j = 0; j <= i; j++) {
-                                const pc = j > 0 ? allRaw[j - 1].close : allRaw[j].open;
-                                sumTr += Math.max(allRaw[j].high - allRaw[j].low, Math.abs(allRaw[j].high - pc), Math.abs(allRaw[j].low - pc));
-                            }
-                            atr = sumTr / (i + 1);
-                        }
-                        if (!atr || atr <= 0) atr = r.close * 0.03;
-
-                        const mid = (r.high + r.low) / 2;
-                        const bub = mid + atrMult * atr;
-                        const blb = mid - atrMult * atr;
-
-
-                        let fub = bub, flb = blb;
-                        if (i > 0) {
-                            const pc = allRaw[i - 1].close;
-                            fub = (bub < _prevFub || pc > _prevFub) ? bub : _prevFub;
-                            flb = (blb > _prevFlb || pc < _prevFlb) ? blb : _prevFlb;
-                        }
-
-                        let curTrend = _prevTrend, curSt = _prevSt;
-                        if (i === 0) {
-                            curTrend = 1;
-                            curSt = flb;
-                        } else {
-                            if (_prevSt === _prevFub) {
-                                if (r.close > fub) { curTrend = 1; curSt = flb; }
-                                else { curTrend = -1; curSt = fub; }
-                            } else {
-                                if (r.close < flb) { curTrend = -1; curSt = fub; }
-                                else { curTrend = 1; curSt = flb; }
-                            }
-                        }
-                        _prevFub = fub; _prevFlb = flb; _prevSt = curSt; _prevTrend = curTrend;
-                        stTrendArr[i] = curTrend;
-                        stStopLossArr[i] = curSt;
-                    }
-
                     const adSmaFull = sma(adFull, 9);
                     const obvSmaFull = sma(obvFull, 9);
 
@@ -12304,9 +12224,7 @@
                             volSma9: volSma9full[i],
                             hUpV15: hUpV15full[i],
                             hDnV15: hDnV15full[i],
-                            atr14: atr14full[i],
-                            atrStopLoss: stStopLossArr[i],
-                            atrTrend: stTrendArr[i]
+                            atr14: atr14full[i]
                         };
                     });
 
@@ -12466,45 +12384,46 @@
                 }
 
                 // ── Period Slicing (6m, 1y, etc.) looking backward from the END of the valid data ──
-                const months = period === '5y' ? 60 : period === '4y' ? 48 : period === '3y' ? 36 : period === '2y' ? 24 : period === '1y' ? 12 : 6;
+                const months = period === 'all' ? Infinity : period === '5y' ? 60 : period === '4y' ? 48 : period === '3y' ? 36 : period === '2y' ? 24 : period === '1y' ? 12 : 6;
                 const lastDate = currentData[currentData.length - 1].date;
                 const cutoff = new Date(lastDate.getTime());
-                cutoff.setMonth(cutoff.getMonth() - months);
+                if (months === Infinity) {
+                    cutoff.setFullYear(1900);
+                } else {
+                    cutoff.setMonth(cutoff.getMonth() - months);
+                }
                 const cutTs = cutoff.getTime();
 
                 let defaultStartIdx = 0;
                 while (defaultStartIdx < currentData.length && currentData[defaultStartIdx].date.getTime() < cutTs) defaultStartIdx++;
 
                 let periodN = currentData.length - defaultStartIdx;
+
                 if (periodN <= 0) {
                     periodN = currentData.length;
                     defaultStartIdx = 0;
                 }
 
-                // Keep charts readable without creating fake slots for stocks that truly have little history.
-                const MIN_CANDLES = 60;
-                if (!isFs && periodN < MIN_CANDLES && currentData.length > periodN) {
-                    defaultStartIdx = Math.max(0, currentData.length - Math.min(MIN_CANDLES, currentData.length));
-                    periodN = currentData.length - defaultStartIdx;
-                }
+                // ── Period Window: fill canvas with available data for selected period ──
+                // standardSlots caps the view window to the period size.
+                const standardSlots = months === Infinity
+                    ? Math.max(1, periodN)
+                    : Math.round(months * 21.1);
 
+                // Pan offset: how many candles the user has scrolled backward
                 let pOffset = (pCv && pCv._panOffset !== undefined) ? pCv._panOffset : 0;
-
-                // Let the chart zoom out to the full selected period
-                let visibleSlots = periodN;
-                if (visibleSlots < 60) visibleSlots = 60;
-
-                const maxOffset = Math.max(0, periodN - visibleSlots);
+                const maxOffset = Math.max(0, periodN - standardSlots);
                 pOffset = Math.max(0, Math.min(maxOffset, pOffset));
                 if (pCv) pCv._panOffset = pOffset;
 
-                const actualEnd = Math.max(defaultStartIdx, currentData.length - pOffset);
-                const actualStart = Math.max(defaultStartIdx, actualEnd - visibleSlots);
+                // actualEnd / actualStart: date-filtered slice
+                const actualEnd = currentData.length - pOffset;
+                const actualStart = Math.max(defaultStartIdx, actualEnd - standardSlots);
                 const raw = currentData.slice(actualStart, actualEnd);
 
-                // Map the chart to visibleSlots to prevent stretching of small datasets
-                const n = visibleSlots;
-                const drawIndexOffset = visibleSlots - raw.length;
+                // n = raw.length → canvas always fills full width with available data
+                const n = Math.max(1, raw.length);
+                const drawIndexOffset = 0;
 
                 if (!raw.length) {
                     loadEl.innerHTML = '<span style="color:#f43f5e;font-size:11px;">No ' + period.toUpperCase() + ' data for ' + ticker + '</span>';
@@ -12703,7 +12622,7 @@
                 };
 
                 const barStep = pW / n;
-                const bW = Math.max(1.2, Math.min(isFs ? 8 : 5, barStep * 0.55));
+                const bW = Math.max(0.5, Math.min(isFs ? 10 : 6, barStep * 0.65));
 
                 // Ensure compatibility with array lookups if needed elsewhere
                 const xPositions = raw.map((_, i) => toX(i));
@@ -12905,7 +12824,7 @@
                             pc.beginPath();
                             const midY = yTop + binH / 2;
                             pc.moveTo(PP.l, midY);
-                            pc.lineTo(W - PP.r, midY);  // full chart width
+                            pc.lineTo(W - PP.r, midY);
                             pc.stroke();
                             pc.setLineDash([]);
                         }
@@ -12979,7 +12898,7 @@
                 }); pc.stroke();
 
                 // ── Index Line ──
-                if (raw.length > 0) {
+                if (raw.length > 0 && !isIdxMain) {
                     // Index Line (Low Opacity Gray/Blue)
                     pc.strokeStyle = 'rgba(148, 163, 184, 0.4)'; pc.lineWidth = 1.2; pc.lineJoin = 'round'; pc.lineCap = 'round'; pc.setLineDash([]);
                     pc.beginPath();
@@ -13094,87 +13013,6 @@
                 pc.fillStyle = '#1e6eff'; pc.fillRect(W - tagW - 1, yLc + tagOffY, tagW, tagH);
                 pc.fillStyle = '#fff'; pc.textAlign = 'right'; pc.textBaseline = 'middle';
                 pc.fillText(tagTxt, W - 4, yLc);
-
-                // ── ATR-based Stop Loss Trend (ONLY FOR HOLDING TICKERS) ──
-                if (window.isHoldingTicker && window.isHoldingTicker(UC)) {
-                    pc.save();
-                    pc.lineWidth = isFs ? 2.2 : 1.8;
-                    pc.lineJoin = 'round';
-                    pc.lineCap = 'round';
-                    pc.setLineDash([]);
-
-                    // 1. Draw continuous ATR Trailing Stop Loss Line with dots
-                    for (let i = 0; i < raw.length; i++) {
-                        const r = raw[i];
-                        if (!r.atrStopLoss) continue;
-                        const x = toX(i);
-                        const y = toY(r.atrStopLoss);
-                        const isUp = (r.atrTrend === 1);
-                        const color = isUp ? '#10b981' : '#f43f5e';
-
-                        if (i > 0 && raw[i - 1].atrStopLoss) {
-                            const prevR = raw[i - 1];
-                            const prevX = toX(i - 1);
-                            const prevY = toY(prevR.atrStopLoss);
-
-                            pc.strokeStyle = color;
-                            pc.beginPath();
-                            pc.moveTo(prevX, prevY);
-                            pc.lineTo(x, y);
-                            pc.stroke();
-                        }
-
-                        // Dot on stoploss line
-                        pc.fillStyle = color;
-                        pc.beginPath();
-                        pc.arc(x, y, isFs ? 2.2 : 1.5, 0, Math.PI * 2);
-                        pc.fill();
-                    }
-
-                    // 2. Right Axis Stop Loss Tag & Dashed Line
-                    const lastR = raw[raw.length - 1];
-                    if (lastR && lastR.atrStopLoss) {
-                        const ySl = toY(lastR.atrStopLoss);
-                        const isUp = (lastR.atrTrend === 1);
-                        const slColor = isUp ? '#10b981' : '#f43f5e';
-                        const pctDist = lastR.close ? ((lastR.atrStopLoss - lastR.close) / lastR.close * 100).toFixed(1) : '0';
-
-                        // Horizontal dashed line to right price axis
-                        pc.strokeStyle = slColor;
-                        pc.lineWidth = 1.2;
-                        pc.setLineDash([4, 3]);
-                        pc.beginPath();
-                        pc.moveTo(PP.l, ySl);
-                        pc.lineTo(W - PP.r, ySl);
-                        pc.stroke();
-                        pc.setLineDash([]);
-
-                        // Right axis tag box
-                        const slTagTxt = `SL ${fmtP(lastR.atrStopLoss)}`;
-                        pc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 8px "Lexend",monospace';
-                        const tagW = pc.measureText(slTagTxt).width + (isFs ? 10 : 8);
-                        const tagH = isFs ? 15 : 10;
-                        const tagOffY = isFs ? -7.5 : -5;
-
-                        pc.fillStyle = slColor;
-                        pc.fillRect(W - tagW - 1, ySl + tagOffY, tagW, tagH);
-                        pc.fillStyle = '#ffffff';
-                        pc.textAlign = 'right';
-                        pc.textBaseline = 'middle';
-                        pc.fillText(slTagTxt, W - 4, ySl);
-
-                        // Top-left Canvas Overlay Badge
-                        const curMult = (window._atrMult !== undefined ? window._atrMult : parseFloat(localStorage.getItem('atr_mult') || '2.0'));
-                        pc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 8.5px "Lexend",monospace';
-                        const badgeText = `🛡️ HOLDING  |  ATR SL (${curMult}x): ${fmtP(lastR.atrStopLoss)} (${pctDist >= 0 ? '+' : ''}${pctDist}%)`;
-                        pc.fillStyle = slColor;
-                        pc.textAlign = 'left';
-                        pc.textBaseline = 'top';
-                        pc.fillText(badgeText, PP.l + (isFs ? 12 : 8), PP.t + (isFs ? 18 : 14));
-                    }
-                    pc.restore();
-                }
-
 
                 // ── Separator line at bottom of price chart ──
                 pc.strokeStyle = 'rgba(255,255,255,0.15)'; pc.lineWidth = 0.8; pc.setLineDash([]);
@@ -13795,7 +13633,7 @@
                             const bTop = toYD(v);
                             const bBot = zeroY;
                             const bH = Math.max(1, bBot - bTop);
-                            const bW2 = Math.max(1.5, Math.min(8, (W / n) * 0.55));
+                            const bW2 = Math.max(0.5, Math.min(8, (W / n) * 0.65));
                             rsc.fillStyle = r._dColor || '#00bfff';
                             rsc.fillRect(x - bW2 / 2, bTop, bW2, bH);
                         });
@@ -13867,7 +13705,7 @@
                             const bTop = toYD(v);
                             const bBot = zeroY;
                             const bH = Math.max(1, bBot - bTop);
-                            const bW2 = Math.max(1.5, Math.min(8, (W / n) * 0.55));
+                            const bW2 = Math.max(0.5, Math.min(8, (W / n) * 0.65));
                             rsc.fillStyle = r._dColor || '#00bfff';
                             rsc.fillRect(x - bW2 / 2, bTop, bW2, bH);
                         });
@@ -13931,7 +13769,7 @@
                             const bTop = Math.min(zeroY, toYRS(v));
                             const bBot = Math.max(zeroY, toYRS(v));
                             const bH = Math.max(1, bBot - bTop);
-                            const bW2 = Math.max(1.5, Math.min(8, (W / n) * 0.55));
+                            const bW2 = Math.max(0.5, Math.min(8, (W / n) * 0.65));
                             rsc.fillStyle = v >= 0 ? 'rgba(0, 230, 118, 0.65)' : 'rgba(255, 77, 79, 0.65)';
                             rsc.fillRect(x - bW2 / 2, bTop, bW2, bH);
                         });
@@ -20577,6 +20415,67 @@
                 overflow: hidden;
             }
         }
+
+        /* ── Index Chart Type Toolbar ── */
+        .fs-idx-chart-btn {
+            padding: 5px 10px;
+            font-size: 10.5px;
+            font-weight: 700;
+            border-radius: 7px;
+            border: 1px solid rgba(99, 179, 237, 0.35);
+            background: rgba(15, 23, 42, 0.92);
+            color: rgba(148, 163, 184, 0.9);
+            cursor: pointer;
+            transition: all 0.15s;
+            white-space: nowrap;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+            letter-spacing: 0.03em;
+            backdrop-filter: blur(4px);
+        }
+
+        .fs-idx-chart-btn:hover {
+            background: rgba(30, 41, 59, 0.95);
+            color: #fff;
+            border-color: rgba(99, 179, 237, 0.6);
+        }
+
+        .fs-idx-chart-btn.active-idx-btn {
+            background: rgba(29, 111, 232, 0.85);
+            color: #fff;
+            border-color: rgba(29, 111, 232, 0.9);
+            box-shadow: 0 2px 12px rgba(29, 111, 232, 0.35);
+        }
+
+        /* PE button - amber tint when active */
+        #fs-idx-btn-pe.active-idx-btn {
+            background: rgba(245, 158, 11, 0.85);
+            border-color: rgba(245, 158, 11, 0.9);
+            box-shadow: 0 2px 12px rgba(245, 158, 11, 0.35);
+        }
+
+        /* PB button - purple tint when active */
+        #fs-idx-btn-pb.active-idx-btn {
+            background: rgba(139, 92, 246, 0.85);
+            border-color: rgba(139, 92, 246, 0.9);
+            box-shadow: 0 2px 12px rgba(139, 92, 246, 0.35);
+        }
+
+        /* Div Yield button - green tint when active */
+        #fs-idx-btn-divy.active-idx-btn {
+            background: rgba(34, 197, 94, 0.85);
+            border-color: rgba(34, 197, 94, 0.9);
+            box-shadow: 0 2px 12px rgba(34, 197, 94, 0.35);
+        }
+
+        /* Remove hover animation from mini financial card scores */
+        #fs-mini-financial-card .iscore {
+            transition: none !important;
+        }
+
+        #fs-mini-financial-card .iscore:hover {
+            transform: none;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+        }
     </style>
     <div id="fs-chart-modal"
         style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; width:100%; height:100%; background:var(--bg); z-index:99999; flex-direction:row; overflow:hidden;">
@@ -20612,6 +20511,7 @@
                         onclick="window.selectFsDuration('3y')">3Y</button>
                     <button class="fs-pill" data-value="4y" onclick="window.selectFsDuration('4y')">4Y</button>
                     <button class="fs-pill" data-value="5y" onclick="window.selectFsDuration('5y')">5Y</button>
+                    <button class="fs-pill" data-value="all" onclick="window.selectFsDuration('all')">A</button>
                 </div>
             </div>
 
@@ -20934,6 +20834,24 @@
                 <button id="fs-rscv-toggle-btn"
                     style="display:flex; align-items:center; gap:4px; position:absolute; left:12px; top:12px; pointer-events:auto; z-index:25; font-size:10.5px; font-weight:700; padding:4px 9px; background:rgba(15,23,42,0.92); color:#38bdf8; border:1px solid rgba(56,189,248,0.4); border-radius:6px; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.4);"
                     onclick="window.fsToggleRscvMode()">📊 Deliv %</button>
+
+                <!-- Index chart type toolbar (visible only in Index_main mode) -->
+                <div id="fs-index-chart-toolbar"
+                    style="display:none; position:absolute; left:12px; top:12px; z-index:26; gap:5px; align-items:center; pointer-events:auto; flex-wrap:wrap;">
+                    <button id="fs-idx-btn-price" class="fs-idx-chart-btn active-idx-btn"
+                        onclick="window.setIndexChartType('price')" title="OHLC Candlestick Chart">🕯 Price</button>
+                    <button id="fs-idx-btn-pe" class="fs-idx-chart-btn" onclick="window.setIndexChartType('pe')"
+                        title="Price-to-Earnings Ratio">📊 PE</button>
+                    <button id="fs-idx-btn-pb" class="fs-idx-chart-btn" onclick="window.setIndexChartType('pb')"
+                        title="Price-to-Book Ratio">📗 PB</button>
+                    <button id="fs-idx-btn-divy" class="fs-idx-chart-btn" onclick="window.setIndexChartType('divy')"
+                        title="Dividend Yield %">💰 Div Yield</button>
+                </div>
+
+                <!-- Index chart canvas (used for index line charts) -->
+                <canvas id="fs-index-chart-canvas"
+                    style="display:none; position:absolute; top:0; left:0; width:100%; height:100%;"></canvas>
+
                 <!-- Drawing overlay -->
                 <canvas id="fs-draw-canvas"></canvas>
             </div>
@@ -21189,12 +21107,14 @@
                     <option value="all">All Tickers</option>
                     <option value="favorites">Favorites</option>
                     <option value="holdings">Holdings</option>
+                    <option value="index_main">📈 Index_main</option>
                 `;
 
 
-                // Add individual indices if available
+                // Add individual indices if available (skip 'Index_main' — handled separately)
                 if (window.indexDataMap) {
                     Object.keys(window.indexDataMap).sort().forEach(idxName => {
+                        if (idxName.toLowerCase() === 'index_main') return; // already added above
                         const opt = document.createElement('option');
                         opt.value = 'idx_' + idxName;
                         opt.textContent = idxName;
@@ -21387,6 +21307,15 @@
                     if (window._fhTickers && window._fhTickers.H) {
                         window._fhTickers.H.forEach(t => tickerSet.add(t.replace(/\.NS$/i, '').toUpperCase()));
                     }
+                } else if (group === 'index_main') {
+                    // Index_main: use the sequence defined in the watchlist (indices.parquet)
+                    const key = Object.keys(window.indexDataMap || {}).find(k => k.toLowerCase() === 'index_main') || 'Index_main';
+                    if (window.indexDataMap && window.indexDataMap[key]) {
+                        window.indexDataMap[key].forEach(tk => tickerSet.add(tk));
+                    }
+                    if (!window._indexHistoryCache && window._loadIndexHistory) {
+                        window._loadIndexHistory(); // Trigger background load
+                    }
                 } else if (group.startsWith('idx_')) {
                     const idxName = group.replace('idx_', '');
                     // Add index itself if it is a ticker (e.g. NIFTY50)
@@ -21404,7 +21333,8 @@
                     clearBtn.style.display = searchQuery ? 'block' : 'none';
                 }
 
-                const tickers = Array.from(tickerSet).sort();
+                // Sort alphabetically EXCEPT for index_main which should preserve its watchlist sequence
+                const tickers = group === 'index_main' ? Array.from(tickerSet) : Array.from(tickerSet).sort();
 
                 tickerSel.innerHTML = '';
                 const listContainer = document.getElementById('fs-ticker-list');
@@ -21412,7 +21342,7 @@
                 let hasMatchForPrevVal = false;
 
                 tickers.forEach(tk => {
-                    if (searchQuery && !tk.includes(searchQuery)) return;
+                    if (searchQuery && !tk.toUpperCase().includes(searchQuery)) return;
                     const opt = document.createElement('option');
                     opt.value = tk;
                     opt.textContent = tk;
@@ -21432,7 +21362,6 @@
                         const sRnkCls = isNaN(sRnk) ? 'gray' : (sRnk <= 5 ? 'green' : (sRnk <= 10 ? 'blue' : (sRnk <= 15 ? 'orange' : 'red')));
                         const sRnkDisp = isNaN(sRnk) ? '' : `#${Math.round(sRnk)}`;
                         const sRnkBadge = sRnkDisp ? `<span class="fs-list-rank ${sRnkCls}">${sRnkDisp}</span>` : '';
-
                         item.innerHTML = `
                             <div class="fs-item-left">
                                 <span class="fs-item-tk">${tk}</span>
@@ -21449,6 +21378,7 @@
                         listContainer.appendChild(item);
                     }
                 });
+
 
                 if (preserveValue && prevVal && hasMatchForPrevVal) {
                     tickerSel.value = prevVal;
@@ -21602,6 +21532,58 @@
 
                 const wrap = document.getElementById('fs-chart-wrapper');
                 const loadEl = document.getElementById('fs-chart-loading');
+                const group = document.getElementById('fs-group-select')?.value || 'all';
+
+                // ── Helper: restore normal canvas visibility ──
+                function _restoreNormalCanvases() {
+                    const idxCv = document.getElementById('fs-index-chart-canvas');
+                    if (idxCv) { idxCv.style.display = 'none'; idxCv.width = 0; }
+                    const idxToolbar = document.getElementById('fs-index-chart-toolbar');
+                    if (idxToolbar) idxToolbar.style.display = 'none';
+                    const rscvBtn = document.getElementById('fs-rscv-toggle-btn');
+                    if (rscvBtn) rscvBtn.style.display = 'flex';
+                    const fhActions = document.getElementById('fs-fh-actions-left');
+                    if (fhActions) fhActions.style.display = 'flex';
+
+                    // Unhide standard canvases
+                    const pCv = document.getElementById('fs-chart-pcv');
+                    const vCv = document.getElementById('fs-chart-vcv');
+                    const rsCv = document.getElementById('fs-chart-rscv');
+                    if (pCv) pCv.style.display = '';
+                    if (vCv) vCv.style.display = '';
+                    // rsCv display state depends on whether it's active, but we can reset it to empty
+                    // so the toggle logic handles it correctly, or we can just let drawChartCore handle it
+                    if (rsCv && window._fsRscvActive) rsCv.style.display = 'block';
+
+                    // Unhide any ind/deal canvases
+                    const wrap = document.getElementById('fs-chart-wrapper');
+                    if (wrap) {
+                        wrap.querySelectorAll('.card-chart-canvas-ind, .card-chart-canvas-deal').forEach(c => c.style.display = 'block');
+                    }
+                }
+
+                // ── Index_main mode ──
+                if (group === 'index_main') {
+                    // Show index toolbar, hide stock-specific buttons
+                    const idxToolbar = document.getElementById('fs-index-chart-toolbar');
+                    if (idxToolbar) idxToolbar.style.display = 'flex';
+                    const rscvBtn = document.getElementById('fs-rscv-toggle-btn');
+                    if (rscvBtn) rscvBtn.style.display = 'none';
+                    const fhActions = document.getElementById('fs-fh-actions-left');
+                    if (fhActions) fhActions.style.display = 'none';
+                    const miniCard = document.getElementById('fs-mini-financial-card');
+                    if (miniCard) miniCard.style.display = 'none';
+
+                    if (window.renderIndexChart) {
+                        window.renderIndexChart(tk, tf);
+                    } else {
+                        if (loadEl) { loadEl.textContent = 'Index chart loading…'; loadEl.style.display = 'flex'; }
+                    }
+                    return;
+                }
+
+                // ── Normal stock chart mode — ensure cleanup from index mode ──
+                _restoreNormalCanvases();
 
                 // Pre-fetch delivery percentage data if not cached yet
                 const tkUpper = tk.toUpperCase();
@@ -23758,6 +23740,438 @@
                     document.addEventListener('touchend', onUp);
                 }
             }, 500);
+        })();
+    </script>
+
+
+    <!-- NSE INDEX HISTORY CHART ENGINE -->
+    <script>
+        (function () {
+            'use strict';
+            const IDX_FILE = 'nse_index_history_weekly.parquet';
+            window._indexHistoryCache = null;
+            window._indexHistoryNames = [];
+            window._idxChartType = 'price';
+            let _loadPromise = null;
+
+            window._loadIndexHistory = function () {
+                if (_loadPromise) return _loadPromise;
+                if (window._indexHistoryCache) return Promise.resolve(window._indexHistoryCache);
+                _loadPromise = (async () => {
+                    try {
+                        if (!window._pqBufCache) window._pqBufCache = {};
+                        if (!window._pqBufCache[IDX_FILE]) {
+                            const r = await fetch(IDX_FILE);
+                            if (!r.ok) throw new Error('HTTP ' + r.status);
+                            window._pqBufCache[IDX_FILE] = await r.arrayBuffer();
+                        }
+                        const { db, conn } = await window._getDuckDB();
+                        await db.registerFileBuffer(IDX_FILE, new Uint8Array(window._pqBufCache[IDX_FILE].slice(0)));
+                        const result = await conn.query(
+                            `SELECT "Index Name", Date, Open, High, Low, Close, Volume, "P/E", "P/B", "Div Yield"
+                         FROM '${IDX_FILE}' ORDER BY "Index Name", Date`
+                        );
+                        const rows = result.toArray();
+                        const cache = {};
+                        rows.forEach(row => {
+                            const name = String(row['Index Name'] || '').trim();
+                            if (!name) return;
+                            let dt = row['Date'], dateObj = null;
+                            if (dt instanceof Date) { dateObj = dt; }
+                            else if (dt !== null && dt !== undefined) {
+                                if (typeof dt === 'bigint') dateObj = new Date(Number(dt));
+                                else if (typeof dt === 'number') dateObj = dt < 100000 ? new Date(dt * 86400000) : new Date(dt);
+                                else dateObj = new Date(dt);
+                            }
+                            if (!dateObj || isNaN(dateObj.getTime())) return;
+                            const n2 = v => { const n = parseFloat(v); return isNaN(n) ? null : n; };
+                            if (!cache[name]) cache[name] = [];
+                            cache[name].push({
+                                date: dateObj, open: n2(row['Open']), high: n2(row['High']),
+                                low: n2(row['Low']), close: n2(row['Close']), vol: n2(row['Volume']),
+                                pe: n2(row['P/E']), pb: n2(row['P/B']), divy: n2(row['Div Yield'])
+                            });
+                        });
+                        window._indexHistoryCache = cache;
+                        window._indexHistoryNames = Object.keys(cache).sort();
+                        return cache;
+                    } catch (err) {
+                        console.error('[IndexChart] Failed:', err);
+                        window._indexHistoryCache = {};
+                        window._indexHistoryNames = [];
+                        _loadPromise = null;
+                        return {};
+                    }
+                })();
+                return _loadPromise;
+            };
+
+            window.setIndexChartType = function (type) {
+                window._idxChartType = type;
+                ['price', 'pe', 'pb', 'divy'].forEach(t => {
+                    const btn = document.getElementById('fs-idx-btn-' + t);
+                    if (btn) btn.classList.toggle('active-idx-btn', t === type);
+                });
+                const tk = document.getElementById('fs-ticker-select')?.value;
+                const tf = document.getElementById('fs-duration-select')?.value || '3y';
+                if (tk) window.renderIndexChart(tk, tf);
+            };
+
+            window.renderIndexChart = async function (indexName, period) {
+                const loadEl = document.getElementById('fs-chart-loading');
+                const wrap = document.getElementById('fs-chart-wrapper');
+                const pCv = document.getElementById('fs-chart-pcv');
+                const vCv = document.getElementById('fs-chart-vcv');
+                const rsCv = document.getElementById('fs-chart-rscv');
+                const idxCv = document.getElementById('fs-index-chart-canvas');
+                const type = window._idxChartType || 'price';
+
+                if (loadEl) { loadEl.style.display = 'flex'; loadEl.textContent = 'Loading index data…'; }
+
+                // Ensure data is loaded
+                if (!window._indexHistoryCache) await window._loadIndexHistory();
+                const cache = window._indexHistoryCache || {};
+                // Case-insensitive key match
+                const exactKey = Object.keys(cache).find(k => k.toUpperCase() === String(indexName || '').toUpperCase()) || indexName;
+                let rows = cache[exactKey] || [];
+
+                if (!rows.length) {
+                    if (loadEl) { loadEl.style.display = 'flex'; loadEl.textContent = 'No data for "' + indexName + '"'; }
+                    return;
+                }
+
+                // Period filter
+                if (period !== 'all') {
+                    const pyrs = { '1y': 1, '2y': 2, '3y': 3, '4y': 4, '5y': 5, '6m': 0.5 };
+                    const yrs = pyrs[period] || 3;
+                    const cutoff = new Date();
+                    if (yrs === 0.5) cutoff.setMonth(cutoff.getMonth() - 6);
+                    else cutoff.setFullYear(cutoff.getFullYear() - yrs);
+                    rows = rows.filter(r => r.date >= cutoff);
+                }
+
+                if (!rows.length) {
+                    if (loadEl) { loadEl.style.display = 'flex'; loadEl.textContent = 'No data in selected period'; }
+                    return;
+                }
+
+                if (type === 'price') {
+                    // ── PRICE MODE: Use existing chart engine (Volume, A/D, OBV included) ──
+                    // Inject index OHLCV into window._ohlcvTickers (_index Map) under the index name key
+                    const KEY = exactKey.toUpperCase();
+                    if (window._ohlcvTickers && !window._ohlcvTickers.get(KEY + '__IDX_INJECTED__')) {
+                        // Convert FULL unfiltered rows to the same format as OHLC.parquet rows so drawChartCore can filter
+                        const fullRows = cache[exactKey] || [];
+                        const ohlcRows = fullRows.map(r => ({
+                            date: r.date,
+                            open: r.open ?? r.close,
+                            high: r.high ?? r.close,
+                            low: r.low ?? r.close,
+                            close: r.close,
+                            vol: r.vol ?? 0
+                        })).filter(r => r.close > 0);
+                        ohlcRows.sort((a, b) => a.date - b.date);
+                        if (window._ohlcvTickers instanceof Map) {
+                            window._ohlcvTickers.set(KEY, ohlcRows);
+                            // Mark as injected to avoid re-injection
+                            window._ohlcvTickers.set(KEY + '__IDX_INJECTED__', true);
+                        }
+                    }
+
+                    // Hide index canvas, show normal canvases
+                    if (idxCv) { idxCv.style.display = 'none'; idxCv.width = 0; }
+                    if (pCv) pCv.style.display = '';
+                    if (vCv) vCv.style.display = '';
+                    if (rsCv) rsCv.style.display = 'none';
+                    if (wrap) {
+                        wrap.querySelectorAll('.card-chart-canvas-ind, .card-chart-canvas-deal').forEach(c => c.style.display = 'block');
+                    }
+
+                    if (loadEl) loadEl.style.display = 'none';
+
+                    // Call existing chart engine — this gives Volume, A/D line, OBV automatically
+                    if (typeof window._renderCardCandleChart === 'function') {
+                        window._renderCardCandleChart(exactKey, period, pCv, vCv, loadEl, wrap);
+                    } else if (typeof drawChartCore === 'function') {
+                        drawChartCore(exactKey, period, pCv, vCv, loadEl, wrap);
+                    }
+
+                } else {
+                    // ── PE / PB / DIV YIELD MODE: Custom line chart overlay ──
+                    // Hide normal canvases, show index canvas
+                    if (pCv) pCv.style.display = 'none';
+                    if (vCv) vCv.style.display = 'none';
+                    if (rsCv) rsCv.style.display = 'none';
+                    // Also hide any ind/deal canvases created by drawChartCore
+                    if (wrap) {
+                        wrap.querySelectorAll('.card-chart-canvas-ind, .card-chart-canvas-deal').forEach(c => c.style.display = 'none');
+                    }
+                    if (idxCv) idxCv.style.display = 'block';
+                    if (loadEl) loadEl.style.display = 'none';
+                    _drawIdxChart(idxCv, wrap, rows, exactKey, type);
+                }
+            };
+
+            function _drawIdxChart(cv, wrap, rows, label, type) {
+                if (!cv || !wrap) return;
+                const W = wrap.clientWidth || window.innerWidth;
+                const H = wrap.clientHeight || window.innerHeight;
+                const dpr = window.devicePixelRatio || 1;
+                cv.width = W * dpr; cv.height = H * dpr;
+                cv.style.width = W + 'px'; cv.style.height = H + 'px';
+                const ctx = cv.getContext('2d');
+                ctx.scale(dpr, dpr);
+                ctx.clearRect(0, 0, W, H);
+                if (type === 'price') _drawCandles(ctx, W, H, rows, label);
+                else _drawLine(ctx, W, H, rows, label, type);
+                _wireHover(cv, rows, type, W, H, label);
+            }
+
+            function _drawCandles(ctx, W, H, rows, label) {
+                const P = { t: 56, r: 76, b: 42, l: 16 };
+                const cw = W - P.l - P.r, ch = H - P.t - P.b;
+                const valid = rows.filter(r => r.close !== null);
+                if (!valid.length) return;
+                const lo = Math.min(...valid.map(r => r.low ?? r.close));
+                const hi = Math.max(...valid.map(r => r.high ?? r.close));
+                const rng = hi - lo || 1, pad = rng * 0.06;
+                const yMin = lo - pad, yMax = hi + pad;
+                const n = valid.length, slW = cw / n;
+                const cndW = Math.max(1.5, Math.min(12, slW * 0.75));
+                const toY = v => P.t + ch - ((v - yMin) / (yMax - yMin)) * ch;
+                const toX = i => P.l + i * slW + slW / 2;
+                const bg = ctx.createLinearGradient(0, 0, 0, H);
+                bg.addColorStop(0, '#0a0a0f'); bg.addColorStop(1, '#06060a');
+                ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+                ctx.setLineDash([2, 4]); ctx.lineWidth = 0.6; ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+                for (let g = 0; g <= 6; g++) {
+                    const gv = yMin + (yMax - yMin) * (g / 6), gy = toY(gv);
+                    ctx.beginPath(); ctx.moveTo(P.l, gy); ctx.lineTo(W - P.r, gy); ctx.stroke();
+                    ctx.setLineDash([]);
+                    ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.font = '10px Lexend,sans-serif'; ctx.textAlign = 'left';
+                    ctx.fillText(_fn(gv, 0), W - P.r + 5, gy + 3.5); ctx.setLineDash([2, 4]);
+                }
+                ctx.setLineDash([]);
+                ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.font = '9px Lexend,sans-serif'; ctx.textAlign = 'center';
+                const nLb = Math.min(8, Math.floor(cw / 80));
+                for (let j = 0; j <= nLb; j++) {
+                    const ii = Math.round(j * (n - 1) / nLb);
+                    ctx.fillText(_fd(valid[ii].date), toX(ii), H - P.b + 14);
+                }
+                valid.forEach((r, i) => {
+                    const x = toX(i), up = r.close >= r.open, col = up ? '#26a69a' : '#ef5350';
+                    ctx.strokeStyle = col; ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(x, toY(r.high ?? Math.max(r.open ?? r.close, r.close)));
+                    ctx.lineTo(x, toY(r.low ?? Math.min(r.open ?? r.close, r.close)));
+                    ctx.stroke();
+                    const oY = toY(r.open ?? r.close), cY = toY(r.close);
+                    ctx.fillStyle = col;
+                    ctx.fillRect(x - cndW / 2, Math.min(oY, cY), cndW, Math.max(1, Math.abs(oY - cY)));
+                });
+                const last = valid[valid.length - 1];
+                if (last && last.close !== null) {
+                    const ly = toY(last.close);
+                    ctx.setLineDash([3, 3]); ctx.strokeStyle = 'rgba(251,191,36,0.55)'; ctx.lineWidth = 1;
+                    ctx.beginPath(); ctx.moveTo(P.l, ly); ctx.lineTo(W - P.r, ly); ctx.stroke(); ctx.setLineDash([]);
+                    ctx.fillStyle = '#fbbf24'; _rr(ctx, W - P.r + 2, ly - 8, 68, 16, 3); ctx.fill();
+                    ctx.fillStyle = '#000'; ctx.font = 'bold 10px Lexend,sans-serif'; ctx.textAlign = 'center';
+                    ctx.fillText(_fn(last.close, 0), W - P.r + 36, ly + 3.5);
+                }
+                _hdr(ctx, W, label, 'OHLC Price (Weekly)', null, null, null, '#38bdf8');
+            }
+
+            function _drawLine(ctx, W, H, rows, label, type) {
+                const KEYS = { 'pe': 'pe', 'pb': 'pb', 'divy': 'divy' };
+                const TITLES = { 'pe': 'Price-to-Earnings (P/E)', 'pb': 'Price-to-Book (P/B)', 'divy': 'Dividend Yield (%)' };
+                const COLORS = { 'pe': '#f59e0b', 'pb': '#a78bfa', 'divy': '#4ade80' };
+                const key = KEYS[type] || 'pe', lc = COLORS[type] || '#f59e0b', title = TITLES[type] || 'P/E';
+                const valid = rows.filter(r => r[key] !== null && r[key] !== undefined);
+                if (!valid.length) {
+                    ctx.fillStyle = '#0a0a0f'; ctx.fillRect(0, 0, W, H);
+                    ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = '13px Lexend,sans-serif'; ctx.textAlign = 'center';
+                    ctx.fillText('No ' + title + ' data for this index', W / 2, H / 2); return;
+                }
+                const vals = valid.map(r => r[key]);
+                const vMin = Math.min(...vals), vMax = Math.max(...vals), vRng = vMax - vMin || 1;
+                const yMin = vMin - vRng * 0.08, yMax = vMax + vRng * 0.08;
+                const lastVal = vals[vals.length - 1];
+                const sorted = [...vals].sort((a, b) => a - b);
+                const p25 = sorted[Math.floor(sorted.length * 0.25)];
+                const p50 = sorted[Math.floor(sorted.length * 0.50)];
+                const p75 = sorted[Math.floor(sorted.length * 0.75)];
+                const P = { t: 56, r: 76, b: 42, l: 16 };
+                const cw = W - P.l - P.r, ch = H - P.t - P.b;
+                const toX = i => P.l + (i / (valid.length - 1)) * cw;
+                const toY = v => P.t + ch - ((v - yMin) / (yMax - yMin)) * ch;
+                const bg = ctx.createLinearGradient(0, 0, 0, H);
+                bg.addColorStop(0, '#0a0a0f'); bg.addColorStop(1, '#06060a');
+                ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+                const y25 = toY(p25), y75 = toY(p75);
+                const bg2 = ctx.createLinearGradient(0, Math.min(y25, y75), 0, Math.max(y25, y75));
+                bg2.addColorStop(0, 'rgba(99,179,237,0.10)'); bg2.addColorStop(1, 'rgba(99,179,237,0.03)');
+                ctx.fillStyle = bg2; ctx.fillRect(P.l, Math.min(y25, y75), cw, Math.abs(y25 - y75));
+                ctx.setLineDash([4, 4]); ctx.lineWidth = 0.8; ctx.strokeStyle = 'rgba(99,179,237,0.22)';
+                [{ pv: p25, lb: '25th' }, { pv: p75, lb: '75th' }].forEach(({ pv, lb }) => {
+                    const py = toY(pv);
+                    ctx.beginPath(); ctx.moveTo(P.l, py); ctx.lineTo(W - P.r, py); ctx.stroke(); ctx.setLineDash([]);
+                    ctx.fillStyle = 'rgba(99,179,237,0.5)'; ctx.font = '8.5px Lexend,sans-serif'; ctx.textAlign = 'right';
+                    ctx.fillText(lb + ': ' + _fn(pv, 2), W - P.r - 3, py - 2); ctx.setLineDash([4, 4]);
+                });
+                ctx.setLineDash([]);
+                ctx.strokeStyle = 'rgba(148,163,184,0.22)'; ctx.lineWidth = 1; ctx.setLineDash([6, 4]);
+                ctx.beginPath(); ctx.moveTo(P.l, toY(p50)); ctx.lineTo(W - P.r, toY(p50)); ctx.stroke(); ctx.setLineDash([]);
+                ctx.setLineDash([2, 4]); ctx.lineWidth = 0.6; ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+                for (let g = 0; g <= 5; g++) {
+                    const gv = yMin + (yMax - yMin) * (g / 5), gy = toY(gv);
+                    ctx.beginPath(); ctx.moveTo(P.l, gy); ctx.lineTo(W - P.r, gy); ctx.stroke(); ctx.setLineDash([]);
+                    ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.font = '10px Lexend,sans-serif'; ctx.textAlign = 'left';
+                    ctx.fillText(_fn(gv, 2), W - P.r + 5, gy + 3.5); ctx.setLineDash([2, 4]);
+                }
+                ctx.setLineDash([]);
+                ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.font = '9px Lexend,sans-serif'; ctx.textAlign = 'center';
+                const nLb = Math.min(8, Math.floor(cw / 80));
+                for (let j = 0; j <= nLb; j++) {
+                    const ii = Math.round(j * (valid.length - 1) / nLb);
+                    ctx.fillText(_fd(valid[ii].date), toX(ii), H - P.b + 14);
+                }
+                const rgb = lc.startsWith('#')
+                    ? parseInt(lc.slice(1, 3), 16) + ',' + parseInt(lc.slice(3, 5), 16) + ',' + parseInt(lc.slice(5, 7), 16)
+                    : '56,189,248';
+                const ag = ctx.createLinearGradient(0, P.t, 0, H - P.b);
+                ag.addColorStop(0, 'rgba(' + rgb + ',0.22)'); ag.addColorStop(1, 'rgba(' + rgb + ',0.01)');
+                ctx.beginPath(); ctx.moveTo(toX(0), toY(valid[0][key]));
+                valid.forEach((r, i) => { if (r[key] !== null) ctx.lineTo(toX(i), toY(r[key])); });
+                ctx.lineTo(toX(valid.length - 1), H - P.b); ctx.lineTo(toX(0), H - P.b); ctx.closePath();
+                ctx.fillStyle = ag; ctx.fill();
+                ctx.beginPath(); ctx.strokeStyle = lc; ctx.lineWidth = 2.2; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+                let first = true;
+                valid.forEach((r, i) => { if (r[key] === null) { first = true; return; } if (first) { ctx.moveTo(toX(i), toY(r[key])); first = false; } else ctx.lineTo(toX(i), toY(r[key])); });
+                ctx.stroke();
+                if (lastVal !== null) {
+                    const lvy = toY(lastVal);
+                    ctx.setLineDash([3, 3]); ctx.strokeStyle = 'rgba(251,191,36,0.55)'; ctx.lineWidth = 1;
+                    ctx.beginPath(); ctx.moveTo(P.l, lvy); ctx.lineTo(W - P.r, lvy); ctx.stroke(); ctx.setLineDash([]);
+                    ctx.fillStyle = '#fbbf24'; _rr(ctx, W - P.r + 2, lvy - 8, 68, 16, 3); ctx.fill();
+                    ctx.fillStyle = '#000'; ctx.font = 'bold 10.5px Lexend,sans-serif'; ctx.textAlign = 'center';
+                    ctx.fillText(_fn(lastVal, 2), W - P.r + 36, lvy + 3.5);
+                }
+                const curPct = lastVal !== null ? Math.round(((lastVal - vMin) / vRng) * 100) : null;
+                const pctLbl = curPct !== null ? curPct + 'th %ile' : '';
+                const pctCol = curPct !== null ? (curPct >= 75 ? '#f87171' : curPct <= 25 ? '#4ade80' : '#fbbf24') : '#94a3b8';
+                _hdr(ctx, W, label, title, _fn(lastVal, 2), pctLbl, pctCol, lc);
+            }
+
+            function _hdr(ctx, W, label, sub, val, extra, ec, accent) {
+                ctx.textAlign = 'left';
+                ctx.font = 'bold 15px Lexend,sans-serif'; ctx.fillStyle = '#e2e8f0'; ctx.fillText(label, 16, 26);
+                ctx.font = '10.5px Lexend,sans-serif'; ctx.fillStyle = accent || '#38bdf8'; ctx.fillText(sub, 16, 44);
+                if (val !== null && val !== undefined) { ctx.font = 'bold 22px Lexend,sans-serif'; ctx.fillStyle = '#f8fafc'; ctx.textAlign = 'right'; ctx.fillText(val, W - 90, 30); }
+                if (extra) { ctx.font = '10px Lexend,sans-serif'; ctx.fillStyle = ec || '#94a3b8'; ctx.textAlign = 'right'; ctx.fillText(extra, W - 90, 48); }
+            }
+
+            function _rr(ctx, x, y, w, h, r) {
+                ctx.beginPath();
+                if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h);
+            }
+            function _fn(v, dec) {
+                if (v === null || v === undefined || isNaN(v)) return '—';
+                return Number(v).toLocaleString('en-IN', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+            }
+            function _fd(d) {
+                if (!d) return '';
+                const mo = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                return mo[d.getMonth()] + ' ' + d.getFullYear();
+            }
+
+            let _hc = null;
+            function _wireHover(cv, rows, type, W, H, lbl) {
+                if (_hc) { _hc(); _hc = null; }
+                const key = { pe: 'pe', pb: 'pb', divy: 'divy', price: 'close' }[type] || 'close';
+                const valid = rows.filter(r => r[key] !== null);
+                if (!valid.length) return;
+                const vals = valid.map(r => r[key]);
+                const vMin = Math.min(...vals), vMax = Math.max(...vals), vRng = vMax - vMin || 1;
+                const yMin = vMin - vRng * 0.08, yMax = vMax + vRng * 0.08;
+                const P = { t: 56, r: 76, b: 42, l: 16 };
+                const cw = W - P.l - P.r, ch = H - P.t - P.b;
+                const toX = i => P.l + (i / (valid.length - 1)) * cw;
+                const toY = v => P.t + ch - ((v - yMin) / (yMax - yMin)) * ch;
+                const dpr = window.devicePixelRatio || 1;
+                const LBLS = { pe: 'P/E', pb: 'P/B', divy: 'Div Yield%', price: 'Close' };
+                const CLRS = { pe: '#f59e0b', pb: '#a78bfa', divy: '#4ade80', price: '#38bdf8' };
+                const lc = CLRS[type] || '#38bdf8';
+                let lastI = -1, _raf = 0;
+                const onMove = e => {
+                    const rect = cv.getBoundingClientRect();
+                    const mx = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+                    const relX = mx - P.l;
+                    if (relX < 0 || relX > cw) return;
+                    const idx = Math.round(relX / cw * (valid.length - 1));
+                    if (idx === lastI) return; lastI = idx;
+                    if (_raf) cancelAnimationFrame(_raf);
+                    _raf = requestAnimationFrame(() => {
+                        const row = valid[idx], val = row[key];
+                        if (val === null) return;
+                        const ctx2 = cv.getContext('2d');
+                        ctx2.setTransform(1, 0, 0, 1, 0, 0); ctx2.scale(dpr, dpr); ctx2.clearRect(0, 0, W, H);
+                        if (type === 'price') _drawCandles(ctx2, W, H, valid, lbl);
+                        else _drawLine(ctx2, W, H, valid, lbl, type);
+                        const hx = toX(idx), hy = toY(val);
+                        ctx2.strokeStyle = 'rgba(255,255,255,0.28)'; ctx2.lineWidth = 0.8; ctx2.setLineDash([3, 3]);
+                        ctx2.beginPath(); ctx2.moveTo(hx, P.t); ctx2.lineTo(hx, H - P.b); ctx2.stroke();
+                        ctx2.beginPath(); ctx2.moveTo(P.l, hy); ctx2.lineTo(W - P.r, hy); ctx2.stroke(); ctx2.setLineDash([]);
+                        ctx2.beginPath(); ctx2.arc(hx, hy, 5, 0, Math.PI * 2); ctx2.fillStyle = lc; ctx2.fill();
+                        ctx2.strokeStyle = '#fff'; ctx2.lineWidth = 1.5; ctx2.stroke();
+                        const tl = [_fd(row.date), (LBLS[type] || 'Val') + ': ' + _fn(val, 2)];
+                        if (type === 'price') {
+                            if (row.open !== null) tl.push('O: ' + _fn(row.open, 0));
+                            if (row.high !== null) tl.push('H: ' + _fn(row.high, 0));
+                            if (row.low !== null) tl.push('L: ' + _fn(row.low, 0));
+                            if (row.pe !== null) tl.push('P/E: ' + _fn(row.pe, 2));
+                            if (row.pb !== null) tl.push('P/B: ' + _fn(row.pb, 2));
+                            if (row.divy !== null) tl.push('Div: ' + _fn(row.divy, 2) + '%');
+                        } else { if (row.close !== null) tl.push('Close: ' + _fn(row.close, 0)); }
+                        const tp = 8, lh = 15, tw = 155, th = tl.length * lh + tp * 2;
+                        let tx = hx + 12, ty = hy - th / 2;
+                        if (tx + tw > W - P.r) tx = hx - tw - 12;
+                        if (ty < P.t) ty = P.t; if (ty + th > H - P.b) ty = H - P.b - th;
+                        ctx2.fillStyle = 'rgba(15,23,42,0.93)';
+                        _rr(ctx2, tx, ty, tw, th, 6); ctx2.fill();
+                        ctx2.strokeStyle = 'rgba(255,255,255,0.12)'; ctx2.lineWidth = 0.8; ctx2.stroke();
+                        ctx2.textAlign = 'left';
+                        tl.forEach((ln, i) => {
+                            ctx2.font = i === 0 ? 'bold 9px Lexend,sans-serif' : '9.5px Lexend,sans-serif';
+                            ctx2.fillStyle = i === 0 ? 'rgba(255,255,255,0.5)' : '#e2e8f0';
+                            ctx2.fillText(ln, tx + tp, ty + tp + i * lh + 9);
+                        });
+                    });
+                };
+                const onLeave = () => {
+                    lastI = -1; if (_raf) cancelAnimationFrame(_raf);
+                    const ctx2 = cv.getContext('2d');
+                    ctx2.setTransform(1, 0, 0, 1, 0, 0); ctx2.scale(dpr, dpr); ctx2.clearRect(0, 0, W, H);
+                    if (type === 'price') _drawCandles(ctx2, W, H, valid, lbl);
+                    else _drawLine(ctx2, W, H, valid, lbl, type);
+                };
+                cv.style.cursor = 'crosshair';
+                cv.addEventListener('mousemove', onMove, { passive: true });
+                cv.addEventListener('touchmove', onMove, { passive: true });
+                cv.addEventListener('mouseleave', onLeave);
+                _hc = () => {
+                    cv.removeEventListener('mousemove', onMove);
+                    cv.removeEventListener('touchmove', onMove);
+                    cv.removeEventListener('mouseleave', onLeave);
+                    cv.style.cursor = '';
+                };
+            }
+
+            document.addEventListener('change', e => {
+                if (e.target && e.target.id === 'fs-group-select' && e.target.value === 'index_main') {
+                    if (!window._indexHistoryCache) window._loadIndexHistory();
+                }
+            }, true);
+
         })();
     </script>
 
