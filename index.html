@@ -12404,26 +12404,40 @@
                     defaultStartIdx = 0;
                 }
 
-                // ── Period Window: fill canvas with available data for selected period ──
-                // standardSlots caps the view window to the period size.
+                // ── Date-Aligned Timeframe Rendering (TradingView Style) ──
+                // Dynamically detect data frequency (daily/weekly/monthly)
+                let candlesPerMonth = 21.1; // Default to daily
+                if (currentData.length > 1) {
+                    const sampleCount = Math.min(20, currentData.length - 1);
+                    const diffDays = Math.abs(currentData[sampleCount].date - currentData[0].date) / (1000 * 60 * 60 * 24);
+                    const avgDaysPerCandle = diffDays / sampleCount;
+                    candlesPerMonth = 30.4368 / avgDaysPerCandle;
+                }
+
+                // standardSlots: the fixed grid width for the selected period.
                 const standardSlots = months === Infinity
                     ? Math.max(1, periodN)
-                    : Math.round(months * 21.1);
+                    : Math.round(months * candlesPerMonth);
 
-                // Pan offset: how many candles the user has scrolled backward
+                // n = standardSlots: the canvas is divided into exactly this many columns.
+                // This makes barStep = pW/standardSlots IDENTICAL for all tickers on
+                // the same timeframe — whether they have full history or not.
+                const n = standardSlots;
+
+                // Pan offset: how many candles the user has scrolled backward in time
                 let pOffset = (pCv && pCv._panOffset !== undefined) ? pCv._panOffset : 0;
                 const maxOffset = Math.max(0, periodN - standardSlots);
                 pOffset = Math.max(0, Math.min(maxOffset, pOffset));
                 if (pCv) pCv._panOffset = pOffset;
 
-                // actualEnd / actualStart: date-filtered slice
+                // actualEnd / actualStart: slice of data to render, date-filtered
                 const actualEnd = currentData.length - pOffset;
                 const actualStart = Math.max(defaultStartIdx, actualEnd - standardSlots);
                 const raw = currentData.slice(actualStart, actualEnd);
 
-                // n = raw.length → canvas always fills full width with available data
-                const n = Math.max(1, raw.length);
-                const drawIndexOffset = 0;
+                // drawIndexOffset: left-side empty slots for tickers with less history.
+                // Candles are RIGHT-ALIGNED so their dates match the timeline exactly.
+                const drawIndexOffset = standardSlots - raw.length;
 
                 if (!raw.length) {
                     loadEl.innerHTML = '<span style="color:#f43f5e;font-size:11px;">No ' + period.toUpperCase() + ' data for ' + ticker + '</span>';
