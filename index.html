@@ -20959,11 +20959,11 @@
 
                 <!-- Bottom Center Floating Trade Controls (Draggable) -->
                 <div id="fs-replay-trade-controls"
-                    style="display: none; position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); flex-direction: column; align-items: center; gap: 4px; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 18px; padding: 6px; box-shadow: 0 12px 32px rgba(0,0,0,0.6); pointer-events: auto; z-index: 20;">
+                    style="display: none; position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); flex-direction: column; align-items: center; gap: 6px; background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 18px; padding: 8px 10px; box-shadow: 0 12px 32px rgba(0,0,0,0.6); pointer-events: auto; z-index: 20; touch-action: manipulation;">
                     
                     <div style="display: flex; flex-direction: row; align-items: center; gap: 8px;">
                         <!-- Drag Handle -->
-                        <div id="fs-trade-controls-drag-handle" style="cursor: grab; display: flex; align-items: center; justify-content: center; width: 24px; height: 28px; opacity: 0.6;" title="Drag to move" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.6'">
+                        <div id="fs-trade-controls-drag-handle" style="cursor: grab; display: flex; align-items: center; justify-content: center; width: 26px; height: 32px; opacity: 0.6; touch-action: none;" title="Drag to move">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                                 <circle cx="9" cy="5" r="1.5"></circle>
                                 <circle cx="9" cy="12" r="1.5"></circle>
@@ -20975,33 +20975,25 @@
                         </div>
 
                         <button onclick="window.fsPaperBuy()" title="Paper Buy (Long)"
-                            style="width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 12px; font-weight: 800; border-radius: 50%; border: 1px solid rgba(0,230,118,0.4); background: rgba(0,230,118,0.15); color: #00e676; cursor: pointer; transition: all 0.15s ease; box-shadow: 0 2px 8px rgba(0,230,118,0.15); padding: 0;"
-                            onmouseover="this.style.background='rgba(0,230,118,0.3)'; this.style.boxShadow='0 4px 12px rgba(0,230,118,0.3)';" onmouseout="this.style.background='rgba(0,230,118,0.15)'; this.style.boxShadow='0 2px 8px rgba(0,230,118,0.15)';">B</button>
+                            style="width: 34px; height: 34px; display: flex; justify-content: center; align-items: center; font-size: 13px; font-weight: 800; border-radius: 50%; border: 1px solid rgba(0,230,118,0.5); background: rgba(0,230,118,0.2); color: #00e676; cursor: pointer; transition: transform 0.1s ease; box-shadow: 0 2px 8px rgba(0,230,118,0.2); padding: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">B</button>
                         
                         <button onclick="window.fsPaperSell()" title="Paper Sell (Short)"
-                            style="width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 12px; font-weight: 800; border-radius: 50%; border: 1px solid rgba(255,51,85,0.4); background: rgba(255,51,85,0.15); color: #ff3355; cursor: pointer; transition: all 0.15s ease; box-shadow: 0 2px 8px rgba(255,51,85,0.15); padding: 0;"
-                            onmouseover="this.style.background='rgba(255,51,85,0.3)'; this.style.boxShadow='0 4px 12px rgba(255,51,85,0.3)';" onmouseout="this.style.background='rgba(255,51,85,0.15)'; this.style.boxShadow='0 2px 8px rgba(255,51,85,0.15)';">S</button>
+                            style="width: 34px; height: 34px; display: flex; justify-content: center; align-items: center; font-size: 13px; font-weight: 800; border-radius: 50%; border: 1px solid rgba(255,51,85,0.5); background: rgba(255,51,85,0.2); color: #ff3355; cursor: pointer; transition: transform 0.1s ease; box-shadow: 0 2px 8px rgba(255,51,85,0.2); padding: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">S</button>
                         
                         <button onclick="window.fsPaperClose()" title="Close Position"
-                            style="width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 12px; font-weight: 800; border-radius: 50%; border: 1px solid rgba(148,163,184,0.4); background: rgba(148,163,184,0.1); color: #e2e8f0; cursor: pointer; transition: all 0.15s ease; padding: 0;"
-                            onmouseover="this.style.background='rgba(148,163,184,0.2)'" onmouseout="this.style.background='rgba(148,163,184,0.1)'">C</button>
+                            style="width: 34px; height: 34px; display: flex; justify-content: center; align-items: center; font-size: 13px; font-weight: 800; border-radius: 50%; border: 1px solid rgba(148,163,184,0.4); background: rgba(148,163,184,0.15); color: #e2e8f0; cursor: pointer; transition: transform 0.1s ease; padding: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">C</button>
                             
                         <!-- Running Trade Info Block -->
                         <div id="fs-replay-trade-status"
-                            style="display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.4); border-radius: 14px; padding: 0 10px; font-family: 'Lexend', sans-serif; height: 28px;">
+                            style="display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.4); border-radius: 14px; padding: 0 10px; font-family: 'Lexend', sans-serif; height: 32px;">
                             <span style="color:#94a3b8; font-weight:700; font-size:11px;">FLAT</span>
                         </div>
                     </div>
 
-                    <style>
-                        .fs-mobile-replay-controls { display: none !important; }
-                        @media (max-width: 1500px) {
-                            .fs-mobile-replay-controls { display: flex !important; }
-                        }
-                    </style>
-                    <div class="fs-mobile-replay-controls" style="flex-direction: row; align-items: center; justify-content: center; gap: 8px; width: 100%;">
-                        <button id="fs-mobile-replay-btn" onclick="window.toggleFsReplay()" title="Play / Pause" style="flex: 1; height: 26px; display: flex; justify-content: center; align-items: center; border-radius: 12px; border: 1px solid rgba(148,163,184,0.4); background: rgba(148,163,184,0.1); color: #e2e8f0; cursor: pointer; font-size: 12px;">▶</button>
-                        <button id="fs-mobile-step-btn" onclick="window.fsFsStepForward()" title="Step +1 candle" style="flex: 1; height: 26px; display: flex; justify-content: center; align-items: center; border-radius: 12px; border: 1px solid rgba(148,163,184,0.4); background: rgba(148,163,184,0.1); color: #e2e8f0; cursor: pointer; font-size: 14px;">›</button>
+                    <!-- Replay Transport Row -->
+                    <div style="display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 8px; width: 100%;">
+                        <button id="fs-mobile-replay-btn" onclick="window.toggleFsReplay()" title="Play / Pause" style="flex: 1; height: 30px; display: flex; justify-content: center; align-items: center; border-radius: 10px; border: 1px solid rgba(148,163,184,0.4); background: rgba(148,163,184,0.15); color: #e2e8f0; cursor: pointer; font-size: 13px; font-weight: 700; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">▶</button>
+                        <button id="fs-mobile-step-btn" onclick="window.fsFsStepForward()" title="Step +1 candle" style="flex: 1; height: 30px; display: flex; justify-content: center; align-items: center; border-radius: 10px; border: 1px solid rgba(148,163,184,0.4); background: rgba(148,163,184,0.15); color: #e2e8f0; cursor: pointer; font-size: 15px; font-weight: 700; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">›</button>
                     </div>
                 </div>
                 
