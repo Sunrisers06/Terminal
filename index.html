@@ -20959,36 +20959,49 @@
 
                 <!-- Bottom Center Floating Trade Controls (Draggable) -->
                 <div id="fs-replay-trade-controls"
-                    style="display: none; position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); flex-direction: row; align-items: center; gap: 8px; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 30px; padding: 6px 10px 6px 6px; box-shadow: 0 12px 32px rgba(0,0,0,0.6); pointer-events: auto; z-index: 20;">
+                    style="display: none; position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); flex-direction: column; align-items: center; gap: 4px; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 18px; padding: 6px; box-shadow: 0 12px 32px rgba(0,0,0,0.6); pointer-events: auto; z-index: 20;">
                     
-                    <!-- Drag Handle -->
-                    <div id="fs-trade-controls-drag-handle" style="cursor: grab; display: flex; align-items: center; justify-content: center; width: 24px; height: 28px; opacity: 0.6;" title="Drag to move" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.6'">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="9" cy="5" r="1.5"></circle>
-                            <circle cx="9" cy="12" r="1.5"></circle>
-                            <circle cx="9" cy="19" r="1.5"></circle>
-                            <circle cx="15" cy="5" r="1.5"></circle>
-                            <circle cx="15" cy="12" r="1.5"></circle>
-                            <circle cx="15" cy="19" r="1.5"></circle>
-                        </svg>
+                    <div style="display: flex; flex-direction: row; align-items: center; gap: 8px;">
+                        <!-- Drag Handle -->
+                        <div id="fs-trade-controls-drag-handle" style="cursor: grab; display: flex; align-items: center; justify-content: center; width: 24px; height: 28px; opacity: 0.6;" title="Drag to move" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.6'">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="9" cy="5" r="1.5"></circle>
+                                <circle cx="9" cy="12" r="1.5"></circle>
+                                <circle cx="9" cy="19" r="1.5"></circle>
+                                <circle cx="15" cy="5" r="1.5"></circle>
+                                <circle cx="15" cy="12" r="1.5"></circle>
+                                <circle cx="15" cy="19" r="1.5"></circle>
+                            </svg>
+                        </div>
+
+                        <button onclick="window.fsPaperBuy()" title="Paper Buy (Long)"
+                            style="width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 12px; font-weight: 800; border-radius: 50%; border: 1px solid rgba(0,230,118,0.4); background: rgba(0,230,118,0.15); color: #00e676; cursor: pointer; transition: all 0.15s ease; box-shadow: 0 2px 8px rgba(0,230,118,0.15); padding: 0;"
+                            onmouseover="this.style.background='rgba(0,230,118,0.3)'; this.style.boxShadow='0 4px 12px rgba(0,230,118,0.3)';" onmouseout="this.style.background='rgba(0,230,118,0.15)'; this.style.boxShadow='0 2px 8px rgba(0,230,118,0.15)';">B</button>
+                        
+                        <button onclick="window.fsPaperSell()" title="Paper Sell (Short)"
+                            style="width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 12px; font-weight: 800; border-radius: 50%; border: 1px solid rgba(255,51,85,0.4); background: rgba(255,51,85,0.15); color: #ff3355; cursor: pointer; transition: all 0.15s ease; box-shadow: 0 2px 8px rgba(255,51,85,0.15); padding: 0;"
+                            onmouseover="this.style.background='rgba(255,51,85,0.3)'; this.style.boxShadow='0 4px 12px rgba(255,51,85,0.3)';" onmouseout="this.style.background='rgba(255,51,85,0.15)'; this.style.boxShadow='0 2px 8px rgba(255,51,85,0.15)';">S</button>
+                        
+                        <button onclick="window.fsPaperClose()" title="Close Position"
+                            style="width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 12px; font-weight: 800; border-radius: 50%; border: 1px solid rgba(148,163,184,0.4); background: rgba(148,163,184,0.1); color: #e2e8f0; cursor: pointer; transition: all 0.15s ease; padding: 0;"
+                            onmouseover="this.style.background='rgba(148,163,184,0.2)'" onmouseout="this.style.background='rgba(148,163,184,0.1)'">C</button>
+                            
+                        <!-- Running Trade Info Block -->
+                        <div id="fs-replay-trade-status"
+                            style="display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.4); border-radius: 14px; padding: 0 10px; font-family: 'Lexend', sans-serif; height: 28px;">
+                            <span style="color:#94a3b8; font-weight:700; font-size:11px;">FLAT</span>
+                        </div>
                     </div>
 
-                    <button onclick="window.fsPaperBuy()" title="Paper Buy (Long)"
-                        style="width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 12px; font-weight: 800; border-radius: 50%; border: 1px solid rgba(0,230,118,0.4); background: rgba(0,230,118,0.15); color: #00e676; cursor: pointer; transition: all 0.15s ease; box-shadow: 0 2px 8px rgba(0,230,118,0.15); padding: 0;"
-                        onmouseover="this.style.background='rgba(0,230,118,0.3)'; this.style.boxShadow='0 4px 12px rgba(0,230,118,0.3)';" onmouseout="this.style.background='rgba(0,230,118,0.15)'; this.style.boxShadow='0 2px 8px rgba(0,230,118,0.15)';">B</button>
-                    
-                    <button onclick="window.fsPaperSell()" title="Paper Sell (Short)"
-                        style="width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 12px; font-weight: 800; border-radius: 50%; border: 1px solid rgba(255,51,85,0.4); background: rgba(255,51,85,0.15); color: #ff3355; cursor: pointer; transition: all 0.15s ease; box-shadow: 0 2px 8px rgba(255,51,85,0.15); padding: 0;"
-                        onmouseover="this.style.background='rgba(255,51,85,0.3)'; this.style.boxShadow='0 4px 12px rgba(255,51,85,0.3)';" onmouseout="this.style.background='rgba(255,51,85,0.15)'; this.style.boxShadow='0 2px 8px rgba(255,51,85,0.15)';">S</button>
-                    
-                    <button onclick="window.fsPaperClose()" title="Close Position"
-                        style="width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 12px; font-weight: 800; border-radius: 50%; border: 1px solid rgba(148,163,184,0.4); background: rgba(148,163,184,0.1); color: #e2e8f0; cursor: pointer; transition: all 0.15s ease; padding: 0;"
-                        onmouseover="this.style.background='rgba(148,163,184,0.2)'" onmouseout="this.style.background='rgba(148,163,184,0.1)'">C</button>
-                        
-                    <!-- Running Trade Info Block -->
-                    <div id="fs-replay-trade-status"
-                        style="display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.4); border-radius: 14px; padding: 0 10px; font-family: 'Lexend', sans-serif; height: 28px;">
-                        <span style="color:#94a3b8; font-weight:700; font-size:11px;">FLAT</span>
+                    <style>
+                        .fs-mobile-replay-controls { display: none !important; }
+                        @media (max-width: 1024px) {
+                            .fs-mobile-replay-controls { display: flex !important; }
+                        }
+                    </style>
+                    <div class="fs-mobile-replay-controls" style="flex-direction: row; align-items: center; justify-content: center; gap: 8px; width: 100%;">
+                        <button id="fs-mobile-replay-btn" onclick="window.toggleFsReplay()" title="Play / Pause" style="flex: 1; height: 26px; display: flex; justify-content: center; align-items: center; border-radius: 12px; border: 1px solid rgba(148,163,184,0.4); background: rgba(148,163,184,0.1); color: #e2e8f0; cursor: pointer; font-size: 12px;">▶</button>
+                        <button id="fs-mobile-step-btn" onclick="window.fsFsStepForward()" title="Step +1 candle" style="flex: 1; height: 26px; display: flex; justify-content: center; align-items: center; border-radius: 12px; border: 1px solid rgba(148,163,184,0.4); background: rgba(148,163,184,0.1); color: #e2e8f0; cursor: pointer; font-size: 14px;">›</button>
                     </div>
                 </div>
                 
@@ -22114,12 +22127,14 @@
 
             window.toggleFsReplay = function () {
                 const btn = document.getElementById('fs-replay-btn');
+                const mBtn = document.getElementById('fs-mobile-replay-btn');
                 const statusEl = document.getElementById('fs-replay-status');
 
                 // If timer is running and not paused → pause
                 if (window._fsReplay.timer && !window._fsReplay.paused) {
                     window._fsReplay.paused = true;
                     if (btn) btn.textContent = '▶';
+                    if (mBtn) mBtn.textContent = '▶';
                     if (statusEl) statusEl.textContent = 'Paused';
                     return;
                 }
@@ -22128,6 +22143,7 @@
                 if (window._fsReplay.timer && window._fsReplay.paused) {
                     window._fsReplay.paused = false;
                     if (btn) btn.textContent = '⏸';
+                    if (mBtn) mBtn.textContent = '⏸';
                     if (statusEl) statusEl.textContent = '';
                     return;
                 }
@@ -22251,7 +22267,9 @@
                 const repSec = document.getElementById('fs-sec-replay');
                 if (repSec) repSec.classList.add('expanded');
                 const btn = document.getElementById('fs-replay-btn');
+                const mBtn = document.getElementById('fs-mobile-replay-btn');
                 if (btn) btn.textContent = '▶';
+                if (mBtn) mBtn.textContent = '▶';
                 const tickerSearch = document.getElementById('fs-ticker-search');
                 if (tickerSearch) tickerSearch.value = mask || 'HIDDEN';
                 const tickerSel = document.getElementById('fs-ticker-select');
@@ -22789,6 +22807,12 @@
                     ticker: chosen.ticker, idx: chosen.idx, raw: chosen.raw,
                     cls: chosen.cls, feats: chosen.feats, answered: false
                 };
+
+                window._fsReplay.paused = true;
+                const btn = document.getElementById('fs-replay-btn');
+                const mBtn = document.getElementById('fs-mobile-replay-btn');
+                if (btn) btn.textContent = '▶';
+                if (mBtn) mBtn.textContent = '▶';
                 _fsEnterTrainingReplay(chosen.ticker, chosen.raw, chosen.idx, 'Volume Read', 'TICKER_A');
                 if (result) result.textContent = '';
             };
@@ -23028,8 +23052,10 @@
                     window.renderFullScreenChart(); // re-render without truncation
                 }
                 const btn = document.getElementById('fs-replay-btn');
+                const mBtn = document.getElementById('fs-mobile-replay-btn');
                 const statusEl = document.getElementById('fs-replay-status');
                 if (btn) btn.textContent = '▶';
+                if (mBtn) mBtn.textContent = '▶';
                 if (!keepActive && statusEl) statusEl.textContent = '';
             };
 
@@ -23044,7 +23070,9 @@
                     window._fsReplay.timer = null;
                     window._fsReplay.paused = true;
                     const btn = document.getElementById('fs-replay-btn');
+                    const mBtn = document.getElementById('fs-mobile-replay-btn');
                     if (btn) btn.textContent = '▶';
+                    if (mBtn) mBtn.textContent = '▶';
                 }
 
                 const arr = _fsGetReplayArray();
@@ -23089,7 +23117,9 @@
                     window._fsReplay.timer = null;
                     window._fsReplay.paused = true;
                     const btn = document.getElementById('fs-replay-btn');
+                    const mBtn = document.getElementById('fs-mobile-replay-btn');
                     if (btn) btn.textContent = '▶';
+                    if (mBtn) mBtn.textContent = '▶';
                 }
 
                 const arr = _fsGetReplayArray();
