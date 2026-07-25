@@ -13134,6 +13134,32 @@
                     }
                 }
 
+                // Render Replay Mode Active Paper Trade Entry Line
+                if (window._fsPaperTrade && window._fsPaperTrade.position && window._fsPaperTrade.position.entryPrice) {
+                    const pos = window._fsPaperTrade.position;
+                    const entryY = PP.t + pH * (1 - (Math.log(pos.entryPrice) - logMin) / logR);
+                    if (entryY >= PP.t && entryY <= PH - PP.b) {
+                        pc.save();
+                        pc.strokeStyle = pos.side === 'long' ? 'rgba(0, 230, 118, 0.85)' : 'rgba(255, 51, 85, 0.85)';
+                        pc.lineWidth = 1.5;
+                        pc.setLineDash([4, 3]);
+                        pc.beginPath(); pc.moveTo(PP.l, entryY); pc.lineTo(W - PP.r, entryY); pc.stroke();
+
+                        // Entry price badge on right axis
+                        pc.setLineDash([]);
+                        pc.font = 'bold 9px "Lexend",monospace';
+                        const txt = `${pos.side.toUpperCase()} ${pos.qty > 1 ? pos.qty + 'x ' : ''}@ ${pos.entryPrice.toFixed(1)}`;
+                        const tw = pc.measureText(txt).width + 8;
+                        pc.fillStyle = pos.side === 'long' ? '#00c853' : '#d50000';
+                        pc.fillRect(W - tw - 1, entryY - 7, tw, 14);
+                        pc.fillStyle = '#ffffff';
+                        pc.textAlign = 'right';
+                        pc.textBaseline = 'middle';
+                        pc.fillText(txt, W - 4, entryY);
+                        pc.restore();
+                    }
+                }
+
                 // Draw crosshair if hovering
                 if (pCv._hoverX !== undefined && pCv._hoverX !== null) {
                     const hx = pCv._hoverX;
@@ -13202,17 +13228,27 @@
                         }
                     }
 
-                    // Draw OHLC info text in top-left of the chart space (always drawn on pCv)
+                    // Draw return % badge at the top of the vertical crosshair line
                     if (pCv._hoverIdx !== undefined && pCv._hoverIdx !== null) {
                         const ohlcCandle = raw[pCv._hoverIdx];
                         if (ohlcCandle) {
                             const changePct = ohlcCandle.open ? ((ohlcCandle.close - ohlcCandle.open) / ohlcCandle.open * 100).toFixed(2) : '0.00';
-                            const infoTxt = `O: ${fmtP(ohlcCandle.open)}  H: ${fmtP(ohlcCandle.high)}  L: ${fmtP(ohlcCandle.low)}  C: ${fmtP(ohlcCandle.close)}  (${changePct >= 0 ? '+' : ''}${changePct}%)`;
-                            pc.font = 'bold 8px "Lexend",monospace';
-                            pc.fillStyle = '#cbd5e1'; // light slate color
-                            pc.textAlign = 'left';
+                            const retTxt = `${changePct >= 0 ? '+' : ''}${changePct}%`;
+
+                            pc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 8.5px "Lexend",monospace';
+                            const rBadgeW = pc.measureText(retTxt).width + (isFs ? 10 : 6);
+                            let rbx = hx;
+                            if (rbx - rBadgeW / 2 < PP.l) rbx = PP.l + rBadgeW / 2;
+                            if (rbx + rBadgeW / 2 > W - PP.r) rbx = W - PP.r - rBadgeW / 2;
+
+                            const rbH = isFs ? 15 : 11;
+                            pc.fillStyle = 'rgba(15, 23, 42, 0.85)';
+                            pc.fillRect(rbx - rBadgeW / 2, PP.t, rBadgeW, rbH);
+
+                            pc.fillStyle = '#ffffff'; // White text for % value
+                            pc.textAlign = 'center';
                             pc.textBaseline = 'top';
-                            pc.fillText(infoTxt, PP.l + 4, PP.t + 2);
+                            pc.fillText(retTxt, rbx, PP.t + (isFs ? 2 : 1));
                             if (pCv._hoverCanvas === pCv) {
                                 drawPriceActionHoverPanel(pc, buildPriceActionAnalysis(raw), hx, W, PH, PP);
 
@@ -13627,18 +13663,7 @@
                         rsc.beginPath(); rsc.moveTo(RP.l, zeroY); rsc.lineTo(W - RP.r, zeroY); rsc.stroke();
                         rsc.setLineDash([]);
 
-                        // 9 SMA Line (Drawn in background)
-                        rsc.strokeStyle = 'rgba(255, 255, 255, 0.7)'; rsc.lineWidth = 1.2; rsc.setLineDash([4, 4]);
-                        rsc.beginPath();
-                        let stDSMA = false;
-                        raw.forEach((r, i) => {
-                            const v = r.delivSma9;
-                            if (v === null || v === undefined) { stDSMA = false; return; }
-                            const x = toX(i), y = toYD(v);
-                            stDSMA ? rsc.lineTo(x, y) : (rsc.moveTo(x, y), stDSMA = true);
-                        });
-                        rsc.stroke();
-                        rsc.setLineDash([]);
+
 
                         raw.forEach((r, i) => {
                             const v = r.delivPer;
@@ -13652,22 +13677,13 @@
                             rsc.fillRect(x - bW2 / 2, bTop, bW2, bH);
                         });
 
-                        // Current Deliv value & SMA label
+                        // Current Deliv value label
                         const hoverIdx = pCv._hoverIdx;
                         const lastR = raw[raw.length - 1];
                         const displayR = (hoverIdx !== undefined && hoverIdx !== null) ? raw[hoverIdx] : lastR;
                         const dVal = displayR && displayR.delivPer !== undefined ? displayR.delivPer : null;
-                        const sVal = displayR && displayR.delivSma9 !== undefined ? displayR.delivSma9 : null;
 
                         let dY = dVal !== null ? toYD(dVal) : 0;
-                        let sY = sVal !== null ? toYD(sVal) : 0;
-
-                        // Avoid overlap
-                        if (dVal !== null && sVal !== null) {
-                            if (Math.abs(sY - dY) < 10) {
-                                sY += (sY > dY) ? 10 : -10;
-                            }
-                        }
 
                         rsc.font = 'bold 9px "Lexend",monospace';
                         rsc.textAlign = 'right'; rsc.textBaseline = 'middle';
@@ -13676,12 +13692,6 @@
                             const dStr = dVal.toFixed(1) + '%';
                             rsc.fillStyle = displayR._dColor || '#00bfff';
                             rsc.fillText(dStr, W - 4, dY);
-                        }
-
-                        if (sVal !== null) {
-                            const sStr = sVal.toFixed(1) + '%';
-                            rsc.fillStyle = 'rgba(255, 255, 255, 0.8)';
-                            rsc.fillText(sStr, W - 4, sY);
                         }
                     } else if (window.fsRscvMode === 'DELIV_VOL') {
                         // Delivery Volume
@@ -13699,18 +13709,7 @@
                         rsc.beginPath(); rsc.moveTo(RP.l, zeroY); rsc.lineTo(W - RP.r, zeroY); rsc.stroke();
                         rsc.setLineDash([]);
 
-                        // SMA 50 for Deliv Vol
-                        rsc.strokeStyle = 'rgba(255, 255, 255, 0.7)'; rsc.lineWidth = 1.2; rsc.setLineDash([4, 4]);
-                        rsc.beginPath();
-                        let stDSMA = false;
-                        raw.forEach((r, i) => {
-                            const v = r.delivVolSma50;
-                            if (v === null || v === undefined) { stDSMA = false; return; }
-                            const x = toX(i), y = toYD(v);
-                            stDSMA ? rsc.lineTo(x, y) : (rsc.moveTo(x, y), stDSMA = true);
-                        });
-                        rsc.stroke();
-                        rsc.setLineDash([]);
+
 
                         raw.forEach((r, i) => {
                             const v = r.delivVol;
@@ -13817,6 +13816,67 @@
                         rsc.strokeStyle = 'rgba(255,255,255,0.4)';
                         rsc.lineWidth = 0.8; rsc.setLineDash([4, 4]);
                         rsc.beginPath(); rsc.moveTo(pCv._hoverX, RP.t); rsc.lineTo(pCv._hoverX, RSH - RP.b); rsc.stroke();
+
+                        // Horizontal line and value badge when hovering on delivery/MRS canvas
+                        const hy = pCv._hoverY;
+                        const activeCv = pCv._hoverCanvas;
+                        if (activeCv === _rsCvEl && hy !== undefined && hy !== null && hy >= RP.t && hy <= RSH - RP.b) {
+                            rsc.beginPath();
+                            rsc.moveTo(RP.l, hy);
+                            rsc.lineTo(W - RP.r, hy);
+                            rsc.stroke();
+
+                            rsc.setLineDash([]);
+                            let badgeValStr = '';
+                            if (window.fsRscvMode === 'DELIV') {
+                                const delivVals = raw.map(r => r.delivPer).filter(v => v !== null && v !== undefined);
+                                let dMin = Math.min(0, ...delivVals);
+                                let dMax = Math.max(100, ...delivVals);
+                                const dPad = Math.max(0.1, (dMax - dMin) * 0.1);
+                                dMin -= dPad; dMax += dPad;
+                                const valAtY = dMin + (dMax - dMin) * (1 - (hy - RP.t) / (RSH - RP.t - RP.b));
+                                badgeValStr = isFinite(valAtY) ? valAtY.toFixed(1) + '%' : '';
+                            } else if (window.fsRscvMode === 'DELIV_VOL') {
+                                const delivVols = raw.map(r => r.delivVol).filter(v => v !== null && v !== undefined);
+                                let dMin = 0;
+                                let dMax = Math.max(1, ...delivVols);
+                                const dPad = Math.max(0.1, (dMax - dMin) * 0.1);
+                                dMin -= dPad; dMax += dPad;
+                                const valAtY = dMin + (dMax - dMin) * (1 - (hy - RP.t) / (RSH - RP.t - RP.b));
+                                const fmtD = v => {
+                                    if (v >= 1e7) return (v / 1e7).toFixed(2) + 'Cr';
+                                    if (v >= 1e5) return (v / 1e5).toFixed(2) + 'L';
+                                    if (v >= 1e3) return (v / 1e3).toFixed(1) + 'K';
+                                    return v.toFixed(0);
+                                };
+                                badgeValStr = isFinite(valAtY) ? fmtD(valAtY) : '';
+                            } else {
+                                const rsVals = raw.map(r => r.rsMansfield).filter(v => v !== null);
+                                let rsMin = Math.min(...rsVals, 0);
+                                let rsMax = Math.max(...rsVals, 0);
+                                const rsPad = Math.max(0.5, (rsMax - rsMin) * 0.1);
+                                rsMin -= rsPad; rsMax += rsPad;
+                                const valAtY = rsMin + (rsMax - rsMin) * (1 - (hy - RP.t) / (RSH - RP.t - RP.b));
+                                badgeValStr = isFinite(valAtY) ? (valAtY >= 0 ? '+' : '') + valAtY.toFixed(2) : '';
+                            }
+
+                            if (badgeValStr) {
+                                rsc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 8px "Lexend",monospace';
+                                const badgeW = rsc.measureText(badgeValStr).width + (isFs ? 8 : 6);
+                                const badgeH = isFs ? 15 : 10;
+                                const badgeOff = isFs ? 7.5 : 5;
+                                let dby = hy;
+                                if (dby - badgeOff < RP.t) dby = RP.t + badgeOff;
+                                if (dby + badgeOff > RSH - RP.b) dby = RSH - RP.b - badgeOff;
+
+                                rsc.fillStyle = '#475569';
+                                rsc.fillRect(W - badgeW - 1, dby - badgeOff, badgeW, badgeH);
+                                rsc.fillStyle = '#ffffff';
+                                rsc.textAlign = 'right';
+                                rsc.textBaseline = 'middle';
+                                rsc.fillText(badgeValStr, W - 4, dby);
+                            }
+                        }
                         rsc.restore();
                     }
                 } else {
@@ -14647,6 +14707,8 @@
                 const maxX = window.innerWidth - el.offsetWidth;
                 const maxY = window.innerHeight - el.offsetHeight;
                 el.style.transform = 'none';
+                el.style.bottom = 'auto';
+                el.style.right = 'auto';
                 el.style.left = Math.max(0, Math.min(nx, maxX)) + 'px';
                 el.style.top = Math.max(0, Math.min(ny, maxY)) + 'px';
             }
@@ -19271,11 +19333,49 @@
             overflow-y: auto;
             overflow-x: hidden;
             scrollbar-width: none;
+            transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        #fs-sidebar.fs-sidebar-collapsed {
+            width: 0 !important;
+            min-width: 0 !important;
+            border-right: none;
+            overflow: hidden;
         }
 
         #fs-sidebar::-webkit-scrollbar {
             display: none;
         }
+
+        /* Sidebar toggle button */
+        #fs-sidebar-toggle {
+            position: absolute;
+            top: 105px;
+            z-index: 100001;
+            width: 20px;
+            height: 36px;
+            background: rgba(17, 17, 20, 0.92);
+            border: 1px solid rgba(255, 255, 255, 0.10);
+            border-left: none;
+            border-radius: 0 6px 6px 0;
+            color: rgba(255, 255, 255, 0.55);
+            font-size: 11px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.2s;
+            pointer-events: auto;
+            padding: 0;
+            line-height: 1;
+        }
+
+        #fs-sidebar-toggle:hover {
+            background: rgba(30, 30, 38, 0.95);
+            color: rgba(255, 255, 255, 0.85);
+        }
+
+
 
         /* Sidebar header / logo bar */
         #fs-sidebar-header {
@@ -20493,6 +20593,9 @@
     </style>
     <div id="fs-chart-modal"
         style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; width:100%; height:100%; background:var(--bg); z-index:99999; flex-direction:row; overflow:hidden;">
+        <!-- Sidebar toggle button -->
+        <button id="fs-sidebar-toggle" style="left:176px;" onclick="window.toggleFsSidebar()"
+            title="Hide / Show Sidebar">◀</button>
         <!-- Left Panel: Apple-style sidebar -->
         <div id="fs-sidebar">
             <!-- Header: Logo -->
@@ -20805,7 +20908,8 @@
                         onclick="window.fsToggleQuickTrend()"
                         title="Click chart to anchor point 1, click again to draw trendline with return %, click once more to clear">📐
                         Quick Trendline</button>
-                    <button class="fs-draw-clear" onclick="window.fsClearDrawings()" title="Clear All Drawings (Delete / Backspace key)">🗑 Clear All</button>
+                    <button class="fs-draw-clear" onclick="window.fsClearDrawings()"
+                        title="Clear All Drawings (Delete / Backspace key)">🗑 Clear All</button>
                 </div>
             </div>
 
@@ -20818,32 +20922,86 @@
             style="flex-grow:1; height:100%; overflow:hidden; display:flex; justify-content:flex-start; align-items:flex-start; background:var(--bg); box-sizing:border-box;">
             <div id="fs-chart-wrapper"
                 style="width:100%; height:100%; max-width:none; box-sizing:border-box; position:relative; display:flex; flex-direction:column; justify-content:flex-start; align-items:flex-start;">
+                <!-- Background Ticker Watermark (Top Middle, 50% opacity) -->
+                <div id="fs-bg-ticker-name"
+                    style="position:absolute; top:12px; left:50%; transform:translateX(-50%); z-index:5; font-size:clamp(16px, 2.4vw, 32px); font-weight:800; color:rgba(255,255,255,0.5); opacity:0.4; pointer-events:none; text-transform:uppercase; letter-spacing:1.5px; user-select:none; white-space:nowrap; text-align:center; max-width:75%; overflow:hidden; text-overflow:ellipsis;">
+                </div>
                 <div id="fs-chart-loading"
                     style="display:flex; justify-content:center; align-items:center; width:100%; height:100%; color:var(--text2); font-size:15px; position:absolute; top:0; left:0; background:var(--bg); z-index:10; letter-spacing:0.5px;">
                     Loading chart…</div>
                 <!-- Floating Info & Actions Overlay (top-left) -->
                 <div
-                    style="position: absolute; top: 12px; left: 12px; z-index: 12; display: flex; align-items: center; gap: 8px; pointer-events: none;">
-                    <!-- Mini Financial Card overlay (Clicking box clears drawings) -->
-                    <div id="fs-mini-financial-card" onclick="window.fsClearDrawings()" title="Click to Clear All Drawings (Delete key)"
-                        style="position: relative; opacity: 1; display: none; grid-template-columns: repeat(2, 34px); gap: 4px; pointer-events: auto; cursor: pointer;">
+                    style="position: absolute; top: 12px; left: 12px; z-index: 12; display: flex; align-items: flex-start; gap: 8px; pointer-events: none;">
+                    
+                    <div style="display: flex; flex-direction: column; gap: 6px; pointer-events: auto;">
+                        <!-- Mini Financial Card overlay (Top 2: Quick Trendline | Bottom 2: Clear Drawings) -->
+                        <div id="fs-mini-financial-card"
+                            style="position: relative; opacity: 1; display: none; grid-template-columns: repeat(2, 34px); gap: 4px; pointer-events: auto;">
+                        </div>
                     </div>
-                    <!-- F & H Buttons stacked vertically -->
+
+                    <!-- Top Left Actions Overlay (Fav / Hold) vertical beside the card -->
                     <div id="fs-fh-actions-left"
-                        style="display: flex; flex-direction: column; gap: 4px; pointer-events: auto;">
+                        style="display: flex; flex-direction: column; gap: 6px; pointer-events: auto;">
                         <button id="fs-btn-fav" class="fav-toggle-btn"
-                            style="padding: 2px 6px; font-size: 10px; border-radius: 6px; min-width: 24px; height: 22px; justify-content: center; align-items: center;"
+                            style="padding: 2px 8px; font-size: 11px; font-weight: 800; border-radius: 6px; min-width: 28px; height: 26px; justify-content: center; align-items: center; border: 1px solid rgba(255,255,255,0.15); background: rgba(15,23,42,0.8); color: #cbd5e1; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.3);"
                             onclick="window.fsToggleActiveFH('F')" title="Toggle Favorite">
                             F
                         </button>
                         <button id="fs-btn-hold" class="fav-toggle-btn"
-                            style="padding: 2px 6px; font-size: 10px; border-radius: 6px; min-width: 24px; height: 22px; justify-content: center; align-items: center;"
+                            style="padding: 2px 8px; font-size: 11px; font-weight: 800; border-radius: 6px; min-width: 28px; height: 26px; justify-content: center; align-items: center; border: 1px solid rgba(255,255,255,0.15); background: rgba(15,23,42,0.8); color: #cbd5e1; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.3);"
                             onclick="window.fsToggleActiveFH('H')" title="Toggle Holding">
                             H
                         </button>
                     </div>
 
                 </div>
+
+                <!-- Bottom Center Floating Trade Controls (Draggable) -->
+                <div id="fs-replay-trade-controls"
+                    style="display: none; position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); flex-direction: row; align-items: center; gap: 8px; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 30px; padding: 6px 10px 6px 6px; box-shadow: 0 12px 32px rgba(0,0,0,0.6); pointer-events: auto; z-index: 20;">
+                    
+                    <!-- Drag Handle -->
+                    <div id="fs-trade-controls-drag-handle" style="cursor: grab; display: flex; align-items: center; justify-content: center; width: 24px; height: 28px; opacity: 0.6;" title="Drag to move" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.6'">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="9" cy="5" r="1.5"></circle>
+                            <circle cx="9" cy="12" r="1.5"></circle>
+                            <circle cx="9" cy="19" r="1.5"></circle>
+                            <circle cx="15" cy="5" r="1.5"></circle>
+                            <circle cx="15" cy="12" r="1.5"></circle>
+                            <circle cx="15" cy="19" r="1.5"></circle>
+                        </svg>
+                    </div>
+
+                    <button onclick="window.fsPaperBuy()" title="Paper Buy (Long)"
+                        style="width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 12px; font-weight: 800; border-radius: 50%; border: 1px solid rgba(0,230,118,0.4); background: rgba(0,230,118,0.15); color: #00e676; cursor: pointer; transition: all 0.15s ease; box-shadow: 0 2px 8px rgba(0,230,118,0.15); padding: 0;"
+                        onmouseover="this.style.background='rgba(0,230,118,0.3)'; this.style.boxShadow='0 4px 12px rgba(0,230,118,0.3)';" onmouseout="this.style.background='rgba(0,230,118,0.15)'; this.style.boxShadow='0 2px 8px rgba(0,230,118,0.15)';">B</button>
+                    
+                    <button onclick="window.fsPaperSell()" title="Paper Sell (Short)"
+                        style="width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 12px; font-weight: 800; border-radius: 50%; border: 1px solid rgba(255,51,85,0.4); background: rgba(255,51,85,0.15); color: #ff3355; cursor: pointer; transition: all 0.15s ease; box-shadow: 0 2px 8px rgba(255,51,85,0.15); padding: 0;"
+                        onmouseover="this.style.background='rgba(255,51,85,0.3)'; this.style.boxShadow='0 4px 12px rgba(255,51,85,0.3)';" onmouseout="this.style.background='rgba(255,51,85,0.15)'; this.style.boxShadow='0 2px 8px rgba(255,51,85,0.15)';">S</button>
+                    
+                    <button onclick="window.fsPaperClose()" title="Close Position"
+                        style="width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 12px; font-weight: 800; border-radius: 50%; border: 1px solid rgba(148,163,184,0.4); background: rgba(148,163,184,0.1); color: #e2e8f0; cursor: pointer; transition: all 0.15s ease; padding: 0;"
+                        onmouseover="this.style.background='rgba(148,163,184,0.2)'" onmouseout="this.style.background='rgba(148,163,184,0.1)'">C</button>
+                        
+                    <!-- Running Trade Info Block -->
+                    <div id="fs-replay-trade-status"
+                        style="display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.4); border-radius: 14px; padding: 0 10px; font-family: 'Lexend', sans-serif; height: 28px;">
+                        <span style="color:#94a3b8; font-weight:700; font-size:11px;">FLAT</span>
+                    </div>
+                </div>
+                
+                <script>
+                    setTimeout(() => {
+                        if (typeof window._makeDraggable === 'function') {
+                            window._makeDraggable(
+                                document.getElementById('fs-replay-trade-controls'),
+                                document.getElementById('fs-trade-controls-drag-handle')
+                            );
+                        }
+                    }, 500);
+                </script>
                 <canvas id="fs-chart-pcv" style="display:none;"></canvas>
                 <canvas id="fs-chart-vcv" style="display:none;"></canvas>
                 <canvas id="fs-chart-rscv" style="display:none;"></canvas>
@@ -20889,6 +21047,14 @@
         </div>
         <div class="fs-pt-analysis-grid">
             <div class="fs-pt-analysis-card">
+                <div class="fs-pt-analysis-card-title">Net PnL</div>
+                <div class="fs-pt-analysis-card-value" id="pt-stat-netpnl">—</div>
+            </div>
+            <div class="fs-pt-analysis-card">
+                <div class="fs-pt-analysis-card-title">CAGR (1L Base)</div>
+                <div class="fs-pt-analysis-card-value" id="pt-stat-cagr">—</div>
+            </div>
+            <div class="fs-pt-analysis-card">
                 <div class="fs-pt-analysis-card-title">Win Rate</div>
                 <div class="fs-pt-analysis-card-value" id="pt-stat-winrate">—</div>
             </div>
@@ -20897,12 +21063,28 @@
                 <div class="fs-pt-analysis-card-value" id="pt-stat-pf">—</div>
             </div>
             <div class="fs-pt-analysis-card">
+                <div class="fs-pt-analysis-card-title">Sharpe Ratio</div>
+                <div class="fs-pt-analysis-card-value" id="pt-stat-sharpe">—</div>
+            </div>
+            <div class="fs-pt-analysis-card">
                 <div class="fs-pt-analysis-card-title">Expectancy</div>
                 <div class="fs-pt-analysis-card-value" id="pt-stat-exp">—</div>
             </div>
             <div class="fs-pt-analysis-card">
                 <div class="fs-pt-analysis-card-title">Total Trades</div>
                 <div class="fs-pt-analysis-card-value" id="pt-stat-trades">—</div>
+            </div>
+            <div class="fs-pt-analysis-card">
+                <div class="fs-pt-analysis-card-title">Avg Duration</div>
+                <div class="fs-pt-analysis-card-value" id="pt-stat-duration">—</div>
+            </div>
+            <div class="fs-pt-analysis-card">
+                <div class="fs-pt-analysis-card-title">Max Win Streak</div>
+                <div class="fs-pt-analysis-card-value green" id="pt-stat-winstreak">—</div>
+            </div>
+            <div class="fs-pt-analysis-card">
+                <div class="fs-pt-analysis-card-title">Max Loss Streak</div>
+                <div class="fs-pt-analysis-card-value red" id="pt-stat-lossstreak">—</div>
             </div>
             <div class="fs-pt-analysis-card">
                 <div class="fs-pt-analysis-card-title">Average Win</div>
@@ -21175,6 +21357,25 @@
             window.closeFullScreenChart = function () {
                 window.stopFsReplay();
                 document.getElementById('fs-chart-modal').style.display = 'none';
+            };
+
+            // ── Sidebar toggle ──
+            window.toggleFsSidebar = function () {
+                const sb = document.getElementById('fs-sidebar');
+                const btn = document.getElementById('fs-sidebar-toggle');
+                if (!sb || !btn) return;
+                const isCollapsed = sb.classList.toggle('fs-sidebar-collapsed');
+                if (isCollapsed) {
+                    btn.style.left = '0px';
+                    btn.innerHTML = '▶';
+                    btn.title = 'Show Sidebar';
+                } else {
+                    btn.style.left = '176px';
+                    btn.innerHTML = '◀';
+                    btn.title = 'Hide Sidebar';
+                }
+                // Re-render chart after transition to use full width
+                setTimeout(() => { window.renderFullScreenChart(); }, 280);
             };
 
             window.selectFsDuration = function (val) {
@@ -21546,6 +21747,14 @@
                 const tf = document.getElementById('fs-duration-select').value;
                 if (!tk) return;
 
+                const bgTickerEl = document.getElementById('fs-bg-ticker-name');
+                if (bgTickerEl) {
+                    const tkUpper = tk.toUpperCase();
+                    const r = (window.allData || []).find(d => String(d._ticker || '').toUpperCase() === tkUpper);
+                    const fullCoName = (window.tickerToName && (window.tickerToName[tkUpper] || window.tickerToName[tk])) || (r ? r._coName : '');
+                    bgTickerEl.textContent = fullCoName ? `${tkUpper} - ${fullCoName}` : tkUpper;
+                }
+
                 const wrap = document.getElementById('fs-chart-wrapper');
                 const loadEl = document.getElementById('fs-chart-loading');
                 const group = document.getElementById('fs-group-select')?.value || 'all';
@@ -21627,11 +21836,19 @@
                     drawChartCore(tk, tf, pCv, vCv, loadEl, wrap);
                 }
 
-                // Update mini financial card in full chart (clicking box clears drawings)
+                // Update mini financial card in full chart (Top 2 blocks: Quick Trendline toggle | Bottom 2 blocks: Clear drawings)
                 const cardEl = document.getElementById('fs-mini-financial-card');
                 if (cardEl) {
-                    cardEl.onclick = function() { window.fsClearDrawings(); };
-                    cardEl.title = "Click to Clear All Drawings (Delete key)";
+                    cardEl.onclick = function (e) {
+                        const rect = cardEl.getBoundingClientRect();
+                        const clickY = e.clientY - rect.top;
+                        if (clickY < rect.height / 2) {
+                            window.fsToggleQuickTrend();
+                        } else {
+                            window.fsClearDrawings();
+                        }
+                    };
+                    cardEl.title = "Top 2 blocks: Toggle Quick Trendline | Bottom 2 blocks: Clear Drawings";
                     cardEl.style.cursor = "pointer";
                     const r = allData.find(d => String(d._ticker || '').toUpperCase() === tk.toUpperCase());
                     if (r) {
@@ -21654,11 +21871,11 @@
                         const srCw = Math.round(cw * 0.7);
 
                         cardEl.innerHTML = `
-                            ${r['EBITDA Performance'] ? `<div class="iscore ${getChipColor('Performance', r['EBITDA Performance'])}" style="width:${cw}px; height:${cw}px; min-width:0; padding:3px 4px; box-sizing:border-box; margin:0; justify-content:space-between; align-items:flex-start; overflow:hidden;"><span class="iscore-label" style="font-size:${lblFs}px; margin-bottom:0; font-weight:800; line-height:1;">EBIT</span><span class="iscore-val" style="font-size:${fsDf(fmtWhole(r['EBITDA Performance']))}px; font-weight:800; line-height:1;">${fmtWhole(r['EBITDA Performance'])}</span></div>` : ''}
-                            ${r['Revenue Performance'] ? `<div class="iscore ${getChipColor('Performance', r['Revenue Performance'])}" style="width:${cw}px; height:${cw}px; min-width:0; padding:3px 4px; box-sizing:border-box; margin:0; justify-content:space-between; align-items:flex-end; overflow:hidden;"><span class="iscore-label" style="font-size:${lblFs}px; margin-bottom:0; font-weight:800; line-height:1;">SALE</span><span class="iscore-val" style="font-size:${fsDf(fmtWhole(r['Revenue Performance']))}px; font-weight:800; line-height:1;">${fmtWhole(r['Revenue Performance'])}</span></div>` : ''}
-                            ${r['Net Profit Performance'] ? `<div class="iscore ${getChipColor('Performance', r['Net Profit Performance'])}" style="width:${cw}px; height:${cw}px; min-width:0; padding:3px 4px; box-sizing:border-box; margin:0; justify-content:space-between; align-items:flex-start; overflow:hidden;"><span class="iscore-label" style="font-size:${lblFs}px; margin-bottom:0; font-weight:800; line-height:1;">NP</span><span class="iscore-val" style="font-size:${fsDf(fmtWhole(r['Net Profit Performance']))}px; font-weight:800; line-height:1;">${fmtWhole(r['Net Profit Performance'])}</span></div>` : ''}
-                            ${!isNaN(r._eps) ? `<div class="iscore ${getChipColor('EPS Rank', r._eps)}" style="width:${cw}px; height:${cw}px; min-width:0; padding:3px 4px; box-sizing:border-box; margin:0; justify-content:space-between; align-items:flex-end; overflow:hidden;"><span class="iscore-label" style="font-size:${lblFs}px; margin-bottom:0; font-weight:800; line-height:1;">EPS</span><span class="iscore-val" style="font-size:${fsDf(fmtWhole(r._eps))}px; font-weight:800; line-height:1;">${fmtWhole(r._eps)}</span></div>` : ''}
-                            ${!isNaN(sRnk) ? `<div class="iscore ${sRnkCls}" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: ${srCw}px; height: ${srCw}px; min-width: 0; box-sizing: border-box; margin: 0; display: flex; align-items: center; justify-content: center; padding: 0; border: 1.5px solid var(--bg); border-radius: 4px; z-index: 5; box-shadow: 0 1px 3px rgba(0,0,0,0.5);" title="Sector Rank">
+                            ${r['EBITDA Performance'] ? `<div class="iscore ${getChipColor('Performance', r['EBITDA Performance'])}" onclick="event.stopPropagation(); window.fsToggleQuickTrend();" title="EBIT - Click to Select/Deselect Quick Trendline" style="width:${cw}px; height:${cw}px; min-width:0; padding:3px 4px; box-sizing:border-box; margin:0; justify-content:space-between; align-items:flex-start; overflow:hidden; cursor:pointer;"><span class="iscore-label" style="font-size:${lblFs}px; margin-bottom:0; font-weight:800; line-height:1;">EBIT</span><span class="iscore-val" style="font-size:${fsDf(fmtWhole(r['EBITDA Performance']))}px; font-weight:800; line-height:1;">${fmtWhole(r['EBITDA Performance'])}</span></div>` : ''}
+                            ${r['Revenue Performance'] ? `<div class="iscore ${getChipColor('Performance', r['Revenue Performance'])}" onclick="event.stopPropagation(); window.fsToggleQuickTrend();" title="SALE - Click to Select/Deselect Quick Trendline" style="width:${cw}px; height:${cw}px; min-width:0; padding:3px 4px; box-sizing:border-box; margin:0; justify-content:space-between; align-items:flex-end; overflow:hidden; cursor:pointer;"><span class="iscore-label" style="font-size:${lblFs}px; margin-bottom:0; font-weight:800; line-height:1;">SALE</span><span class="iscore-val" style="font-size:${fsDf(fmtWhole(r['Revenue Performance']))}px; font-weight:800; line-height:1;">${fmtWhole(r['Revenue Performance'])}</span></div>` : ''}
+                            ${r['Net Profit Performance'] ? `<div class="iscore ${getChipColor('Performance', r['Net Profit Performance'])}" onclick="event.stopPropagation(); window.fsClearDrawings();" title="NP - Click to Clear All Drawings" style="width:${cw}px; height:${cw}px; min-width:0; padding:3px 4px; box-sizing:border-box; margin:0; justify-content:space-between; align-items:flex-start; overflow:hidden; cursor:pointer;"><span class="iscore-label" style="font-size:${lblFs}px; margin-bottom:0; font-weight:800; line-height:1;">NP</span><span class="iscore-val" style="font-size:${fsDf(fmtWhole(r['Net Profit Performance']))}px; font-weight:800; line-height:1;">${fmtWhole(r['Net Profit Performance'])}</span></div>` : ''}
+                            ${!isNaN(r._eps) ? `<div class="iscore ${getChipColor('EPS Rank', r._eps)}" onclick="event.stopPropagation(); window.fsClearDrawings();" title="EPS - Click to Clear All Drawings" style="width:${cw}px; height:${cw}px; min-width:0; padding:3px 4px; box-sizing:border-box; margin:0; justify-content:space-between; align-items:flex-end; overflow:hidden; cursor:pointer;"><span class="iscore-label" style="font-size:${lblFs}px; margin-bottom:0; font-weight:800; line-height:1;">EPS</span><span class="iscore-val" style="font-size:${fsDf(fmtWhole(r._eps))}px; font-weight:800; line-height:1;">${fmtWhole(r._eps)}</span></div>` : ''}
+                            ${!isNaN(sRnk) ? `<div class="iscore ${sRnkCls}" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: ${srCw}px; height: ${srCw}px; min-width: 0; box-sizing: border-box; margin: 0; display: flex; align-items: center; justify-content: center; padding: 0; border: 1.5px solid var(--bg); border-radius: 4px; z-index: 5; box-shadow: 0 1px 3px rgba(0,0,0,0.5); pointer-events: none;" title="Sector Rank">
                                 <span class="iscore-val" style="font-size: ${srFs}px; line-height: 1; margin: 0; font-weight: 800; color: #ffffff;">${sRnkDisp}</span>
                             </div>` : ''}
                         `;
@@ -21685,13 +21902,57 @@
                     }
                 }
 
-
+                if (typeof window._fsUpdateFloatingPaperTradeUI === 'function') {
+                    window._fsUpdateFloatingPaperTradeUI();
+                }
             };
 
 
 
             // ── Candlestick Replay engine ──────────────────────────────────────────
             window._fsReplay = { timer: null, paused: false, active: false, currentMaxDate: 0, endDate: 0 };
+
+            window._fsUpdateFloatingPaperTradeUI = function () {
+                const tradeBox = document.getElementById('fs-replay-trade-controls');
+                if (!tradeBox) return;
+
+                if (!window._fsReplay || !window._fsReplay.active) {
+                    tradeBox.style.display = 'none';
+                    return;
+                }
+
+                tradeBox.style.display = 'flex';
+
+                const statusEl = document.getElementById('fs-replay-trade-status');
+                if (!statusEl) return;
+
+                const pt = window._fsPaperTrade;
+                if (!pt || !pt.position) {
+                    const totalPnlStr = pt && pt.totalPnl ? (pt.totalPnl >= 0 ? '+' : '') + pt.totalPnl.toFixed(1) : '';
+                    statusEl.innerHTML = `<span style="color:#94a3b8; font-weight:600; font-size:10px;">FLAT ${totalPnlStr ? '(' + totalPnlStr + ')' : ''}</span>`;
+                    return;
+                }
+
+                const curr = _fsCurrentClose();
+                if (!curr) {
+                    statusEl.innerHTML = `<span style="color:#cbd5e1; font-weight:700; font-size:10px;">${pt.position.side.toUpperCase()} @ ${pt.position.entryPrice.toFixed(1)}</span>`;
+                    return;
+                }
+
+                const { side, qty, entryPrice } = pt.position;
+                const diff = side === 'long' ? curr.close - entryPrice : entryPrice - curr.close;
+                const unreal = diff * qty;
+                const pct = (diff / entryPrice * 100);
+                const isUp = unreal >= 0;
+                const pnlColor = isUp ? '#00e676' : '#ff3355';
+                const pnlSign = isUp ? '+' : '';
+
+                statusEl.innerHTML = `
+                    <span style="font-weight:800; font-size:10px; color:${side === 'long' ? '#00e676' : '#ff3355'};">${side.toUpperCase()} ${qty > 1 ? qty + 'x' : ''}</span>
+                    <span style="color:#cbd5e1; font-size:9.5px; font-weight:600;">@ ${entryPrice.toFixed(1)}</span>
+                    <span style="font-weight:800; font-size:10px; color:${pnlColor}; background:rgba(${isUp ? '0,230,118' : '255,51,85'},0.15); padding:1px 4px; border-radius:3px;">${pnlSign}${pct.toFixed(1)}%</span>
+                `;
+            };
 
             function _fsGetReplayArray() {
                 const tk = document.getElementById('fs-ticker-select')?.value?.toUpperCase();
@@ -21830,6 +22091,11 @@
                     return;
                 }
 
+                // Update paper trade P&L and floating card UI on every replay tick
+                if (typeof _fsUpdatePnlDisplay === 'function') {
+                    _fsUpdatePnlDisplay();
+                }
+
                 // Determine animation duration: use ~80% of the tick interval so
                 // the candle fully forms before the next tick fires.
                 const speedSel = document.getElementById('fs-replay-speed');
@@ -21897,13 +22163,8 @@
                 const interval = speedSel ? parseInt(speedSel.value) || 500 : 500;
 
                 // Tick immediately, then set interval based on speed
-                if (typeof _patchedTick !== 'undefined') {
-                    _patchedTick();
-                    window._fsReplay.timer = setInterval(_patchedTick, interval);
-                } else {
-                    _fsReplayTick();
-                    window._fsReplay.timer = setInterval(_fsReplayTick, interval);
-                }
+                _fsReplayTick();
+                window._fsReplay.timer = setInterval(_fsReplayTick, interval);
             };
 
             window.changeFsReplaySpeed = function () {
@@ -21911,11 +22172,7 @@
                     clearInterval(window._fsReplay.timer);
                     const speedSel = document.getElementById('fs-replay-speed');
                     const interval = speedSel ? parseInt(speedSel.value) || 500 : 500;
-                    if (typeof _patchedTick !== 'undefined') {
-                        window._fsReplay.timer = setInterval(_patchedTick, interval);
-                    } else {
-                        window._fsReplay.timer = setInterval(_fsReplayTick, interval);
-                    }
+                    window._fsReplay.timer = setInterval(_fsReplayTick, interval);
                 }
             };
 
@@ -22910,6 +23167,10 @@
                     + ' @ ' + entryPrice.toFixed(2)
                     + '<br>' + (unreal >= 0 ? '+' : '') + unreal.toFixed(2)
                     + ' (' + (unreal >= 0 ? '+' : '') + pct + '%)';
+
+                if (typeof window._fsUpdateFloatingPaperTradeUI === 'function') {
+                    window._fsUpdateFloatingPaperTradeUI();
+                }
             }
 
             window.fsPaperBuy = function () {
@@ -22929,6 +23190,7 @@
                     pt.position = { side: 'long', qty, entryPrice: curr.close, entryDate: curr.date, ticker: tk };
                 }
                 _fsUpdatePnlDisplay();
+                if (window.renderFullScreenChart) window.renderFullScreenChart();
             };
 
             window.fsPaperSell = function () {
@@ -22947,6 +23209,7 @@
                     pt.position = { side: 'short', qty, entryPrice: curr.close, entryDate: curr.date, ticker: tk };
                 }
                 _fsUpdatePnlDisplay();
+                if (window.renderFullScreenChart) window.renderFullScreenChart();
             };
 
             window.fsPaperClose = function () {
@@ -22975,6 +23238,7 @@
                     while (logEl.children.length > 8) logEl.removeChild(logEl.lastChild);
                 }
                 _fsUpdatePnlDisplay();
+                if (window.renderFullScreenChart) window.renderFullScreenChart();
             };
 
             window.fsPaperDownloadCSV = function () {
@@ -23021,21 +23285,44 @@
                 let runningPnl = 0;
                 let peakPnl = 0;
                 let maxDrawdown = 0;
+                
+                let currentWinStreak = 0;
+                let maxWinStreak = 0;
+                let currentLossStreak = 0;
+                let maxLossStreak = 0;
+                let totalDurationMs = 0;
+                let pnlArray = [];
 
                 pt.trades.forEach(t => {
                     runningPnl += t.pnl;
+                    pnlArray.push(t.pnl);
                     if (runningPnl > peakPnl) peakPnl = runningPnl;
                     let dd = peakPnl - runningPnl;
                     if (dd > maxDrawdown) maxDrawdown = dd;
+
+                    if (t.exitDate && t.entryDate) {
+                        totalDurationMs += (t.exitDate.getTime() - t.entryDate.getTime());
+                    }
 
                     if (t.pnl > 0) {
                         wins++;
                         grossProfit += t.pnl;
                         if (t.pnl > maxWin) maxWin = t.pnl;
+                        
+                        currentWinStreak++;
+                        currentLossStreak = 0;
+                        if (currentWinStreak > maxWinStreak) maxWinStreak = currentWinStreak;
                     } else if (t.pnl < 0) {
                         losses++;
                         grossLoss += Math.abs(t.pnl);
                         if (t.pnl < maxLoss) maxLoss = t.pnl;
+                        
+                        currentLossStreak++;
+                        currentWinStreak = 0;
+                        if (currentLossStreak > maxLossStreak) maxLossStreak = currentLossStreak;
+                    } else {
+                        currentWinStreak = 0;
+                        currentLossStreak = 0;
                     }
                 });
 
@@ -23045,6 +23332,59 @@
                 const avgWin = wins > 0 ? grossProfit / wins : 0;
                 const avgLoss = losses > 0 ? grossLoss / losses : 0;
                 const expectancy = (avgWin * (winRate / 100)) - (avgLoss * (1 - (winRate / 100)));
+                
+                // CAGR
+                let cagr = 0;
+                if (totalTrades > 0) {
+                    const firstDate = pt.trades[0].entryDate;
+                    const lastDate = pt.trades[totalTrades - 1].exitDate;
+                    if (firstDate && lastDate) {
+                        const days = Math.max((lastDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24), 1/24);
+                        const years = days / 365.25;
+                        const initialCapital = 100000;
+                        const finalCapital = initialCapital + runningPnl;
+                        if (finalCapital > 0) {
+                            cagr = (Math.pow(finalCapital / initialCapital, 1 / years) - 1) * 100;
+                        } else {
+                            cagr = -100;
+                        }
+                    }
+                }
+                
+                // Sharpe
+                let sharpe = 0;
+                if (totalTrades > 1) {
+                    const meanPnl = runningPnl / totalTrades;
+                    let sumSq = 0;
+                    pnlArray.forEach(p => { sumSq += Math.pow(p - meanPnl, 2); });
+                    const stdDev = Math.sqrt(sumSq / (totalTrades - 1));
+                    if (stdDev > 0) {
+                        sharpe = meanPnl / stdDev;
+                    }
+                }
+                
+                // Duration
+                let avgDurationStr = "0m";
+                if (totalTrades > 0) {
+                    const avgMs = totalDurationMs / totalTrades;
+                    const mins = Math.floor(avgMs / 60000);
+                    if (mins < 60) avgDurationStr = mins + "m";
+                    else if (mins < 1440) avgDurationStr = Math.floor(mins/60) + "h " + (mins%60) + "m";
+                    else avgDurationStr = Math.floor(mins/1440) + "d " + Math.floor((mins%1440)/60) + "h";
+                }
+
+                document.getElementById('pt-stat-netpnl').textContent = (runningPnl >= 0 ? '+' : '') + runningPnl.toFixed(2);
+                document.getElementById('pt-stat-netpnl').style.color = runningPnl >= 0 ? '#22c55e' : '#f43f5e';
+                
+                document.getElementById('pt-stat-cagr').textContent = (cagr >= 0 ? '+' : '') + cagr.toFixed(2) + '%';
+                document.getElementById('pt-stat-cagr').style.color = cagr >= 0 ? '#22c55e' : '#f43f5e';
+
+                document.getElementById('pt-stat-sharpe').textContent = sharpe.toFixed(2);
+                document.getElementById('pt-stat-sharpe').style.color = sharpe >= 1 ? '#22c55e' : (sharpe >= 0 ? '#eab308' : '#f43f5e');
+
+                document.getElementById('pt-stat-winstreak').textContent = maxWinStreak;
+                document.getElementById('pt-stat-lossstreak').textContent = maxLossStreak;
+                document.getElementById('pt-stat-duration').textContent = avgDurationStr;
 
                 document.getElementById('pt-stat-winrate').textContent = winRate.toFixed(1) + '%';
                 document.getElementById('pt-stat-pf').textContent = profitFactor === Infinity ? '∞' : profitFactor.toFixed(2);
@@ -23060,14 +23400,6 @@
                 document.getElementById('fs-pt-analysis-modal').style.display = 'flex';
             };
 
-            // Update P&L display on every replay tick
-            const _origFsReplayTick = _fsReplayTick;
-            const _patchedTick = function () {
-                _origFsReplayTick();
-                _fsUpdatePnlDisplay();
-            };
-            // Patch tick by replacing timer call in toggleFsReplay
-            // (P&L is also updated by fsPaperBuy/Sell/Close directly)
 
             // ═══════════════════════════════════════════════════════
             // DRAWING TOOLS ENGINE
@@ -23218,34 +23550,42 @@
                     }
                 }
 
-                // ── Render Quick Trendlines with return % badges ──
+                // ── Render Quick Trendlines (Advanced Pro Design) ──
                 ctx.setLineDash([]);
                 for (const ql of (window._fsQLines || [])) {
                     const isUp = ql.retPct >= 0;
-                    const lineColor = isUp ? '#00e676' : '#ff4d4f'; // Brighter solid colors
-                    const bgColor = '#0a0a0c'; // Solid near-black background to block candles/grids
-                    const bdColor = isUp ? '#00e676' : '#ff4d4f'; // Border matches trendline color
-                    const txtColor = isUp ? '#00e676' : '#ff4d4f';
+                    const neonGreen = '#00ff88';
+                    const neonRed = '#ff3355';
+                    const lineColor = isUp ? neonGreen : neonRed;
+                    const glowColor = isUp ? 'rgba(0,255,136,0.45)' : 'rgba(255,51,85,0.45)';
+                    const glowColorSoft = isUp ? 'rgba(0,255,136,0.15)' : 'rgba(255,51,85,0.15)';
 
-                    // Draw anchor dots
-                    ctx.fillStyle = lineColor;
-                    ctx.beginPath(); ctx.arc(ql.x1, ql.y1, 5, 0, Math.PI * 2); ctx.fill();
-                    ctx.beginPath(); ctx.arc(ql.x2, ql.y2, 5, 0, Math.PI * 2); ctx.fill();
-
-                    // Draw main trendline
+                    // ── Crisp trendline (no glow) ──
+                    ctx.save();
                     ctx.strokeStyle = lineColor;
-                    ctx.lineWidth = 2.5; // Thicker line for high quality look
+                    ctx.lineWidth = 2.5;
                     ctx.beginPath();
                     ctx.moveTo(ql.x1, ql.y1);
                     ctx.lineTo(ql.x2, ql.y2);
                     ctx.stroke();
+                    ctx.restore();
 
-                    // Draw extended ghost line
+                    // ── Anchor dots ──
+                    [{ ax: ql.x1, ay: ql.y1 }, { ax: ql.x2, ay: ql.y2 }].forEach(pt => {
+                        // Solid inner dot
+                        ctx.fillStyle = lineColor;
+                        ctx.beginPath(); ctx.arc(pt.ax, pt.ay, 4, 0, Math.PI * 2); ctx.fill();
+                        // White center highlight
+                        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+                        ctx.beginPath(); ctx.arc(pt.ax, pt.ay, 1.5, 0, Math.PI * 2); ctx.fill();
+                    });
+
+                    // ── Extended projection line (bright dashed) ──
                     const dx = ql.x2 - ql.x1, dy = ql.y2 - ql.y1;
                     if (Math.abs(dx) > 0.5) {
-                        ctx.strokeStyle = isUp ? 'rgba(0,230,118,0.25)' : 'rgba(255,77,79,0.25)';
-                        ctx.lineWidth = 1.2;
-                        ctx.setLineDash([4, 6]);
+                        ctx.strokeStyle = isUp ? 'rgba(0,255,136,0.35)' : 'rgba(255,51,85,0.35)';
+                        ctx.lineWidth = 1.5;
+                        ctx.setLineDash([6, 4]);
                         const extX = ql.x2 > ql.x1 ? canvas.width : 0;
                         const extY = ql.y2 + (dy / dx) * (extX - ql.x2);
                         ctx.beginPath();
@@ -23255,107 +23595,142 @@
                         ctx.setLineDash([]);
                     }
 
-                    // Return % badge at midpoint
+                    // ── Return % badge (glassmorphism pill) ──
                     const midX = (ql.x1 + ql.x2) / 2;
                     const midY = (ql.y1 + ql.y2) / 2;
                     const retTxt = (isUp ? '▲ +' : '▼ ') + ql.retPct.toFixed(2) + '%';
-                    ctx.font = 'bold 12px "Lexend",monospace';
+                    ctx.font = 'bold 14px "Lexend",sans-serif';
                     const tw = ctx.measureText(retTxt).width;
-                    const bW = tw + 16, bH = 22, bR = 6;
-                    const bx = midX - bW / 2, by = midY - bH / 2 - (dy < 0 ? 16 : -16);
+                    const bW = tw + 24, bH = 28, bR = 8;
+                    const bx = midX - bW / 2, by = midY - bH / 2 - (dy < 0 ? 20 : -20);
 
                     // Badge shadow
-                    ctx.shadowColor = 'rgba(0,0,0,0.6)';
-                    ctx.shadowBlur = 8;
-                    ctx.shadowOffsetX = 0;
+                    ctx.save();
+                    ctx.shadowColor = 'rgba(0,0,0,0.4)';
+                    ctx.shadowBlur = 4;
                     ctx.shadowOffsetY = 2;
 
-                    // Badge background (Solid)
-                    ctx.fillStyle = bgColor;
+                    // Badge background — gradient fill
+                    const bgGrad = ctx.createLinearGradient(bx, by, bx, by + bH);
+                    bgGrad.addColorStop(0, isUp ? 'rgba(0,40,25,0.92)' : 'rgba(50,8,15,0.92)');
+                    bgGrad.addColorStop(1, isUp ? 'rgba(0,25,15,0.96)' : 'rgba(35,5,10,0.96)');
+                    ctx.fillStyle = bgGrad;
                     ctx.beginPath();
                     ctx.roundRect(bx, by, bW, bH, bR);
                     ctx.fill();
-
-                    // Reset shadow for border and text
-                    ctx.shadowBlur = 0;
-                    ctx.shadowOffsetY = 0;
+                    ctx.restore();
 
                     // Badge border
-                    ctx.strokeStyle = bdColor;
-                    ctx.lineWidth = 1.5;
+                    ctx.strokeStyle = lineColor;
+                    ctx.lineWidth = 1.8;
                     ctx.beginPath();
                     ctx.roundRect(bx, by, bW, bH, bR);
                     ctx.stroke();
 
                     // Badge text
-                    ctx.fillStyle = txtColor;
+                    ctx.fillStyle = lineColor;
+                    ctx.font = 'bold 14px "Lexend",sans-serif';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
                     ctx.fillText(retTxt, midX, by + bH / 2);
 
-                    // Price labels at endpoints with high-contrast background pill
-                    ctx.font = 'bold 9px "Lexend",monospace';
-                    if (ql.price1 != null) {
-                        const p1Txt = ql.price1 >= 1000 ? ql.price1.toFixed(0) : ql.price1.toFixed(2);
-                        const twP = ctx.measureText(p1Txt).width;
-                        const align = ql.x1 < canvas.width / 2 ? 'left' : 'right';
-                        const px = ql.x1 + (align === 'left' ? 8 : -twP - 8);
-                        const py = ql.y1 - 15;
+                    // ── Price labels at endpoints (colored background pills) ──
+                    ctx.font = 'bold 11px "Lexend",sans-serif';
+                    function _drawPriceLabel(price, px, py, anchorX) {
+                        if (price == null) return;
+                        const pTxt = '₹' + (price >= 1000 ? price.toFixed(0) : price.toFixed(2));
+                        const twP = ctx.measureText(pTxt).width;
+                        const pillW = twP + 14, pillH = 18, pillR = 5;
+                        const align = anchorX < canvas.width / 2 ? 'left' : 'right';
+                        const lx = anchorX + (align === 'left' ? 14 : -pillW - 14);
+                        const ly = py - pillH / 2;
 
-                        ctx.fillStyle = 'rgba(10, 10, 12, 0.85)';
+                        // Pill background
+                        ctx.save();
+                        ctx.shadowColor = 'rgba(0,0,0,0.5)';
+                        ctx.shadowBlur = 6;
+                        const pillGrad = ctx.createLinearGradient(lx, ly, lx, ly + pillH);
+                        pillGrad.addColorStop(0, isUp ? 'rgba(0,50,30,0.92)' : 'rgba(55,10,18,0.92)');
+                        pillGrad.addColorStop(1, isUp ? 'rgba(0,35,20,0.95)' : 'rgba(40,5,12,0.95)');
+                        ctx.fillStyle = pillGrad;
                         ctx.beginPath();
-                        ctx.roundRect(px - 4, py - 2, twP + 8, 13, 3);
+                        ctx.roundRect(lx, ly, pillW, pillH, pillR);
                         ctx.fill();
-                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-                        ctx.lineWidth = 0.8;
+                        ctx.restore();
+                        // Pill border
+                        ctx.strokeStyle = isUp ? 'rgba(0,255,136,0.5)' : 'rgba(255,51,85,0.5)';
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.roundRect(lx, ly, pillW, pillH, pillR);
                         ctx.stroke();
-
+                        // Price text
                         ctx.fillStyle = '#ffffff';
                         ctx.textAlign = 'left';
-                        ctx.textBaseline = 'top';
-                        ctx.fillText(p1Txt, px, py - 1);
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(pTxt, lx + 7, ly + pillH / 2);
                     }
-                    if (ql.price2 != null) {
-                        const p2Txt = ql.price2 >= 1000 ? ql.price2.toFixed(0) : ql.price2.toFixed(2);
-                        const twP = ctx.measureText(p2Txt).width;
-                        const align = ql.x2 < canvas.width / 2 ? 'left' : 'right';
-                        const px = ql.x2 + (align === 'left' ? 8 : -twP - 8);
-                        const py = ql.y2 - 15;
-
-                        ctx.fillStyle = 'rgba(10, 10, 12, 0.85)';
-                        ctx.beginPath();
-                        ctx.roundRect(px - 4, py - 2, twP + 8, 13, 3);
-                        ctx.fill();
-                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-                        ctx.lineWidth = 0.8;
-                        ctx.stroke();
-
-                        ctx.fillStyle = '#ffffff';
-                        ctx.textAlign = 'left';
-                        ctx.textBaseline = 'top';
-                        ctx.fillText(p2Txt, px, py - 1);
-                    }
+                    _drawPriceLabel(ql.price1, ql.x1, ql.y1, ql.x1);
+                    _drawPriceLabel(ql.price2, ql.x2, ql.y2, ql.x2);
                     ctx.lineWidth = 1.5;
                 }
 
                 // ── Render Quick Trendline first anchor point (pending) ──
                 if (window._fsQTrend.active && window._fsQTrend.state === 1 && window._fsQTrend.p1) {
                     const p1 = window._fsQTrend.p1;
-                    ctx.setLineDash([3, 4]);
-                    ctx.strokeStyle = 'rgba(99,179,237,0.60)';
-                    ctx.lineWidth = 1.0;
-                    // Crosshair marker at anchor
-                    ctx.beginPath(); ctx.moveTo(p1.x - 12, p1.y); ctx.lineTo(p1.x + 12, p1.y); ctx.stroke();
-                    ctx.beginPath(); ctx.moveTo(p1.x, p1.y - 12); ctx.lineTo(p1.x, p1.y + 12); ctx.stroke();
+                    const accentColor = '#00d4ff'; // Electric cyan accent
+
+                    // Crosshair
+                    ctx.save();
+                    ctx.strokeStyle = accentColor;
+                    ctx.lineWidth = 1.5;
+                    ctx.setLineDash([4, 3]);
+                    ctx.beginPath(); ctx.moveTo(p1.x - 18, p1.y); ctx.lineTo(p1.x + 18, p1.y); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(p1.x, p1.y - 18); ctx.lineTo(p1.x, p1.y + 18); ctx.stroke();
+                    ctx.restore();
+
+                    // Solid dot
                     ctx.setLineDash([]);
-                    ctx.fillStyle = '#63b3ed';
-                    ctx.beginPath(); ctx.arc(p1.x, p1.y, 4.5, 0, Math.PI * 2); ctx.fill();
-                    // "Anchor set" label
-                    ctx.font = 'bold 10px "Lexend",monospace';
-                    ctx.fillStyle = 'rgba(99,179,237,0.85)';
-                    ctx.textAlign = p1.x > canvas.width / 2 ? 'right' : 'left';
+                    ctx.fillStyle = accentColor;
+                    ctx.beginPath(); ctx.arc(p1.x, p1.y, 4, 0, Math.PI * 2); ctx.fill();
+                    // White core
+                    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+                    ctx.beginPath(); ctx.arc(p1.x, p1.y, 1.5, 0, Math.PI * 2); ctx.fill();
+
+                    // Draw dotted line to mouse preview if available
+                    if (window._fsQTrend.p2) {
+                        const p2 = window._fsQTrend.p2;
+                        ctx.strokeStyle = accentColor;
+                        ctx.lineWidth = 1.5;
+                        ctx.setLineDash([3, 4]);
+                        ctx.beginPath();
+                        ctx.moveTo(p1.x, p1.y);
+                        ctx.lineTo(p2.x, p2.y);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    }
+
+                    // "Click 2nd point" label with pill background
+                    const lblTxt = '📍 Click 2nd point';
+                    ctx.font = 'bold 11px "Lexend",sans-serif';
+                    const lblW = ctx.measureText(lblTxt).width;
+                    const lblAlign = p1.x > canvas.width / 2 ? 'right' : 'left';
+                    const lblX = p1.x + (lblAlign === 'left' ? 16 : -lblW - 24);
+                    const lblY = p1.y + 4;
+                    // Pill bg
+                    ctx.fillStyle = 'rgba(0,20,35,0.88)';
+                    ctx.beginPath();
+                    ctx.roundRect(lblX - 6, lblY - 2, lblW + 12, 18, 5);
+                    ctx.fill();
+                    ctx.strokeStyle = 'rgba(0,212,255,0.4)';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.roundRect(lblX - 6, lblY - 2, lblW + 12, 18, 5);
+                    ctx.stroke();
+                    // Label text
+                    ctx.fillStyle = accentColor;
+                    ctx.textAlign = 'left';
                     ctx.textBaseline = 'top';
-                    ctx.fillText('📍 Click 2nd point', p1.x + (ctx.textAlign === 'left' ? 12 : -12), p1.y + 8);
+                    ctx.fillText(lblTxt, lblX, lblY);
                 }
 
                 // Draw in-progress standard trend line
@@ -23476,11 +23851,18 @@
 
                 // ── Mousemove: show live preview for in-progress trend ──
                 function onPreviewMove(e) {
-                    if (!_fsDrawPending || window._fsDrawMode !== 'trend') return;
+                    let needsPaint = false;
                     const coords = _getCoords(e);
-                    _fsDrawPending.x2 = coords.mx;
-                    _fsDrawPending.y2 = coords.my;
-                    _fsPaintDrawings();
+                    if (_fsDrawPending && window._fsDrawMode === 'trend') {
+                        _fsDrawPending.x2 = coords.mx;
+                        _fsDrawPending.y2 = coords.my;
+                        needsPaint = true;
+                    }
+                    if (window._fsQTrend && window._fsQTrend.active && window._fsQTrend.state === 1) {
+                        window._fsQTrend.p2 = { x: coords.mx, y: coords.my };
+                        needsPaint = true;
+                    }
+                    if (needsPaint) _fsPaintDrawings();
                 }
                 canvas.addEventListener('mousemove', onPreviewMove);
                 canvas.addEventListener('touchmove', onPreviewMove, { passive: true });
