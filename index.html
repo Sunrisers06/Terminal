@@ -20824,9 +20824,9 @@
                 <!-- Floating Info & Actions Overlay (top-left) -->
                 <div
                     style="position: absolute; top: 12px; left: 12px; z-index: 12; display: flex; align-items: center; gap: 8px; pointer-events: none;">
-                    <!-- Mini Financial Card overlay -->
-                    <div id="fs-mini-financial-card"
-                        style="position: relative; opacity: 1; display: none; grid-template-columns: repeat(2, 34px); gap: 4px; pointer-events: auto;">
+                    <!-- Mini Financial Card overlay (Clicking box clears drawings) -->
+                    <div id="fs-mini-financial-card" onclick="window.fsClearDrawings()" title="Click to Clear All Drawings (Delete key)"
+                        style="position: relative; opacity: 1; display: none; grid-template-columns: repeat(2, 34px); gap: 4px; pointer-events: auto; cursor: pointer;">
                     </div>
                     <!-- F & H Buttons stacked vertically -->
                     <div id="fs-fh-actions-left"
@@ -21627,9 +21627,12 @@
                     drawChartCore(tk, tf, pCv, vCv, loadEl, wrap);
                 }
 
-                // Update mini financial card in full chart
+                // Update mini financial card in full chart (clicking box clears drawings)
                 const cardEl = document.getElementById('fs-mini-financial-card');
                 if (cardEl) {
+                    cardEl.onclick = function() { window.fsClearDrawings(); };
+                    cardEl.title = "Click to Clear All Drawings (Delete key)";
+                    cardEl.style.cursor = "pointer";
                     const r = allData.find(d => String(d._ticker || '').toUpperCase() === tk.toUpperCase());
                     if (r) {
                         const sRnk = parseFloat(r._sectorRank);
