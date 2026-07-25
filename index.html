@@ -20564,6 +20564,8 @@
                         <div class="fs-sel-wrap">
                             <select id="fs-replay-speed" class="fs-sel" onchange="window.changeFsReplaySpeed()"
                                 style="font-size:11px;">
+                                <option value="8000">1 Candle / 8 sec</option>
+                                <option value="5000">1 Candle / 5 sec</option>
                                 <option value="3000">1 Candle / 3 sec</option>
                                 <option value="2000">1 Candle / 2 sec</option>
                                 <option value="1000" selected>1 Candle / sec</option>
@@ -20803,7 +20805,7 @@
                         onclick="window.fsToggleQuickTrend()"
                         title="Click chart to anchor point 1, click again to draw trendline with return %, click once more to clear">📐
                         Quick Trendline</button>
-                    <button class="fs-draw-clear" onclick="window.fsClearDrawings()">🗑 Clear All</button>
+                    <button class="fs-draw-clear" onclick="window.fsClearDrawings()" title="Clear All Drawings (Delete / Backspace key)">🗑 Clear All</button>
                 </div>
             </div>
 
@@ -23136,6 +23138,7 @@
             window.fsClearDrawings = function () {
                 window._fsDrawings = [];
                 window._fsQLines = [];
+                _fsDrawPending = null;
                 window._fsQTrend.state = 0;
                 window._fsQTrend.p1 = null;
                 const qtBtn = document.getElementById('fs-quick-trend-btn');
@@ -23676,6 +23679,12 @@
 
                 if (e.key === 'Escape') {
                     window.closeFullScreenChart();
+                    return;
+                }
+
+                if (e.key === 'Delete' || e.key === 'Backspace') {
+                    e.preventDefault();
+                    window.fsClearDrawings();
                     return;
                 }
 
