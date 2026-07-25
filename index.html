@@ -20995,7 +20995,7 @@
 
                     <style>
                         .fs-mobile-replay-controls { display: none !important; }
-                        @media (max-width: 1024px) {
+                        @media (max-width: 1366px) {
                             .fs-mobile-replay-controls { display: flex !important; }
                         }
                     </style>
@@ -22174,6 +22174,7 @@
                 window._fsReplay.endDate = endTs;
                 window._fsReplay.paused = false;
                 if (btn) btn.textContent = '⏸';
+                if (mBtn) mBtn.textContent = '⏸';
 
                 const speedSel = document.getElementById('fs-replay-speed');
                 const interval = speedSel ? parseInt(speedSel.value) || 500 : 500;
