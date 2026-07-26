@@ -12237,12 +12237,14 @@
                letter(s) with a small perpetual "cracker cracking" spark burst — kept
                deliberately tiny (short radius, few particles) so it stays a small,
                contained flourish rather than a distracting flash. Highs use bright green
-               (#0FFF50), lows use bright pink (#F6339A); both get a dark halo pill so
-               they stay readable against any bar color underneath. Returns true if at
-               least one marker was drawn (so callers know whether to keep the light,
-               throttled redraw loop alive). ─── */
+               (#0FFF50), lows use bright pink (#F6339A) — plain text only, no background
+               pill. Font size scales with the actual visual viewport width (accounting for
+               the 90°-rotated portrait-tablet/phone layout) so labels stay proportionate on
+               iPad/mobile instead of a single fixed desktop size. Returns true if at least
+               one marker was drawn (so callers know whether to keep the light, throttled
+               redraw loop alive). ─── */
             function _fsDrawVolMilestones(ctx, opts) {
-                const { getVal, rawArr, currentDataArr, actualStart, xFn, barTopYFn, minY, ticker } = opts;
+                const { getVal, rawArr, currentDataArr, actualStart, xFn, barTopYFn, minY, ticker, isFs } = opts;
                 if (!currentDataArr || !currentDataArr.length || !rawArr || !rawArr.length) return false;
 
                 const lastD = currentDataArr[currentDataArr.length - 1].date;
@@ -12281,34 +12283,31 @@
                 const LO_PARTICLES = ['#F6339A', '#fda4d5'];
                 const clampY = typeof minY === 'number' ? minY : -Infinity;
 
+                // Visual viewport width — on portrait tablets/phones the modal is rotated 90°,
+                // so the width the user actually sees is window.innerHeight, not innerWidth.
+                const rotated = window.innerWidth <= 1024 && window.innerHeight > window.innerWidth;
+                const visW = rotated ? window.innerHeight : window.innerWidth;
+                const fontPx = !isFs ? 6.5 : (visW <= 480 ? 7.5 : visW <= 900 ? 8.3 : visW <= 1300 ? 9 : 9.6);
+
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'alphabetic';
-                ctx.font = 'bold 8.5px "Lexend",monospace';
+                ctx.font = 'bold ' + fontPx + 'px "Lexend",monospace';
+                const labelGap = fontPx + 2.5;
                 const placedLabels = [];
-                const placeLabel = (x, barTopY, text, color, halo) => {
+                const placeLabel = (x, barTopY, text, color) => {
                     if (!text) return null;
                     const tw = ctx.measureText(text).width;
                     let y = barTopY - 4;
                     const x1 = x - tw / 2 - 1, x2 = x + tw / 2 + 1;
                     let tries = 0;
                     while (tries < 4 && placedLabels.some(b => Math.abs(b.y - y) < 10 && x1 < b.x2 && x2 > b.x1)) {
-                        y -= 11;
+                        y -= labelGap;
                         tries++;
                     }
                     y = Math.max(clampY, y);
                     placedLabels.push({ x1, x2, y });
-                    if (halo) {
-                        ctx.fillStyle = 'rgba(10, 10, 14, 0.72)';
-                        ctx.beginPath();
-                        if (ctx.roundRect) ctx.roundRect(x - tw / 2 - 3, y - 9, tw + 6, 12, 3);
-                        else ctx.rect(x - tw / 2 - 3, y - 9, tw + 6, 12);
-                        ctx.fill();
-                    }
                     ctx.fillStyle = color;
-                    ctx.shadowColor = color;
-                    ctx.shadowBlur = halo ? 4 : 0;
                     ctx.fillText(text, x, y);
-                    ctx.shadowBlur = 0;
                     return { x, y };
                 };
 
@@ -12343,8 +12342,8 @@
                 map.forEach((entry, idx) => {
                     const x = xFn(idx);
                     const barTopY = barTopYFn(idx);
-                    sparkAt(placeLabel(x, barTopY, entry.hi, HI_COLOR, true), idx, HI_PARTICLES);
-                    sparkAt(placeLabel(x, barTopY, entry.lo, LO_COLOR, true), idx, LO_PARTICLES);
+                    sparkAt(placeLabel(x, barTopY, entry.hi, HI_COLOR), idx, HI_PARTICLES);
+                    sparkAt(placeLabel(x, barTopY, entry.lo, LO_COLOR), idx, LO_PARTICLES);
                 });
 
                 if (hasMarker && !window._fsVolSparkTimer) {
@@ -13417,7 +13416,8 @@
                         xFn: i => toX(i),
                         barTopYFn: i => volBaseY - Math.max(1, (raw[i].vol / maxV) * volH),
                         minY: PP.t + 9,
-                        ticker
+                        ticker,
+                        isFs
                     }).map;
                 }
 
@@ -13853,7 +13853,8 @@
                         xFn: i => toPaneX(i, VP, vW2),
                         barTopYFn: i => VP.t + vH2 - Math.max(1, (raw[i].vol / maxV) * vH2),
                         minY: VP.t + 9,
-                        ticker
+                        ticker,
+                        isFs
                     });
 
                     // Draw crosshair on volume canvas if hovering
@@ -14154,7 +14155,8 @@
                             xFn: i => toX(i),
                             barTopYFn: i => toYD(raw[i].delivPer),
                             minY: RP.t + 9,
-                            ticker
+                            ticker,
+                            isFs
                         });
                     } else if (window.fsRscvMode === 'DELIV_VOL') {
                         // Delivery Volume
@@ -14233,7 +14235,8 @@
                             xFn: i => toX(i),
                             barTopYFn: i => toYD(raw[i].delivVol),
                             minY: RP.t + 9,
-                            ticker
+                            ticker,
+                            isFs
                         });
                     } else {
                         // MRS
@@ -20034,6 +20037,10 @@
             overflow-y: auto;
             overflow-x: hidden;
             scrollbar-width: none;
+            -webkit-overflow-scrolling: touch;
+            /* #fs-chart-modal sets touch-action:none for chart pinch/pan gestures — opt the
+               sidebar back in to native vertical touch-scrolling, same fix as #fs-chart-wrapper. */
+            touch-action: pan-y;
             transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
@@ -21797,6 +21804,10 @@
                 <!-- Bottom Center Floating Trade Controls (Draggable — touch / Apple Pencil friendly) -->
                 <style>
                     #fs-replay-trade-controls {
+                        /* Scale factor set by window._fsSizeTradePanel() based on the effective
+                           screen width (rotation-aware) — every dimension below reads from it,
+                           so the whole panel scales as one unit on phones/iPads/desktop. */
+                        --fs-tp-scale: 1;
                         display: none;
                         position: absolute;
                         bottom: 24px;
@@ -21804,14 +21815,14 @@
                         transform: translateX(-50%);
                         flex-direction: column;
                         align-items: stretch;
-                        gap: 8px;
+                        gap: calc(8px * var(--fs-tp-scale));
                         background: linear-gradient(180deg, rgba(21, 27, 41, 0.92), rgba(11, 15, 24, 0.95));
                         backdrop-filter: blur(20px) saturate(1.4);
                         -webkit-backdrop-filter: blur(20px) saturate(1.4);
                         border: 1px solid rgba(255, 255, 255, 0.14);
-                        border-radius: 20px;
-                        padding: 8px 10px 10px;
-                        padding-bottom: max(10px, env(safe-area-inset-bottom, 10px));
+                        border-radius: calc(20px * var(--fs-tp-scale));
+                        padding: calc(8px * var(--fs-tp-scale)) calc(10px * var(--fs-tp-scale)) calc(10px * var(--fs-tp-scale));
+                        padding-bottom: max(calc(10px * var(--fs-tp-scale)), env(safe-area-inset-bottom, 10px));
                         box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
                         pointer-events: auto;
                         z-index: 20;
@@ -21824,7 +21835,7 @@
                         display: flex;
                         flex-direction: row;
                         align-items: center;
-                        gap: 8px;
+                        gap: calc(8px * var(--fs-tp-scale));
                     }
 
                     .fs-tp-handle {
@@ -21832,13 +21843,18 @@
                         display: flex;
                         align-items: center;
                         justify-content: center;
-                        width: 34px;
-                        height: 44px;
+                        width: calc(34px * var(--fs-tp-scale));
+                        height: calc(44px * var(--fs-tp-scale));
                         flex-shrink: 0;
                         opacity: 0.55;
                         touch-action: none;
-                        border-radius: 10px;
+                        border-radius: calc(10px * var(--fs-tp-scale));
                         transition: opacity 0.15s, background-color 0.15s;
+                    }
+
+                    .fs-tp-handle svg {
+                        width: calc(16px * var(--fs-tp-scale));
+                        height: calc(16px * var(--fs-tp-scale));
                     }
 
                     .fs-tp-handle:active {
@@ -21848,13 +21864,13 @@
                     }
 
                     .fs-tp-btn {
-                        width: 44px;
-                        height: 44px;
+                        width: calc(44px * var(--fs-tp-scale));
+                        height: calc(44px * var(--fs-tp-scale));
                         flex-shrink: 0;
                         display: flex;
                         justify-content: center;
                         align-items: center;
-                        font-size: 14px;
+                        font-size: calc(14px * var(--fs-tp-scale));
                         font-weight: 800;
                         border-radius: 50%;
                         cursor: pointer;
@@ -21896,25 +21912,25 @@
                         align-items: center;
                         justify-content: center;
                         background: rgba(0, 0, 0, 0.4);
-                        border-radius: 14px;
-                        padding: 0 12px;
-                        height: 44px;
+                        border-radius: calc(14px * var(--fs-tp-scale));
+                        padding: 0 calc(12px * var(--fs-tp-scale));
+                        height: calc(44px * var(--fs-tp-scale));
                         font-family: 'Lexend', sans-serif;
                         overflow: hidden;
                     }
 
                     .fs-tp-transport-btn {
                         flex: 1;
-                        height: 44px;
+                        height: calc(44px * var(--fs-tp-scale));
                         display: flex;
                         justify-content: center;
                         align-items: center;
-                        border-radius: 12px;
+                        border-radius: calc(12px * var(--fs-tp-scale));
                         border: 1px solid rgba(148, 163, 184, 0.4);
                         background: rgba(148, 163, 184, 0.15);
                         color: #e2e8f0;
                         cursor: pointer;
-                        font-size: 15px;
+                        font-size: calc(15px * var(--fs-tp-scale));
                         font-weight: 700;
                         touch-action: manipulation;
                         -webkit-tap-highlight-color: transparent;
@@ -21946,19 +21962,20 @@
 
                         <!-- Running Trade Info Block -->
                         <div id="fs-replay-trade-status">
-                            <span style="color:#94a3b8; font-weight:700; font-size:11px;">FLAT</span>
+                            <span style="color:#94a3b8; font-weight:700; font-size:calc(11px * var(--fs-tp-scale));">FLAT</span>
                         </div>
                     </div>
 
                     <!-- Replay Transport Row -->
                     <div class="fs-tp-row">
                         <button id="fs-mobile-replay-btn" class="fs-tp-transport-btn" onclick="window.toggleFsReplay()" title="Play / Pause">▶</button>
-                        <button id="fs-mobile-step-btn" class="fs-tp-transport-btn" onclick="window.fsFsStepForward()" title="Step +1 candle" style="font-size:17px;">›</button>
+                        <button id="fs-mobile-step-btn" class="fs-tp-transport-btn" onclick="window.fsFsStepForward()" title="Step +1 candle" style="font-size:calc(17px * var(--fs-tp-scale));">›</button>
                     </div>
                 </div>
 
                 <script>
                     setTimeout(() => {
+                        if (typeof window._fsSizeTradePanel === 'function') window._fsSizeTradePanel();
                         if (typeof window._makeDraggable === 'function') {
                             window._makeDraggable(
                                 document.getElementById('fs-replay-trade-controls'),
@@ -22981,12 +22998,34 @@
                     sbToggleBtn.style.top = (overlayTop + Math.max(cardH, fhH) + gap) + 'px';
                 }
 
+                if (typeof window._fsSizeTradePanel === 'function') {
+                    window._fsSizeTradePanel();
+                }
+
                 if (typeof window._fsUpdateFloatingPaperTradeUI === 'function') {
                     window._fsUpdateFloatingPaperTradeUI();
                 }
             };
 
 
+
+            // Scales the floating trade panel (#fs-replay-trade-controls) to the effective
+            // screen size — rotation-aware, same "visual width" logic used for the volume
+            // milestone marker font sizing: on portrait tablets/phones the modal is rotated
+            // 90°, so window.innerHeight (not innerWidth) is what the user actually sees as
+            // width. Phones and iPads both get a smaller, more compact panel; desktop is
+            // left at its original size (the 44px baseline the CSS was authored for).
+            window._fsSizeTradePanel = function () {
+                const el = document.getElementById('fs-replay-trade-controls');
+                if (!el) return;
+                const rotated = window.innerWidth <= 1024 && window.innerHeight > window.innerWidth;
+                const visW = rotated ? window.innerHeight : window.innerWidth;
+                let scale;
+                if (visW <= 950) scale = 0.66;       // phones (either orientation)
+                else if (visW <= 1450) scale = 0.8;  // iPads / tablets (either orientation)
+                else scale = 1;                       // desktop / large monitors — unchanged
+                el.style.setProperty('--fs-tp-scale', scale.toFixed(3));
+            };
 
             // ── Candlestick Replay engine ──────────────────────────────────────────
             window._fsReplay = { timer: null, paused: false, active: false, currentMaxDate: 0, endDate: 0 };
@@ -23008,13 +23047,13 @@
                 const pt = window._fsPaperTrade;
                 if (!pt || !pt.position) {
                     const totalPnlStr = pt && pt.totalPnl ? (pt.totalPnl >= 0 ? '+' : '') + pt.totalPnl.toFixed(1) : '';
-                    statusEl.innerHTML = `<span style="color:#94a3b8; font-weight:600; font-size:10px;">FLAT ${totalPnlStr ? '(' + totalPnlStr + ')' : ''}</span>`;
+                    statusEl.innerHTML = `<span style="color:#94a3b8; font-weight:600; font-size:calc(10px * var(--fs-tp-scale));">FLAT ${totalPnlStr ? '(' + totalPnlStr + ')' : ''}</span>`;
                     return;
                 }
 
                 const curr = _fsCurrentClose();
                 if (!curr) {
-                    statusEl.innerHTML = `<span style="color:#cbd5e1; font-weight:700; font-size:10px;">${pt.position.side.toUpperCase()} @ ${pt.position.entryPrice.toFixed(1)}</span>`;
+                    statusEl.innerHTML = `<span style="color:#cbd5e1; font-weight:700; font-size:calc(10px * var(--fs-tp-scale));">${pt.position.side.toUpperCase()} @ ${pt.position.entryPrice.toFixed(1)}</span>`;
                     return;
                 }
 
@@ -23027,9 +23066,9 @@
                 const pnlSign = isUp ? '+' : '';
 
                 statusEl.innerHTML = `
-                    <span style="font-weight:800; font-size:10px; color:${side === 'long' ? '#00e676' : '#ff3355'};">${side.toUpperCase()} ${qty > 1 ? qty + 'x' : ''}</span>
-                    <span style="color:#cbd5e1; font-size:9.5px; font-weight:600;">@ ${entryPrice.toFixed(1)}</span>
-                    <span style="font-weight:800; font-size:10px; color:${pnlColor}; background:rgba(${isUp ? '0,230,118' : '255,51,85'},0.15); padding:1px 4px; border-radius:3px;">${pnlSign}${pct.toFixed(1)}%</span>
+                    <span style="font-weight:800; font-size:calc(10px * var(--fs-tp-scale)); color:${side === 'long' ? '#00e676' : '#ff3355'};">${side.toUpperCase()} ${qty > 1 ? qty + 'x' : ''}</span>
+                    <span style="color:#cbd5e1; font-size:calc(9.5px * var(--fs-tp-scale)); font-weight:600;">@ ${entryPrice.toFixed(1)}</span>
+                    <span style="font-weight:800; font-size:calc(10px * var(--fs-tp-scale)); color:${pnlColor}; background:rgba(${isUp ? '0,230,118' : '255,51,85'},0.15); padding:1px 4px; border-radius:3px;">${pnlSign}${pct.toFixed(1)}%</span>
                 `;
             };
 
