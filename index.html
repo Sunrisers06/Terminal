@@ -6472,6 +6472,7 @@
                         </div>
                         <div id="rd-kpis"></div>
                         <div id="rd-podium"></div>
+                        <div id="rd-trend-radar" style="display:none;"></div>
                         <div id="rd-table-wrap">
                             <table class="rd-table">
                                 <thead id="rd-thead"></thead>
@@ -6584,6 +6585,11 @@
                 <label class="fi-checkbox" title="Show only stocks with Volatility Contraction Pattern (VCP) forming">
                     <input type="checkbox" id="vcp-filter" onchange="doFilter()">
                     <span>📈 VCP</span>
+                </label>
+                <label class="fi-checkbox"
+                    title="Show only stocks where a Quarter/Year/All-time high or low Volume record (Q/Y/E/q/y/e) landed in the last 2 candles">
+                    <input type="checkbox" id="volms-filter" onchange="doFilter()">
+                    <span>🎯 Vol QYE</span>
                 </label>
                 <button class="clear-btn" onclick="window.resetAllAppFilters()">✖ Clear</button>
                 <select id="sort-select" class="fi sort-fi" onchange="doFilter()">
@@ -6748,6 +6754,8 @@
             if (peadFilter) peadFilter.checked = false;
             const vcpFilter = document.getElementById('vcp-filter');
             if (vcpFilter) vcpFilter.checked = false;
+            const volmsFilter = document.getElementById('volms-filter');
+            if (volmsFilter) volmsFilter.checked = false;
             const idxFilter = document.getElementById('index-filter');
             if (idxFilter) {
                 idxFilter.value = Array.from(idxFilter.options).some(o => o.value === 'Nifty_ALL') ? 'Nifty_ALL' : 'all';
@@ -8572,6 +8580,7 @@
                 invFilter: document.getElementById('investor-filter'),
                 peadFilter: document.getElementById('pead-filter'),
                 vcpFilter: document.getElementById('vcp-filter'),
+                volmsFilter: document.getElementById('volms-filter'),
                 maxPivotDist: document.getElementById('max-pivot-dist'),
                 globalClearBtn: document.getElementById('global-clear-btn'),
             };
@@ -8715,6 +8724,10 @@
                 // VCP filter
                 if (dc.vcpFilter && dc.vcpFilter.checked) {
                     if (!r._vcpFlag) return false;
+                }
+                // Volume Milestone (Q/Y/E/q/y/e) in last 2 candles filter
+                if (dc.volmsFilter && dc.volmsFilter.checked) {
+                    if (!r._volMsFlag) return false;
                 }
                 return true;
             });
@@ -9559,6 +9572,7 @@
             calcSectorBreadth();
             calcPEADFlags();
             calcVCPFlags();
+            calcVolMilestoneFlags();
         }
 
         // ══════════════════════════════════════════════════════
@@ -9608,6 +9622,10 @@
                 filteredTickers = window.indexDataMap[filterIndex];
             }
 
+            // Universe-wide return accumulators — baseline for each sector/industry's
+            // Relative Strength (are they beating the broader market, and speeding up or slowing down?)
+            let mktSum1m = 0, mktCnt1m = 0, mktSum3m = 0, mktCnt3m = 0;
+
             allData.forEach(r => {
                 const tickerStr = String(r._ticker).toUpperCase();
                 if (filteredTickers && !filteredTickers.has(tickerStr)) return;
@@ -9635,7 +9653,13 @@
                 };
                 addRow(sectorMap, r._sec, data);
                 addRow(industryMap, r._ind, data);
+
+                if (!isNaN(data.ret1m)) { mktSum1m += data.ret1m; mktCnt1m++; }
+                if (!isNaN(data.ret3m)) { mktSum3m += data.ret3m; mktCnt3m++; }
             });
+
+            const mktAvgRet1m = mktCnt1m ? mktSum1m / mktCnt1m : NaN;
+            const mktAvgRet3m = mktCnt3m ? mktSum3m / mktCnt3m : NaN;
 
             // Post-process: compute averages and momentum score
             [sectorMap, industryMap].forEach(map => {
@@ -9654,9 +9678,43 @@
                     const breadthScore = (b.above10Pct * 40 + b.above40Pct * 30);
                     const retScore = !isNaN(b.avgRet3m) ? Math.min(30, Math.max(0, (b.avgRet3m + 20) / 60 * 30)) : 15;
                     b.momentum = Math.round(breadthScore + retScore);
+
+                    // ── Relative Strength quadrant (RRG-style) — which sector/industry is
+                    // actually GAINING strength, vs. one that's merely up because the whole
+                    // market is up. relRet = performance vs the broader universe; rsMomentum =
+                    // whether the last month is running hotter or colder than the 3-month pace.
+                    b.relRet1m = (!isNaN(b.avgRet1m) && !isNaN(mktAvgRet1m)) ? b.avgRet1m - mktAvgRet1m : NaN;
+                    b.relRet3m = (!isNaN(b.avgRet3m) && !isNaN(mktAvgRet3m)) ? b.avgRet3m - mktAvgRet3m : NaN;
+                    b.rsMomentum = (!isNaN(b.relRet1m) && !isNaN(b.relRet3m)) ? (b.relRet1m - b.relRet3m / 3) : NaN;
+                    if (isNaN(b.relRet3m) || isNaN(b.rsMomentum)) {
+                        b.quadrant = 'unknown'; b.quadIcon = '—'; b.quadColor = 'rgba(255,255,255,0.35)'; b.quadLabel = 'N/A';
+                    } else if (b.relRet3m >= 0 && b.rsMomentum >= 0) {
+                        b.quadrant = 'leading'; b.quadIcon = '🚀'; b.quadColor = '#00e676'; b.quadLabel = 'Leading';
+                    } else if (b.relRet3m >= 0 && b.rsMomentum < 0) {
+                        b.quadrant = 'weakening'; b.quadIcon = '⚠️'; b.quadColor = '#facc15'; b.quadLabel = 'Weakening';
+                    } else if (b.relRet3m < 0 && b.rsMomentum < 0) {
+                        b.quadrant = 'lagging'; b.quadIcon = '🥶'; b.quadColor = '#ff4d4f'; b.quadLabel = 'Lagging';
+                    } else {
+                        b.quadrant = 'improving'; b.quadIcon = '📈'; b.quadColor = '#38bdf8'; b.quadLabel = 'Improving';
+                    }
+
                     // Sort tickers by techScore desc
                     b.tickers.sort((a, z) => (isNaN(z.techScore) ? -1 : isNaN(a.techScore) ? 1 : z.techScore - a.techScore));
                 });
+            });
+
+            // ── Momentum trend vs last visit (persisted snapshot) — a genuine over-time
+            // strength signal, not just a same-visit proxy like the RS quadrant above.
+            ['sector', 'industry'].forEach(kind => {
+                const map = kind === 'sector' ? sectorMap : industryMap;
+                let prevSnap = {};
+                try { prevSnap = JSON.parse(localStorage.getItem('sxBreadthMomSnap_' + kind) || '{}'); } catch (e) { }
+                const newSnap = {};
+                Object.entries(map).forEach(([name, b]) => {
+                    b.momDelta = (typeof prevSnap[name] === 'number' && !isNaN(prevSnap[name])) ? (b.momentum - prevSnap[name]) : NaN;
+                    newSnap[name] = b.momentum;
+                });
+                try { localStorage.setItem('sxBreadthMomSnap_' + kind, JSON.stringify(newSnap)); } catch (e) { }
             });
 
             window._breadthData = { sector: sectorMap, industry: industryMap };
@@ -9780,9 +9838,43 @@
                 </div>
             </div>`;
 
-            let content = '';
-
             const filterFn = activeTab === 'sector' ? 'setSectorFilter' : 'setIndustryFilter';
+
+            // ── Strength Radar — direct answer to "which sector/industry is getting strength":
+            // ranks by RS Momentum (relative-to-market performance that's accelerating vs its own
+            // 3-month pace), independent of the sort/view the table below is currently using.
+            const ranked = rows.filter(r => !isNaN(r.rsMomentum));
+            const gainers = [...ranked].sort((a, b) => b.rsMomentum - a.rsMomentum).slice(0, 5);
+            const losers = [...ranked].sort((a, b) => a.rsMomentum - b.rsMomentum).slice(0, 5);
+            const quadCounts = { leading: 0, improving: 0, weakening: 0, lagging: 0 };
+            rows.forEach(r => { if (quadCounts[r.quadrant] !== undefined) quadCounts[r.quadrant]++; });
+
+            const radarChip = r => {
+                const safeN = r.name.replace(/'/g, '\\u0027');
+                return `<span class="breadth-radar-chip" style="border-color:${r.quadColor}66;" onclick="${filterFn}('${safeN}',event)" title="${r.quadLabel} | RS Momentum: ${r.rsMomentum >= 0 ? '+' : ''}${r.rsMomentum.toFixed(1)} pts vs market">
+                    <span>${r.quadIcon}</span><b>${r.name}</b>
+                    <span style="color:${r.quadColor};font-weight:700;">${r.rsMomentum >= 0 ? '+' : ''}${r.rsMomentum.toFixed(1)}</span>
+                </span>`;
+            };
+
+            const strengthRadar = ranked.length ? `<div class="breadth-radar">
+                <div class="breadth-radar-row">
+                    <span class="breadth-radar-lbl" style="color:#38bdf8;">🔥 Gaining Strength</span>
+                    <div class="breadth-radar-chips">${gainers.map(radarChip).join('') || '<span style="color:rgba(255,255,255,0.3);font-size:11px;">—</span>'}</div>
+                </div>
+                <div class="breadth-radar-row">
+                    <span class="breadth-radar-lbl" style="color:#ff4d4f;">🧊 Losing Strength</span>
+                    <div class="breadth-radar-chips">${losers.map(radarChip).join('') || '<span style="color:rgba(255,255,255,0.3);font-size:11px;">—</span>'}</div>
+                </div>
+                <div class="breadth-radar-legend">
+                    <span title="Outperforming the market and still accelerating">🚀 Leading: <b>${quadCounts.leading}</b></span>
+                    <span title="Underperforming the market, but now accelerating — early rotation signal">📈 Improving: <b>${quadCounts.improving}</b></span>
+                    <span title="Outperforming the market, but momentum is fading">⚠️ Weakening: <b>${quadCounts.weakening}</b></span>
+                    <span title="Underperforming the market and still decelerating">🥶 Lagging: <b>${quadCounts.lagging}</b></span>
+                </div>
+            </div>` : '';
+
+            let content = '';
 
             if (view === 'heatmap') {
                 // ── HEATMAP VIEW ──
@@ -9793,11 +9885,12 @@
                     const retC = retColor(r.avgRet3m);
                     const short = r.name.length > 14 ? r.name.slice(0, 13) + '\u2026' : r.name;
                     const safeN = r.name.replace(/'/g, '\\u0027');
-                    return `<div class="breadth-heatmap-tile" style="background:${bg};border-color:${brd};" onclick="${filterFn}('${safeN}',event)" title="${r.name} | 10W: ${p10}% | 3M Avg: ${fmtRet(r.avgRet3m)} | Stocks: ${r.total}">
+                    return `<div class="breadth-heatmap-tile" style="background:${bg};border-color:${brd};" onclick="${filterFn}('${safeN}',event)" title="${r.name} | 10W: ${p10}% | 3M Avg: ${fmtRet(r.avgRet3m)} | Stocks: ${r.total} | ${r.quadLabel}">
                         <div class="bht-name">${short}</div>
                         <div class="bht-pct" style="color:${pctColor(p10)}">${p10}%</div>
                         <div class="bht-ret" style="color:${retC}">${fmtRet(r.avgRet3m)}</div>
                         <div class="bht-momentum" style="background:${momGrad(r.momentum)}">${r.momentum}</div>
+                        <div style="font-size:9px;margin-top:2px;color:${r.quadColor};" title="${r.quadLabel}">${r.quadIcon} ${r.quadLabel}</div>
                         ${miniBar(p10, pctColor(p10))}
                     </div>`;
                 }).join('')}</div>`;
@@ -9815,6 +9908,7 @@
                         <th onclick="${onSrt('nearPivot')}" style="cursor:pointer;" title="Stocks near pivot">Pivot${hdr('nearPivot')}</th>
                         <th onclick="${onSrt('avgTech')}" style="cursor:pointer;" title="Avg Tech Score">Tech${hdr('avgTech')}</th>
                         <th onclick="${onSrt('momentum')}" style="cursor:pointer;" title="Momentum Score">Mom${hdr('momentum')}</th>
+                        <th onclick="${onSrt('rsMomentum')}" style="cursor:pointer;" title="Relative Strength quadrant — is this sector/industry beating the market, and is that lead accelerating or fading?">Trend${hdr('rsMomentum')}</th>
                     </tr></thead>
                     <tbody>
                     ${rows.map(r => {
@@ -9830,17 +9924,20 @@
 
                     // Expanded detail row
                     const expandRow = isExp ? `<tr class="breadth-expand-row">
-                            <td colspan="10">
+                            <td colspan="11">
                                 <div class="breadth-expand-content">
                                     <div class="breadth-expand-stats">
                                         <div class="bes-item"><span class="bes-lbl">🟢 Bullish</span><span class="bes-val" style="color:#00e676">${r.bullish} (${r.total > 0 ? Math.round(r.bullish / r.total * 100) : 0}%)</span></div>
                                         <div class="bes-item"><span class="bes-lbl">🟡 Mixed</span><span class="bes-val" style="color:#facc15">${r.neutral}</span></div>
                                         <div class="bes-item"><span class="bes-lbl">🔴 Bearish</span><span class="bes-val" style="color:#ff4d4f">${r.bearish} (${r.total > 0 ? Math.round(r.bearish / r.total * 100) : 0}%)</span></div>
+                                        <div class="bes-item"><span class="bes-lbl">⚖️ A/D Ratio</span><span class="bes-val" style="color:${r.bearish > 0 ? (r.bullish / r.bearish >= 1 ? '#00e676' : '#ff4d4f') : (r.bullish > 0 ? '#00e676' : 'rgba(255,255,255,0.5)')}">${r.bearish > 0 ? (r.bullish / r.bearish).toFixed(2) : (r.bullish > 0 ? '∞' : '—')}</span></div>
                                         <div class="bes-item"><span class="bes-lbl">📍 Pivot</span><span class="bes-val" style="color:#facc15">${r.nearPivot}</span></div>
                                         <div class="bes-item"><span class="bes-lbl">💼 MCap</span><span class="bes-val">${fmtMcap(r.totalMcap)}</span></div>
                                         <div class="bes-item"><span class="bes-lbl">📈 Avg 1Y</span><span class="bes-val" style="color:${retColor(r.avgRet1y)}">${fmtRet(r.avgRet1y)}</span></div>
                                         <div class="bes-item"><span class="bes-lbl">📊 Avg EPS</span><span class="bes-val">${isNaN(r.avgEps) ? '—' : r.avgEps.toFixed(0)}</span></div>
                                         <div class="bes-item"><span class="bes-lbl">🔭 Avg 52W</span><span class="bes-val">${isNaN(r.avg52w) ? '—' : r.avg52w.toFixed(0) + '%'}</span></div>
+                                        <div class="bes-item"><span class="bes-lbl">${r.quadIcon} vs Market</span><span class="bes-val" style="color:${r.quadColor}">${r.quadLabel}${!isNaN(r.relRet3m) ? ` (${r.relRet3m >= 0 ? '+' : ''}${r.relRet3m.toFixed(1)} 3M)` : ''}</span></div>
+                                        <div class="bes-item"><span class="bes-lbl">🕓 Mom vs Last Visit</span><span class="bes-val" style="color:${isNaN(r.momDelta) ? 'rgba(255,255,255,0.4)' : r.momDelta > 0 ? '#00e676' : r.momDelta < 0 ? '#ff4d4f' : 'rgba(255,255,255,0.6)'}">${isNaN(r.momDelta) ? 'First visit' : (r.momDelta > 0 ? '▲ +' : r.momDelta < 0 ? '▼ ' : '— ') + r.momDelta}</span></div>
                                     </div>
                                     <div class="breadth-topstocks-label">Top Stocks by Tech Score:</div>
                                     <div class="breadth-topstocks">${r.tickers.slice(0, 10).map(t => {
@@ -9872,6 +9969,10 @@
                             <td style="text-align:center;font-size:11px;font-weight:700;color:${techC};">${avgTechFmt}</td>
                             <td style="text-align:center;">
                                 <div class="breadth-momentum-badge" style="background:${momGrad(r.momentum)};">${r.momentum}</div>
+                                ${!isNaN(r.momDelta) && r.momDelta !== 0 ? `<div style="font-size:8.5px;font-weight:700;margin-top:1px;color:${r.momDelta > 0 ? '#00e676' : '#ff4d4f'};">${r.momDelta > 0 ? '▲+' : '▼'}${r.momDelta}</div>` : ''}
+                            </td>
+                            <td style="text-align:center;">
+                                <span class="quad-badge" style="background:${r.quadColor}22;color:${r.quadColor};" title="${r.quadLabel}${!isNaN(r.rsMomentum) ? ' | RS Momentum ' + (r.rsMomentum >= 0 ? '+' : '') + r.rsMomentum.toFixed(1) : ''}">${r.quadIcon} ${r.quadLabel}</span>
                             </td>
                         </tr>${expandRow}`;
                 }).join('')}
@@ -9879,7 +9980,7 @@
                 </table></div>`;
             }
 
-            pane.innerHTML = toolbar + summaryStrip + `<div style="padding:0 4px 8px;">` + content + `</div>`;
+            pane.innerHTML = toolbar + summaryStrip + strengthRadar + `<div style="padding:0 4px 8px;">` + content + `</div>`;
         }
         window.renderBreadthTab = renderBreadthTab;
 
@@ -9982,6 +10083,56 @@
 
                 r._vcpFlag = true;
                 r._vcpDetails = `Depth: ${(baseDepth * 100).toFixed(1)}% | Tightness: ${(tightness * 100).toFixed(1)}%`;
+            });
+        }
+
+        // ══════════════════════════════════════════════════════
+        //   VOLUME MILESTONE (Q/Y/E) FLAG CALCULATION
+        //   Mirrors the quarter/year/all-time high & low volume record
+        //   logic used for the Full Chart's Volume-pane Q/Y/E markers —
+        //   flags a ticker if any such record landed in the last 2 candles.
+        // ══════════════════════════════════════════════════════
+        function calcVolMilestoneFlags() {
+            if (!window._ohlcvTickers || !allData.length) return;
+
+            allData.forEach(r => {
+                r._volMsFlag = false;
+                r._volMsDetails = '';
+                const arr = window._ohlcvTickers.get(String(r._ticker).toUpperCase());
+                if (!arr || arr.length < 2) return;
+
+                const lastD = arr[arr.length - 1].date;
+                const qCut = new Date(lastD); qCut.setMonth(qCut.getMonth() - 3);
+                const yCut = new Date(lastD); yCut.setMonth(yCut.getMonth() - 12);
+
+                let qHiI = -1, qLoI = -1, qHi = -Infinity, qLo = Infinity;
+                let yHiI = -1, yLoI = -1, yHi = -Infinity, yLo = Infinity;
+                let eHiI = -1, eLoI = -1, eHi = -Infinity, eLo = Infinity;
+
+                for (let i = 0; i < arr.length; i++) {
+                    const v = arr[i].vol;
+                    if (!(v > 0)) continue;
+                    if (v > eHi) { eHi = v; eHiI = i; }
+                    if (v < eLo) { eLo = v; eLoI = i; }
+                    const d = arr[i].date;
+                    if (d >= yCut) { if (v > yHi) { yHi = v; yHiI = i; } if (v < yLo) { yLo = v; yLoI = i; } }
+                    if (d >= qCut) { if (v > qHi) { qHi = v; qHiI = i; } if (v < qLo) { qLo = v; qLoI = i; } }
+                }
+
+                // "Last 2 candles" = the final two bars of this ticker's history
+                const cutIdx = arr.length - 2;
+                let letters = '';
+                if (qHiI >= cutIdx) letters += 'Q';
+                if (yHiI >= cutIdx) letters += 'Y';
+                if (eHiI >= cutIdx) letters += 'E';
+                if (qLoI >= cutIdx) letters += 'q';
+                if (yLoI >= cutIdx) letters += 'y';
+                if (eLoI >= cutIdx) letters += 'e';
+
+                if (letters) {
+                    r._volMsFlag = true;
+                    r._volMsDetails = letters;
+                }
             });
         }
 
@@ -12077,6 +12228,137 @@
                 pop.style.transform = 'none';
             }
 
+            /* ─── Volume/Delivery Milestone Markers (Q/q Quarter, Y/y Year, E/e All-time) ───
+               Shared by the price-pane volume overlay, Delivery % pane and Delivery
+               Volume pane — each just supplies its own value accessor, canvas context,
+               and per-index (x, barTopY) mapping. Finds the single highest/lowest-value
+               bar per rolling window from the FULL (replay-truncated) history so the
+               record resolves correctly even when panned off-screen, then draws the
+               letter(s) with a small perpetual "cracker cracking" spark burst — kept
+               deliberately tiny (short radius, few particles) so it stays a small,
+               contained flourish rather than a distracting flash. Highs use bright green
+               (#0FFF50), lows use bright pink (#F6339A); both get a dark halo pill so
+               they stay readable against any bar color underneath. Returns true if at
+               least one marker was drawn (so callers know whether to keep the light,
+               throttled redraw loop alive). ─── */
+            function _fsDrawVolMilestones(ctx, opts) {
+                const { getVal, rawArr, currentDataArr, actualStart, xFn, barTopYFn, minY, ticker } = opts;
+                if (!currentDataArr || !currentDataArr.length || !rawArr || !rawArr.length) return false;
+
+                const lastD = currentDataArr[currentDataArr.length - 1].date;
+                const qCut = new Date(lastD); qCut.setMonth(qCut.getMonth() - 3);
+                const yCut = new Date(lastD); yCut.setMonth(yCut.getMonth() - 12);
+                let qHiI = -1, qLoI = -1, qHi = -Infinity, qLo = Infinity;
+                let yHiI = -1, yLoI = -1, yHi = -Infinity, yLo = Infinity;
+                let eHiI = -1, eLoI = -1, eHi = -Infinity, eLo = Infinity;
+                for (let i = 0; i < currentDataArr.length; i++) {
+                    const v = getVal(currentDataArr[i]);
+                    if (v === null || v === undefined || !(v > 0)) continue;
+                    if (v > eHi) { eHi = v; eHiI = i; }
+                    if (v < eLo) { eLo = v; eLoI = i; }
+                    const d = currentDataArr[i].date;
+                    if (d >= yCut) { if (v > yHi) { yHi = v; yHiI = i; } if (v < yLo) { yLo = v; yLoI = i; } }
+                    if (d >= qCut) { if (v > qHi) { qHi = v; qHiI = i; } if (v < qLo) { qLo = v; qLoI = i; } }
+                }
+
+                const map = new Map();
+                const addM = (idx, letter, isHigh) => {
+                    if (idx < 0) return;
+                    const rawI = idx - actualStart;
+                    if (rawI < 0 || rawI >= rawArr.length) return;
+                    let e = map.get(rawI);
+                    if (!e) { e = { hi: '', lo: '' }; map.set(rawI, e); }
+                    if (isHigh) e.hi += letter; else e.lo += letter;
+                };
+                addM(qHiI, 'Q', true); addM(qLoI, 'q', false);
+                addM(yHiI, 'Y', true); addM(yLoI, 'y', false);
+                addM(eHiI, 'E', true); addM(eLoI, 'e', false);
+                if (!map.size) return false;
+
+                const HI_COLOR = '#0FFF50';
+                const LO_COLOR = '#F6339A';
+                const HI_PARTICLES = ['#0FFF50', '#7CFFB2'];
+                const LO_PARTICLES = ['#F6339A', '#fda4d5'];
+                const clampY = typeof minY === 'number' ? minY : -Infinity;
+
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'alphabetic';
+                ctx.font = 'bold 8.5px "Lexend",monospace';
+                const placedLabels = [];
+                const placeLabel = (x, barTopY, text, color, halo) => {
+                    if (!text) return null;
+                    const tw = ctx.measureText(text).width;
+                    let y = barTopY - 4;
+                    const x1 = x - tw / 2 - 1, x2 = x + tw / 2 + 1;
+                    let tries = 0;
+                    while (tries < 4 && placedLabels.some(b => Math.abs(b.y - y) < 10 && x1 < b.x2 && x2 > b.x1)) {
+                        y -= 11;
+                        tries++;
+                    }
+                    y = Math.max(clampY, y);
+                    placedLabels.push({ x1, x2, y });
+                    if (halo) {
+                        ctx.fillStyle = 'rgba(10, 10, 14, 0.72)';
+                        ctx.beginPath();
+                        if (ctx.roundRect) ctx.roundRect(x - tw / 2 - 3, y - 9, tw + 6, 12, 3);
+                        else ctx.rect(x - tw / 2 - 3, y - 9, tw + 6, 12);
+                        ctx.fill();
+                    }
+                    ctx.fillStyle = color;
+                    ctx.shadowColor = color;
+                    ctx.shadowBlur = halo ? 4 : 0;
+                    ctx.fillText(text, x, y);
+                    ctx.shadowBlur = 0;
+                    return { x, y };
+                };
+
+                const CYCLE_MS = 1400; // full loop length per marker
+                const BURST_MS = 500;  // spark-visible portion of each loop
+                const nowTs = Date.now();
+                let hasMarker = false;
+                const sparkAt = (pos, idx, particleColors) => {
+                    if (!pos) return;
+                    hasMarker = true;
+                    // Stagger each bar's loop slightly (by its position) so multiple
+                    // markers don't all crackle in lockstep.
+                    const phaseOffset = (idx * 233) % CYCLE_MS;
+                    const phase = (nowTs + phaseOffset) % CYCLE_MS;
+                    if (phase >= BURST_MS) return;
+                    const progress = phase / BURST_MS;
+                    const n = 5;
+                    for (let i = 0; i < n; i++) {
+                        const angle = (i / n) * Math.PI * 2 + Math.PI / 6;
+                        const dist = 2 + progress * 8;
+                        const px = pos.x + Math.cos(angle) * dist;
+                        const py = pos.y - 3 + Math.sin(angle) * dist;
+                        ctx.globalAlpha = Math.max(0, 1 - progress);
+                        ctx.fillStyle = particleColors[i % particleColors.length];
+                        ctx.beginPath();
+                        ctx.arc(px, py, 1.1, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                    ctx.globalAlpha = 1;
+                };
+
+                map.forEach((entry, idx) => {
+                    const x = xFn(idx);
+                    const barTopY = barTopYFn(idx);
+                    sparkAt(placeLabel(x, barTopY, entry.hi, HI_COLOR, true), idx, HI_PARTICLES);
+                    sparkAt(placeLabel(x, barTopY, entry.lo, LO_COLOR, true), idx, LO_PARTICLES);
+                });
+
+                if (hasMarker && !window._fsVolSparkTimer) {
+                    window._fsVolSparkTimer = setTimeout(() => {
+                        window._fsVolSparkTimer = null;
+                        const modal = document.getElementById('fs-chart-modal');
+                        if (modal && modal.style.display === 'flex' && typeof window.renderFullScreenChart === 'function') {
+                            window.renderFullScreenChart({ skipChrome: true });
+                        }
+                    }, 55);
+                }
+                return { map, hasMarker };
+            }
+
             /* ─── Draw chart — MarketSmith-style (matches screenshot) ───
                Parameterized core: works for the hover popup AND for
                inline per-card charts (any canvas pair + container). ─── */
@@ -12940,6 +13222,90 @@
                     st ? pc.lineTo(x, y) : (pc.moveTo(x, y), st = true);
                 }); pc.stroke();
 
+                // ── ATR SuperTrend (classic trend-flip band logic) — shown only for tickers marked HOLD ──
+                // Uptrend (line rides below price as support) = RED, per user preference.
+                // Downtrend (line rides above price as resistance) = GREEN, per user preference.
+                // Multiplier is user-selectable (2x/3x) via #fs-atr-mult-toggle.
+                if (isFs && window._fhTickers && window._fhTickers.H && window._fhTickers.H.has(UC) && raw.length > 1) {
+                    const ST_MULT = window._fsAtrMult || 3;
+                    const lastAbsIdx = actualStart + raw.length - 1;
+                    // Walk back far enough before the visible window to seed the band/trend state with real
+                    // history, so the line doesn't reset/flip arbitrarily at the left edge of the viewed period.
+                    const stStartIdx = Math.max(0, actualStart - 300);
+
+                    const UP_COLOR =  '#22c55e';   // downtrend — green
+                    const DN_COLOR =  '#ef4444';   // uptrend — red
+
+                    let finalUpper = null, finalLower = null, trend = 1;
+                    let segStarted = false, curColor = null;
+                    let lastStVal = null, lastTrend = 1;
+
+                    const strokeSeg = (color) => { pc.strokeStyle = color; pc.lineWidth = 1.8; pc.lineJoin = 'round'; pc.lineCap = 'round'; pc.stroke(); };
+
+                    for (let idx = stStartIdx; idx <= lastAbsIdx; idx++) {
+                        const d = currentData[idx];
+                        const atr = d.atr14;
+                        if (!atr) continue;
+                        const hl2 = (d.high + d.low) / 2;
+                        const basicUpper = hl2 + ST_MULT * atr;
+                        const basicLower = hl2 - ST_MULT * atr;
+                        const prevClose = idx > 0 ? currentData[idx - 1].close : d.close;
+
+                        const curUpper = (finalUpper !== null && basicUpper >= finalUpper && prevClose <= finalUpper) ? finalUpper : basicUpper;
+                        const curLower = (finalLower !== null && basicLower <= finalLower && prevClose >= finalLower) ? finalLower : basicLower;
+
+                        if (finalUpper === null) {
+                            trend = d.close >= curLower ? 1 : -1;
+                        } else if (trend === 1 && d.close < curLower) {
+                            trend = -1;
+                        } else if (trend === -1 && d.close > curUpper) {
+                            trend = 1;
+                        }
+
+                        finalUpper = curUpper;
+                        finalLower = curLower;
+                        const stVal = trend === 1 ? curLower : curUpper;
+
+                        if (idx < actualStart) { lastTrend = trend; continue; }
+                        const i = idx - actualStart;
+                        const x = toX(i), y = toY(stVal);
+                        const color = trend === 1 ? UP_COLOR : DN_COLOR;
+
+                        if (!segStarted) {
+                            pc.beginPath(); pc.moveTo(x, y);
+                            segStarted = true; curColor = color;
+                        } else if (color !== curColor) {
+                            // Trend flipped — close out the previous-colored segment, start a new one from here
+                            strokeSeg(curColor);
+                            pc.beginPath(); pc.moveTo(x, y);
+                            curColor = color;
+                        } else {
+                            pc.lineTo(x, y);
+                        }
+                        lastStVal = stVal;
+                        lastTrend = trend;
+                    }
+                    if (segStarted) strokeSeg(curColor);
+
+                    // Live SL/resistance price tag — flush to the LEFT edge (right edge is reserved for last-close tag)
+                    if (lastStVal !== null) {
+                        const yStop = toY(lastStVal);
+                        const lcNow = raw[raw.length - 1].close;
+                        const pctDiff = lcNow > 0 ? ((lcNow - lastStVal) / lcNow * 100) : 0;
+                        const tagColor = lastTrend === 1 ? UP_COLOR : DN_COLOR;
+                        const slTxt = `SuperTrend ${ST_MULT}x ${fmtP(lastStVal)} (${pctDiff >= 0 ? '-' : '+'}${Math.abs(pctDiff).toFixed(1)}%)`;
+                        pc.font = isFs ? 'bold 10px "Lexend",monospace' : 'bold 7px "Lexend",monospace';
+                        const slPad = isFs ? 5 : 4;
+                        const slW = pc.measureText(slTxt).width + slPad * 2;
+                        const slH = isFs ? 14 : 10;
+                        pc.fillStyle = tagColor;
+                        pc.fillRect(PP.l, yStop - slH / 2, slW, slH);
+                        pc.fillStyle = '#0a0a0a';
+                        pc.textAlign = 'left'; pc.textBaseline = 'middle';
+                        pc.fillText(slTxt, PP.l + slPad, yStop + 0.5);
+                    }
+                }
+
                 // ── Index Line ──
                 if (raw.length > 0 && !isIdxMain) {
                     // Index Line (Low Opacity Gray/Blue)
@@ -12992,6 +13358,7 @@
                 });
 
                 // ── Overlay: Volume inside Price Pane (bottom 15% height) ──
+                let fsVolMilestoneMap = null;
                 if (isFs) {
                     let maxV = 1;
                     let maxVClose = 1;
@@ -13039,6 +13406,19 @@
                     pc.textAlign = 'left';
                     pc.textBaseline = 'top';
                     pc.fillText('Vol / 9MA', PP.l + 8, volBaseY - volH - 12);
+
+                    // Volume Milestone Markers (Q/q Quarter, Y/y Year, E/e All-time) — same
+                    // shared logic/animation used by the Delivery % and Delivery Vol panes.
+                    fsVolMilestoneMap = _fsDrawVolMilestones(pc, {
+                        getVal: c => c.vol,
+                        rawArr: raw,
+                        currentDataArr: currentData,
+                        actualStart,
+                        xFn: i => toX(i),
+                        barTopYFn: i => volBaseY - Math.max(1, (raw[i].vol / maxV) * volH),
+                        minY: PP.t + 9,
+                        ticker
+                    }).map;
                 }
 
                 // ── Last close: dashed horizontal line + price tag ──
@@ -13301,36 +13681,63 @@
                                     pc.textBaseline = 'middle';
                                     pc.fillText(volTxt, W - 4, hy);
 
-                                    // 2. Institutional Volume & Delivery Tooltip
+                                    // 2. Institutional Volume & Delivery Tooltip (+ Milestone markers, if any)
                                     const hr = ohlcCandle;
-                                    let descTxt = hr._vDesc || '';
                                     const delTxt = (hr.delivPer !== undefined && hr.delivPer > 0)
                                         ? `Vol: ${fmtV(hr.vol)} | Deliv: ${fmtV(hr.vol * hr.delivPer / 100)} (${hr.delivPer.toFixed(1)}%)`
                                         : `Vol: ${fmtV(hr.vol)} | Deliv: N/A`;
-                                    descTxt = hr._vDesc ? `${hr._vDesc} | ${delTxt}` : delTxt;
+                                    const baseLine = hr._vDesc ? `${hr._vDesc} | ${delTxt}` : delTxt;
 
-                                    if (descTxt) {
+                                    const MS_DESC = {
+                                        Q: ['Q - Highest Volume in Last Quarter', '#0FFF50'],
+                                        q: ['q - Lowest Volume in Last Quarter', '#F6339A'],
+                                        Y: ['Y - Highest Volume in Last Year', '#0FFF50'],
+                                        y: ['y - Lowest Volume in Last Year', '#F6339A'],
+                                        E: ['E - Highest Volume Ever', '#0FFF50'],
+                                        e: ['e - Lowest Volume Ever', '#F6339A']
+                                    };
+                                    const msEntry = fsVolMilestoneMap ? fsVolMilestoneMap.get(pCv._hoverIdx) : null;
+                                    const msLines = [];
+                                    if (msEntry) {
+                                        for (const ch of (msEntry.hi + msEntry.lo)) {
+                                            if (MS_DESC[ch]) msLines.push(MS_DESC[ch]);
+                                        }
+                                    }
+
+                                    if (baseLine || msLines.length) {
                                         pc.font = '600 9px "Lexend",monospace';
-                                        const dtW = pc.measureText(descTxt).width + 12;
+                                        const lineH = 13;
+                                        const allTexts = [baseLine, ...msLines.map(m => m[0])].filter(Boolean);
+                                        const dtW = Math.max(...allTexts.map(t => pc.measureText(t).width)) + 12;
+                                        const boxH = allTexts.length * lineH + 6;
                                         const isLeft = hx > W / 2;
                                         const bx = isLeft ? hx - dtW - 8 : hx + 8;
-                                        const by = Math.max(PP.t + 2, hy - 20);
+                                        const by = Math.max(PP.t + 2, hy - boxH - 4);
 
-                                        pc.fillStyle = 'rgba(18, 18, 26, 0.9)';
+                                        pc.fillStyle = 'rgba(18, 18, 26, 0.92)';
                                         pc.beginPath();
                                         if (pc.roundRect) {
-                                            pc.roundRect(bx, by, dtW, 18, 4);
+                                            pc.roundRect(bx, by, dtW, boxH, 4);
                                         } else {
-                                            pc.rect(bx, by, dtW, 18);
+                                            pc.rect(bx, by, dtW, boxH);
                                         }
                                         pc.fill();
                                         pc.strokeStyle = hr._vColor || 'rgba(255,255,255,0.2)';
                                         pc.lineWidth = 1; pc.stroke();
 
-                                        pc.fillStyle = '#ffffff';
                                         pc.textAlign = 'center';
                                         pc.textBaseline = 'middle';
-                                        pc.fillText(descTxt, bx + dtW / 2, by + 9);
+                                        let ly = by + lineH / 2 + 3;
+                                        if (baseLine) {
+                                            pc.fillStyle = '#ffffff';
+                                            pc.fillText(baseLine, bx + dtW / 2, ly);
+                                            ly += lineH;
+                                        }
+                                        msLines.forEach(([txt, color]) => {
+                                            pc.fillStyle = color;
+                                            pc.fillText(txt, bx + dtW / 2, ly);
+                                            ly += lineH;
+                                        });
                                     }
                                 }
                             }
@@ -13434,6 +13841,20 @@
                     vc.strokeRect(bx, by, bw, 10);
                     vc.fillStyle = '#ffffff'; vc.textAlign = 'center'; vc.textBaseline = 'middle';
                     vc.fillText(badgeTxt, bx + bw / 2, by + 5);
+
+                    // Volume Milestone Markers (Q/q Quarter, Y/y Year, E/e All-time) — same shared
+                    // logic used by the Full Chart's Volume/Delivery panes, now also on the "Chart"
+                    // view-mode's per-card volume pane.
+                    _fsDrawVolMilestones(vc, {
+                        getVal: c => c.vol,
+                        rawArr: raw,
+                        currentDataArr: currentData,
+                        actualStart,
+                        xFn: i => toPaneX(i, VP, vW2),
+                        barTopYFn: i => VP.t + vH2 - Math.max(1, (raw[i].vol / maxV) * vH2),
+                        minY: VP.t + 9,
+                        ticker
+                    });
 
                     // Draw crosshair on volume canvas if hovering
                     if (pCv._hoverX !== undefined && pCv._hoverX !== null) {
@@ -13722,6 +14143,19 @@
                             rsc.fillStyle = displayR._dColor || '#00bfff';
                             rsc.fillText(dStr, W - 4, dY);
                         }
+
+                        // Delivery % Milestone Markers (Q/q Quarter, Y/y Year, E/e All-time) —
+                        // same shared logic/animation as the price-pane volume overlay.
+                        _fsDrawVolMilestones(rsc, {
+                            getVal: c => c.delivPer,
+                            rawArr: raw,
+                            currentDataArr: currentData,
+                            actualStart,
+                            xFn: i => toX(i),
+                            barTopYFn: i => toYD(raw[i].delivPer),
+                            minY: RP.t + 9,
+                            ticker
+                        });
                     } else if (window.fsRscvMode === 'DELIV_VOL') {
                         // Delivery Volume
                         const delivVols = raw.map(r => r.delivVol).filter(v => v !== null && v !== undefined);
@@ -13788,6 +14222,19 @@
                             rsc.fillStyle = 'rgba(255, 255, 255, 0.8)';
                             rsc.fillText(fmtD(sVal), W - 4, sY);
                         }
+
+                        // Delivery Vol Milestone Markers (Q/q Quarter, Y/y Year, E/e All-time)
+                        // — same shared logic/animation as the price-pane volume overlay.
+                        _fsDrawVolMilestones(rsc, {
+                            getVal: c => c.delivVol,
+                            rawArr: raw,
+                            currentDataArr: currentData,
+                            actualStart,
+                            xFn: i => toX(i),
+                            barTopYFn: i => toYD(raw[i].delivVol),
+                            minY: RP.t + 9,
+                            ticker
+                        });
                     } else {
                         // MRS
                         const rsVals = raw.map(r => r.rsMansfield).filter(v => v !== null);
@@ -14725,7 +15172,7 @@
            desktop and mobile. Call once per popup element.
            _makeDraggable(popupEl, handleEl, onDragStartCb)
         ══════════════════════════════════════════════════════ */
-        window._makeDraggable = function (el, hdr, onDragStart) {
+        window._makeDraggable = function (el, hdr, onDragStart, onDragEnd) {
             if (!el || !hdr) return;
             hdr.style.cursor = 'grab';
             hdr.style.touchAction = 'none'; // tell browser: this element owns the touch, no scroll
@@ -14759,61 +15206,48 @@
                 el.style.top = Math.max(0, Math.min(ny, maxY)) + 'px';
             }
 
-            /* ── MOUSE ── */
-            let ox = 0, oy = 0, sx = 0, sy = 0, mDragging = false;
+            /* ── UNIFIED POINTER (mouse + touch + Apple Pencil) ──
+               Pointer Events cover all input types — pointerType is 'mouse',
+               'touch', or 'pen' (Apple Pencil) — in a single code path, with
+               setPointerCapture keeping the drag glued to `hdr` even once the
+               finger/pencil/cursor moves outside its bounds. This replaces the
+               old split mousedown/touchstart implementation, which never
+               recognized pencil input as a distinct pointer type. */
+            let dragging = false, activeId = null, ox = 0, oy = 0, sx = 0, sy = 0;
 
-            hdr.addEventListener('mousedown', function (e) {
+            hdr.addEventListener('pointerdown', function (e) {
                 if (e.target.closest('[data-nodrag]')) return;
+                if (!e.isPrimary) return; // ignore secondary touches (e.g. pinch)
+                if (e.pointerType === 'mouse' && e.button !== 0) return;
                 e.preventDefault();
-                mDragging = true;
+                e.stopPropagation(); // prevent card click / page scroll stealing the gesture
+                dragging = true;
+                activeId = e.pointerId;
                 if (onDragStart) onDragStart();
+                // getBoundingClientRect accounts for CSS translate — gives true screen coords
                 const r = el.getBoundingClientRect();
                 ox = r.left; oy = r.top; sx = e.clientX; sy = e.clientY;
                 hdr.style.cursor = 'grabbing';
+                try { hdr.setPointerCapture(e.pointerId); } catch (err) { }
             });
 
-            document.addEventListener('mousemove', function (e) {
-                if (!mDragging) return;
+            hdr.addEventListener('pointermove', function (e) {
+                if (!dragging || e.pointerId !== activeId) return;
+                e.preventDefault();
                 const d = _screenDeltaToLocal(e.clientX - sx, e.clientY - sy);
                 _anchorAndMove(ox + d.dx, oy + d.dy);
             });
 
-            document.addEventListener('mouseup', function () {
-                if (mDragging) { mDragging = false; hdr.style.cursor = 'grab'; }
-            });
-
-            /* ── TOUCH ── */
-            let tDragging = false, tId = null, tOx = 0, tOy = 0, tSx = 0, tSy = 0;
-
-            hdr.addEventListener('touchstart', function (e) {
-                if (e.target.closest('[data-nodrag]')) return;
-                if (e.touches.length !== 1) return;
-                e.stopPropagation(); // prevent card click / page scroll stealing the touch
-                const t = e.touches[0];
-                tDragging = true; tId = t.identifier;
-                if (onDragStart) onDragStart();
-                // getBoundingClientRect accounts for CSS translate — gives true screen coords
-                const r = el.getBoundingClientRect();
-                tOx = r.left; tOy = r.top; tSx = t.clientX; tSy = t.clientY;
-            }, { passive: false }); // passive:false so stopPropagation works and we can preventDefault later
-
-            document.addEventListener('touchmove', function (e) {
-                if (!tDragging) return;
-                let touch = null;
-                for (let i = 0; i < e.changedTouches.length; i++) {
-                    if (e.changedTouches[i].identifier === tId) { touch = e.changedTouches[i]; break; }
-                }
-                if (!touch) return;
-                e.preventDefault(); // block page scroll while dragging
-                const d = _screenDeltaToLocal(touch.clientX - tSx, touch.clientY - tSy);
-                _anchorAndMove(tOx + d.dx, tOy + d.dy);
-            }, { passive: false });
-
-            document.addEventListener('touchend', function (e) {
-                for (let i = 0; i < e.changedTouches.length; i++) {
-                    if (e.changedTouches[i].identifier === tId) { tDragging = false; tId = null; break; }
-                }
-            }, { passive: true });
+            function _endDrag(e) {
+                if (!dragging || (e && e.pointerId !== activeId)) return;
+                dragging = false;
+                hdr.style.cursor = 'grab';
+                try { hdr.releasePointerCapture(activeId); } catch (err) { }
+                activeId = null;
+                if (onDragEnd) onDragEnd(el);
+            }
+            hdr.addEventListener('pointerup', _endDrag);
+            hdr.addEventListener('pointercancel', _endDrag);
         };
     </script>
 
@@ -16868,6 +17302,75 @@
             flex-shrink: 0;
         }
 
+        /* QoQ / YoY Trend Radar */
+        #rd-trend-radar {
+            margin: 6px 4px 4px;
+            padding: 2px 10px 8px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 11px;
+            background: rgba(56, 189, 248, 0.03);
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            flex-shrink: 0;
+        }
+
+        .rd-trend-section {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding: 8px 0 4px;
+        }
+
+        .rd-trend-section+.rd-trend-section {
+            border-top: 1px dashed rgba(255, 255, 255, 0.08);
+        }
+
+        .rd-trend-section-hd {
+            font-size: 9.5px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: rgba(255, 255, 255, 0.55);
+        }
+
+        .rd-trend-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .rd-trend-lbl {
+            font-size: 10px;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        .rd-trend-chips {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .rd-trend-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 8px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(255, 255, 255, 0.04);
+            font-size: 10.5px;
+            color: rgba(255, 255, 255, 0.85);
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .rd-trend-chip:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
         /* Table */
         #rd-table-wrap {
             overflow-x: auto;
@@ -17171,29 +17674,37 @@
                     sC: pf(r['Sales (Current)']), sP: pf(r['Sales (Previous)']), sY: pf(r['Sales (YoY Qtr)']),
                     eC: pf(r['EBIDT (Current)']), eY: pf(r['EBIDT (YoY Qtr)']),
                     nC: pf(r['Net Profit (Current)']), nP: pf(r['Net Profit (Previous)']), nY: pf(r['Net Profit (YoY Qtr)']),
-                    pC: pf(r['EPS (Current)']), pY: pf(r['EPS (YoY Qtr)'])
+                    pC: pf(r['EPS (Current)']), pP: pf(r['EPS (Previous)']), pY: pf(r['EPS (YoY Qtr)'])
                 };
             }
 
-            /* ── Aggregate one group of company rows ── */
+            /* ── Aggregate one group of company rows ──
+               Each row carries exactly 3 points in time for Sales/Net Profit: Current, Previous
+               (last quarter — sequential/QoQ) and YoY (same quarter, year ago). There is no
+               multi-quarter history to walk — so QoQ and YoY are BOTH derived straight off the
+               current row, never by re-querying a different reported quarter. */
             function aggGroup(rows) {
                 const g = {
                     n: rows.length,
-                    sSC: 0, sSY: 0, sEC: 0, sEY: 0, sNC: 0, sNY: 0,
-                    hasS: 0, hasN: 0,
-                    salesGs: [], npGs: [], epsGs: [],
-                    posNP: 0, accel: 0, accelDen: 0,
+                    sSC: 0, sSY: 0, sSP: 0, sEC: 0, sEY: 0, sNC: 0, sNY: 0,
+                    hasS: 0, hasN: 0, hasSP: 0,
+                    salesGs: [], npGs: [], epsGs: [], epsQoQGs: [], qoqSalesGs: [],
+                    posNP: 0, posEPSQoQ: 0, accel: 0, accelDen: 0,
                     turn: 0, newLoss: 0, goodBest: 0,
                     contrib: []
                 };
                 rows.forEach(x => {
                     if (x.sC !== null && x.sY !== null) { g.sSC += x.sC; g.sSY += x.sY; g.hasS++; }
+                    if (x.sC !== null && x.sP !== null) { g.sSP += x.sP; g.hasSP++; }
                     if (x.eC !== null && x.eY !== null) { g.sEC += x.eC; g.sEY += x.eY; }
                     if (x.nC !== null && x.nY !== null) { g.sNC += x.nC; g.sNY += x.nY; g.hasN++; }
                     const sg = growth(x.sC, x.sY), ng = growth(x.nC, x.nY), pg = growth(x.pC, x.pY);
+                    const qsg = growth(x.sC, x.sP), qpg = growth(x.pC, x.pP); // sequential / QoQ
                     if (sg !== null) g.salesGs.push(clampG(sg));
                     if (ng !== null) { g.npGs.push(clampG(ng)); if (ng > 0) g.posNP++; }
                     if (pg !== null) g.epsGs.push(clampG(pg));
+                    if (qsg !== null) g.qoqSalesGs.push(clampG(qsg));
+                    if (qpg !== null) { g.epsQoQGs.push(clampG(qpg)); if (qpg > 0) g.posEPSQoQ++; }
                     // Acceleration: YoY positive AND sequential (QoQ) positive
                     if (x.nC !== null && x.nP !== null && x.nY !== null) {
                         g.accelDen++;
@@ -17221,6 +17732,12 @@
                 out.turn = g.turn;
                 out.newLoss = g.newLoss;
                 out.goodBestPct = g.n ? (g.goodBest / g.n) * 100 : 0;
+                // Sequential / QoQ growth (Current vs last quarter) — same company universe as the
+                // YoY figures above, just a different comparison point already on the same row.
+                out.aggSalesQoQ = g.hasSP >= 2 && Math.abs(g.sSP) > 0.01 ? growth(g.sSC, g.sSP) : null;
+                out.medSalesQoQ = median(g.qoqSalesGs);
+                out.medEPSQoQ = median(g.epsQoQGs);
+                out.breadthEPSQoQ = g.epsQoQGs.length ? (g.posEPSQoQ / g.epsQoQGs.length) * 100 : null;
                 // Aggregate EBITDA margin now vs year-ago (bps)
                 const mNow = g.sSC > 0.01 ? (g.sEC / g.sSC) * 100 : null;
                 const mYoY = g.sSY > 0.01 ? (g.sEY / g.sSY) * 100 : null;
@@ -17298,9 +17815,12 @@
                 else { sel.value = 'all'; ST.idxFilter = 'all'; }
             }
 
-            /* ── Build all groups for the active dimension ── */
-            function computeGroups() {
-                const q = activeQtr();
+            /* ── Build all groups for a given quarter. NOTE: each result row only carries 3
+               points in time (Current / Previous-quarter / YoY-quarter) baked into its own
+               columns — there is no separate row per historical quarter to re-query. So this
+               is used only to filter to a specific *reported* quarter (the rd-qtr dropdown);
+               QoQ and YoY trend both come from aggGroup() reading the same row's columns. ── */
+            function computeGroupsForQtr(q) {
                 const data = _rdData().filter(r => {
                     if (q && q !== 'all' && r._qtr !== q) return false;
                     if (ST.mcap > 0 && (isNaN(r._mcap) || r._mcap < ST.mcap)) return false;
@@ -17349,18 +17869,24 @@
                 });
                 return { groups, universe: nums };
             }
+            function computeGroups() {
+                return computeGroupsForQtr(activeQtr());
+            }
 
             /* ── Market-wide KPI strip ── */
             function renderKpis(universe) {
                 const el = document.getElementById('rd-kpis');
                 if (!el) return;
-                const salesGs = [], npGs = [];
-                let posNP = 0, nNP = 0, turn = 0, newLoss = 0, accel = 0, accelDen = 0;
+                const salesGs = [], npGs = [], epsYoYGs = [], epsQoQGs = [];
+                let posNP = 0, nNP = 0, turn = 0, newLoss = 0, accel = 0, accelDen = 0, lossMaking = 0, nHasNP = 0;
                 let sNC = 0, sNY = 0, hasN = 0;
                 universe.forEach(x => {
                     const sg = growth(x.sC, x.sY), ng = growth(x.nC, x.nY);
+                    const pg = growth(x.pC, x.pY), qpg = growth(x.pC, x.pP); // EPS YoY, EPS QoQ
                     if (sg !== null) salesGs.push(clampG(sg));
                     if (ng !== null) { npGs.push(clampG(ng)); nNP++; if (ng > 0) posNP++; }
+                    if (pg !== null) epsYoYGs.push(clampG(pg));
+                    if (qpg !== null) epsQoQGs.push(clampG(qpg));
                     if (x.nC !== null && x.nY !== null) { sNC += x.nC; sNY += x.nY; hasN++; }
                     if (x.nY !== null && x.nC !== null) {
                         if (x.nY < 0 && x.nC > 0) turn++;
@@ -17370,20 +17896,27 @@
                         accelDen++;
                         if (x.nC > x.nY && x.nC > x.nP) accel++;
                     }
+                    if (x.nC !== null) { nHasNP++; if (x.nC < 0) lossMaking++; }
                 });
                 const aggNPmkt = hasN >= 2 && Math.abs(sNY) > 0.01 ? growth(sNC, sNY) : null;
                 const breadth = nNP ? (posNP / nNP) * 100 : null;
                 const accelPct = accelDen ? (accel / accelDen) * 100 : null;
+                const lossPct = nHasNP ? (lossMaking / nHasNP) * 100 : null;
                 const kpi = (val, lbl, sub) =>
                     '<div class="rd-kpi"><div class="rd-kpi-val">' + val + '</div><div class="rd-kpi-lbl">' + lbl + '</div>' +
                     (sub ? '<div class="rd-kpi-sub">' + sub + '</div>' : '') + '</div>';
                 el.innerHTML =
                     kpi(universe.length.toLocaleString(), 'Companies', 'with results' + (ST.mcap ? ' · ≥' + ST.mcap.toLocaleString() + ' Cr' : '')) +
-                    kpi(fmtG(median(salesGs)), 'Median Sales YoY', 'typical company') +
-                    kpi(fmtG(median(npGs)), 'Median Profit YoY', 'typical company') +
+                    kpi(fmtG(median(salesGs)), 'Median Sales YoY', 'vs same qtr last year') +
+                    kpi(fmtG(median(npGs)), 'Median Profit YoY', 'vs same qtr last year') +
+                    kpi(fmtG(median(epsYoYGs)), 'Median EPS YoY', 'vs same qtr last year') +
+                    kpi(fmtG(median(epsQoQGs)), 'Median EPS QoQ', 'vs last quarter (sequential)') +
                     kpi(fmtG(aggNPmkt), 'Aggregate Profit YoY', 'Σ market earnings') +
-                    kpi(fmtPct(breadth), 'Earnings Breadth', '% growing profits') +
-                    kpi(fmtPct(accelPct), 'Accelerating', 'up YoY and QoQ');
+                    kpi(fmtPct(breadth), 'Earnings Breadth', '% growing profits YoY') +
+                    kpi(fmtPct(accelPct), 'Accelerating', 'up YoY and QoQ') +
+                    kpi('<span class="rd-pos">' + turn.toLocaleString() + '</span>', 'Turnarounds', 'loss → profit') +
+                    kpi('<span class="' + (newLoss > turn ? 'rd-neg' : 'rd-neu') + '">' + newLoss.toLocaleString() + '</span>', 'New Losses', 'profit → loss') +
+                    kpi(lossPct === null ? '—' : '<span class="' + (lossPct >= 25 ? 'rd-neg' : 'rd-neu') + '">' + Math.round(lossPct) + '%</span>', 'Loss-Making', 'of reporting companies');
             }
 
             /* ── Podium: top 3 groups by momentum ── */
@@ -17404,14 +17937,55 @@
                 ).join('');
             }
 
+            /* ── Trend Radar: EPS growth leaders/laggards on TWO comparison bases —
+               • QoQ (sequential): Current vs LAST quarter, using "EPS (Previous)" already on
+                 the row — answers "who's accelerating or stalling right now."
+               • YoY: Current vs the SAME quarter a year ago — answers "who's actually grown
+                 over a full year," filtering out any single-quarter seasonal noise QoQ can show.
+               Both read straight off the same row (no cross-quarter re-querying). EPS is
+               median-only (no aggregate) since summing a per-share ratio isn't meaningful. */
+            function qoqVal(g) { return g.medEPSQoQ; }
+            function yoyVal(g) { return g.medEPS; }
+            function epsTrendSection(groups, valFn, otherFn, icon, basis, sub, otherLabel) {
+                const ranked = groups.filter(g => { const v = valFn(g); return v !== null && v !== undefined && isFinite(v); });
+                if (!ranked.length) return '';
+                const strongest = ranked.slice().sort((a, b) => valFn(b) - valFn(a)).slice(0, 5);
+                const weakest = ranked.slice().sort((a, b) => valFn(a) - valFn(b)).slice(0, 5);
+                const chip = g => {
+                    const v = clampG(valFn(g));
+                    const ov = otherFn(g);
+                    const oTxt = (ov === null || ov === undefined || !isFinite(ov)) ? '—' : (ov >= 0 ? '+' : '') + clampG(ov).toFixed(1) + '%';
+                    return '<span class="rd-trend-chip" onclick="window._rdFilterGroup(\'' + esc(g.name).replace(/'/g, "\\'") + '\')" title="' + basis + ' EPS growth. For comparison, ' + otherLabel + ' EPS growth: ' + oTxt + '">' +
+                        '<b>' + esc(g.name) + '</b> <span style="color:' + (v >= 0 ? '#00e676' : '#ff4d4f') + ';font-weight:700;">' +
+                        (v >= 0 ? '+' : '') + v.toFixed(1) + '%</span></span>';
+                };
+                return '<div class="rd-trend-section">' +
+                    '<div class="rd-trend-section-hd">' + icon + ' ' + basis + ' EPS Growth <span style="font-weight:500;color:rgba(255,255,255,0.4);">— ' + sub + '</span></div>' +
+                    '<div class="rd-trend-row"><span class="rd-trend-lbl" style="color:#38bdf8;">🚀 Strongest</span>' +
+                    '<div class="rd-trend-chips">' + (strongest.map(chip).join('') || '<span style="color:rgba(255,255,255,0.3);font-size:11px;">—</span>') + '</div></div>' +
+                    '<div class="rd-trend-row"><span class="rd-trend-lbl" style="color:#ff4d4f;">🐌 Weakest</span>' +
+                    '<div class="rd-trend-chips">' + (weakest.map(chip).join('') || '<span style="color:rgba(255,255,255,0.3);font-size:11px;">—</span>') + '</div></div>' +
+                    '</div>';
+            }
+            function renderTrendRadar(groups) {
+                const el = document.getElementById('rd-trend-radar');
+                if (!el) return;
+                const qoq = epsTrendSection(groups, qoqVal, yoyVal, '🗓', 'Sequential (QoQ)', 'this quarter vs last quarter, same companies', 'YoY');
+                const yoy = epsTrendSection(groups, yoyVal, qoqVal, '📅', 'Year-over-Year (YoY)', 'this quarter vs the same quarter last year', 'QoQ');
+                if (!qoq && !yoy) { el.style.display = 'none'; el.innerHTML = ''; return; }
+                el.style.display = '';
+                el.innerHTML = qoq + yoy;
+            }
+
             /* ── Ranking table ── */
             const COLS = [
                 { k: 'name', l: 'Group', tip: 'Sector / industry / index — click a row to expand contributors' },
                 { k: 'n', l: '#', tip: 'Companies with reported results' },
-                { k: 'sales', l: 'Sales', tip: 'Revenue growth YoY (Aggregate or Median per the toggle)' },
-                { k: 'np', l: 'Net Profit', tip: 'Profit growth YoY (Aggregate or Median per the toggle)' },
-                { k: 'medEPS', l: 'EPS', tip: 'Median EPS growth YoY' },
-                { k: 'breadth', l: 'Breadth', tip: '% of companies with profit growth > 0' },
+                { k: 'sales', l: 'Sales YoY', tip: 'Revenue growth vs the same quarter last year (Aggregate or Median per the toggle)' },
+                { k: 'np', l: 'Net Profit YoY', tip: 'Profit growth vs the same quarter last year (Aggregate or Median per the toggle)' },
+                { k: 'medEPS', l: 'EPS YoY', tip: 'Median EPS growth vs the same quarter last year' },
+                { k: 'medEPSQoQ', l: 'EPS QoQ', tip: 'Median EPS growth vs LAST quarter (sequential) — same companies, different comparison point on the same row' },
+                { k: 'breadth', l: 'Breadth', tip: '% of companies with YoY profit growth > 0' },
                 { k: 'accelPct', l: 'Accel', tip: '% of companies growing YoY AND sequentially (QoQ)' },
                 { k: 'marginBps', l: 'Margin Δbps', tip: 'Aggregate EBITDA margin change vs year-ago, basis points' },
                 { k: 'turn', l: '↺', tip: 'Turnarounds: loss → profit' },
@@ -17467,6 +18041,7 @@
                         '<td>' + fmtG(salesShown) + '</td>' +
                         '<td>' + fmtG(npShown) + '</td>' +
                         '<td>' + fmtG(g.medEPS) + '</td>' +
+                        '<td>' + fmtG(g.medEPSQoQ) + '</td>' +
                         '<td>' + fmtPct(g.breadth) + '</td>' +
                         '<td>' + fmtPct(g.accelPct) + '</td>' +
                         '<td>' + fmtBps(g.marginBps) + '</td>' +
@@ -17484,8 +18059,11 @@
                         }).join('');
                         html += '<tr class="rd-detail"><td colspan="' + COLS.length + '"><div class="rd-detail-inner">' +
                             '<div class="rd-detail-stats">' +
-                            ds('Agg Sales', fmtG(g.aggSales)) + ds('Med Sales', fmtG(g.medSales)) +
-                            ds('Agg NP', fmtG(g.aggNP)) + ds('Med NP', fmtG(g.medNP)) +
+                            ds('Agg Sales YoY', fmtG(g.aggSales)) + ds('Med Sales YoY', fmtG(g.medSales)) +
+                            ds('Agg NP YoY', fmtG(g.aggNP)) + ds('Med NP YoY', fmtG(g.medNP)) +
+                            ds('Agg Sales QoQ', fmtG(g.aggSalesQoQ)) + ds('Med Sales QoQ', fmtG(g.medSalesQoQ)) +
+                            ds('Med EPS YoY', fmtG(g.medEPS)) + ds('Med EPS QoQ', fmtG(g.medEPSQoQ)) +
+                            ds('EPS QoQ Breadth', fmtPct(g.breadthEPSQoQ) + ' <span style="color:rgba(255,255,255,0.3);font-size:9px;">growing seq.</span>') +
                             ds('EBITDA Mgn', (g.mNow === null ? '—' : g.mNow.toFixed(1) + '%') + ' <span style="color:rgba(255,255,255,0.3);font-size:9px;">vs ' + (g.mYoY === null ? '—' : g.mYoY.toFixed(1) + '%') + '</span>') +
                             ds('↺ Turnarounds', '<span class="rd-pos">' + g.turn + '</span>') +
                             ds('⚠ New Losses', g.newLoss ? '<span class="rd-neg">' + g.newLoss + '</span>' : '—') +
@@ -17522,8 +18100,10 @@
                 if (chip) chip.textContent = q ? q + (ST.qtr === 'latest' ? ' (latest)' : '') : '—';
 
                 const { groups, universe } = computeGroups();
+
                 renderKpis(universe);
                 renderPodium(groups);
+                renderTrendRadar(groups);
                 renderTable(groups);
             }
 
@@ -18085,6 +18665,79 @@
             font-weight: 500;
             text-transform: uppercase;
             letter-spacing: 0.3px;
+        }
+
+        /* ── Strength Radar (RS quadrant callout) ── */
+        .breadth-radar {
+            padding: 8px 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+            background: rgba(56, 189, 248, 0.03);
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .breadth-radar-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .breadth-radar-lbl {
+            font-size: 10px;
+            font-weight: 800;
+            white-space: nowrap;
+            letter-spacing: 0.2px;
+        }
+
+        .breadth-radar-chips {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .breadth-radar-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 8px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(255, 255, 255, 0.04);
+            font-size: 10.5px;
+            color: rgba(255, 255, 255, 0.85);
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .breadth-radar-chip:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .breadth-radar-legend {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            font-size: 9.5px;
+            color: rgba(255, 255, 255, 0.55);
+            padding-top: 2px;
+            border-top: 1px dashed rgba(255, 255, 255, 0.08);
+        }
+
+        .breadth-radar-legend b {
+            color: rgba(255, 255, 255, 0.85);
+        }
+
+        .quad-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 9.5px;
+            font-weight: 700;
+            white-space: nowrap;
         }
 
         /* ── Table ── */
@@ -19338,7 +19991,7 @@
         }
 
         #fs-chart-modal select:focus {
-            border-color: rgba(29, 111, 232, 0.6) !important;
+            border-color: rgba(10, 132, 255, 0.6) !important;
             outline: none;
         }
 
@@ -19395,32 +20048,35 @@
             display: none;
         }
 
-        /* Sidebar toggle button */
+        /* Sidebar toggle button — macOS "hide sidebar" style: small floating circle */
         #fs-sidebar-toggle {
             position: absolute;
             top: 105px;
             z-index: 100001;
-            width: 20px;
-            height: 36px;
-            background: rgba(17, 17, 20, 0.92);
-            border: 1px solid rgba(255, 255, 255, 0.10);
-            border-left: none;
-            border-radius: 0 6px 6px 0;
-            color: rgba(255, 255, 255, 0.55);
-            font-size: 11px;
+            width: 22px;
+            height: 22px;
+            background: rgba(44, 44, 46, 0.9);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 50%;
+            color: rgba(235, 235, 245, 0.55);
+            font-size: 10px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.2s;
+            transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.2s, color 0.2s, transform 0.15s;
             pointer-events: auto;
             padding: 0;
             line-height: 1;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
         }
 
         #fs-sidebar-toggle:hover {
-            background: rgba(30, 30, 38, 0.95);
-            color: rgba(255, 255, 255, 0.85);
+            background: rgba(64, 64, 68, 0.95);
+            color: #fff;
+            transform: scale(1.08);
         }
 
 
@@ -19456,13 +20112,13 @@
             border-bottom: none;
         }
 
-        /* Section label */
+        /* Section label — macOS System Settings sidebar category style */
         .fs-section-label {
             font-size: 10px;
-            font-weight: 600;
-            color: rgba(255, 255, 255, 0.3);
+            font-weight: 700;
+            color: rgba(235, 235, 245, 0.45);
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 0.6px;
         }
 
         /* Collapsible section headers */
@@ -19533,19 +20189,20 @@
         .fs-sel {
             width: 100%;
             padding: 7px 26px 7px 10px;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 8px;
-            color: #e8e8ed;
+            background: rgba(118, 118, 128, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 7px;
+            color: #f5f5f7;
             font-size: 12px;
             font-weight: 500;
             cursor: pointer;
             box-sizing: border-box;
-            transition: border-color 0.15s;
+            transition: border-color 0.15s, background-color 0.15s;
         }
 
         .fs-sel:hover {
-            border-color: rgba(255, 255, 255, 0.16);
+            background: rgba(118, 118, 128, 0.28);
+            border-color: rgba(255, 255, 255, 0.14);
         }
 
         /* Ticker listbox replacement */
@@ -19570,39 +20227,38 @@
             display: none;
         }
 
+        /* macOS Finder/Mail sidebar rows use a full rounded-row highlight for the
+           selected item, not a side accent bar — this matches that convention. */
         .fs-ticker-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 2px 8px;
-            margin: 0px 6px;
+            padding: 3px 8px;
+            margin: 0 6px;
             border-radius: 6px;
             font-size: 11px;
             font-weight: 500;
-            color: #a1a1aa;
+            color: rgba(235, 235, 245, 0.7);
             cursor: pointer;
             user-select: none;
-            transition: background-color 0.25s cubic-bezier(0.25, 1, 0.5, 1),
-                color 0.25s cubic-bezier(0.25, 1, 0.5, 1),
-                border-left-width 0.25s cubic-bezier(0.25, 1, 0.5, 1),
-                border-left-color 0.25s cubic-bezier(0.25, 1, 0.5, 1),
-                padding-left 0.25s cubic-bezier(0.25, 1, 0.5, 1);
+            transition: background-color 0.18s ease, color 0.18s ease;
             box-sizing: border-box;
-            border-left: 0px solid transparent;
         }
 
         .fs-ticker-item:hover {
-            background: rgba(255, 255, 255, 0.04);
+            background: rgba(255, 255, 255, 0.07);
             color: #fff;
         }
 
         .fs-ticker-item.selected {
-            background: rgba(34, 211, 238, 0.12);
-            color: #22d3ee;
+            background: #0a84ff;
+            color: #fff;
             font-weight: 700;
-            border-left: 3px solid #22d3ee;
-            border-radius: 0 6px 6px 0;
-            padding-left: 9px;
+            box-shadow: 0 1px 3px rgba(10, 132, 255, 0.4);
+        }
+
+        .fs-ticker-item.selected:hover {
+            background: #2896ff;
         }
 
         .fs-item-left {
@@ -19622,7 +20278,7 @@
         }
 
         .fs-ticker-item.selected .fs-item-tk {
-            color: #22d3ee;
+            color: #fff;
             font-size: 14px;
         }
 
@@ -19683,59 +20339,79 @@
             padding: 0;
         }
 
-        /* Search Input Style */
+        /* Search Input Style — macOS search field: capsule fill + inset shadow */
         .fs-search-input {
             width: 100%;
             box-sizing: border-box;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(118, 118, 128, 0.24);
+            border: 1px solid rgba(255, 255, 255, 0.06);
             border-radius: 8px;
-            color: #e8e8ed;
+            color: #f5f5f7;
             font-size: 12px;
-            padding: 7px 10px;
+            padding: 7px 10px 7px 26px;
             margin-bottom: 6px;
             outline: none;
-            transition: border-color 0.15s, background-color 0.15s;
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+            transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
+        }
+
+        .fs-search-input::placeholder {
+            color: rgba(235, 235, 245, 0.35);
         }
 
         .fs-search-input:focus {
-            border-color: rgba(29, 111, 232, 0.6);
-            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(10, 132, 255, 0.7);
+            background: rgba(118, 118, 128, 0.32);
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25), 0 0 0 3px rgba(10, 132, 255, 0.18);
         }
 
-        /* Period Pill buttons */
+        .fs-search-ico {
+            position: absolute;
+            left: 9px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 10.5px;
+            opacity: 0.4;
+            pointer-events: none;
+        }
+
+        /* Period Pill buttons — styled as a macOS segmented control: a single
+           gray track with a solid accent pill for the selected segment, rather
+           than each option being its own bordered button. */
         .fs-period-pills {
             display: flex;
-            gap: 4px;
+            gap: 1px;
             width: 100%;
+            background: rgba(118, 118, 128, 0.18);
+            border-radius: 7px;
+            padding: 2px;
+            box-sizing: border-box;
         }
 
         .fs-pill {
             flex: 1;
-            padding: 6px 0;
+            padding: 5px 0;
             font-size: 10.5px;
-            font-family: 'Lexend', sans-serif;
-            font-weight: 700;
-            color: rgba(255, 255, 255, 0.4);
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 6px;
+            font-family: inherit;
+            font-weight: 600;
+            color: rgba(235, 235, 245, 0.55);
+            background: transparent;
+            border: none;
+            border-radius: 5px;
             cursor: pointer;
             text-align: center;
             outline: none;
-            transition: all 0.15s;
+            transition: color 0.15s, background-color 0.15s;
         }
 
         .fs-pill:hover {
             color: #fff;
-            background: rgba(255, 255, 255, 0.08);
         }
 
         .fs-pill.active-pill {
             color: #ffffff;
-            background: rgba(34, 211, 238, 0.2);
-            border-color: rgba(34, 211, 238, 0.65);
-            box-shadow: 0 0 6px rgba(34, 211, 238, 0.15);
+            background: #0a84ff;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
         }
 
         /* Date drum trigger button */
@@ -19744,18 +20420,19 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 8px;
+            background: rgba(118, 118, 128, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 7px;
             padding: 7px 10px;
             cursor: pointer;
             box-sizing: border-box;
             gap: 6px;
-            transition: border-color 0.15s;
+            transition: background-color 0.15s, border-color 0.15s;
         }
 
         .fs-drum-trigger:hover {
-            border-color: rgba(255, 255, 255, 0.18);
+            background: rgba(118, 118, 128, 0.28);
+            border-color: rgba(255, 255, 255, 0.14);
         }
 
         .fs-drum-trigger-label {
@@ -19789,33 +20466,39 @@
 
         .fs-replay-btns button {
             flex: 1;
-            padding: 8px 2px;
-            border-radius: 8px;
+            padding: 7px 2px;
+            border-radius: 7px;
             cursor: pointer;
             font-size: 14px;
             line-height: 1;
             border: none;
-            transition: opacity 0.15s;
+            transition: opacity 0.15s, transform 0.1s;
         }
 
         .fs-replay-btns button:hover {
-            opacity: 0.8;
+            opacity: 0.85;
+        }
+
+        .fs-replay-btns button:active {
+            transform: scale(0.95);
         }
 
         #fs-replay-btn {
-            background: #1d6fe8;
+            background: #0a84ff;
             color: #fff;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
         }
 
         #fs-step-fwd-btn {
-            background: rgba(245, 158, 11, 0.15);
-            color: #f59e0b;
-            border: 1px solid rgba(245, 158, 11, 0.3) !important;
+            background: rgba(255, 159, 10, 0.16);
+            color: #ff9f0a;
+            border: 1px solid rgba(255, 159, 10, 0.35) !important;
         }
 
         #fs-replay-stop-btn {
-            background: rgba(255, 255, 255, 0.07);
-            color: #e8e8ed;
+            background: rgba(118, 118, 128, 0.2);
+            color: #f5f5f7;
+            border: 1px solid rgba(255, 255, 255, 0.08) !important;
         }
 
 
@@ -19837,7 +20520,7 @@
             flex: 1;
             padding: 8px 2px;
             border: none;
-            border-radius: 8px;
+            border-radius: 7px;
             cursor: pointer;
             font-size: 10px;
             font-weight: 700;
@@ -19855,42 +20538,42 @@
         }
 
         .fs-pt-buy {
-            background: #16a34a;
+            background: #30d158;
             color: #fff;
         }
 
         .fs-pt-sell {
-            background: #dc2626;
+            background: #ff453a;
             color: #fff;
         }
 
         .fs-pt-close {
             width: 100%;
-            background: rgba(255, 255, 255, 0.07);
-            border: 1px solid rgba(255, 255, 255, 0.1) !important;
-            color: #e8e8ed;
+            background: rgba(118, 118, 128, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.08) !important;
+            color: #f5f5f7;
         }
 
         .fs-pt-download {
-            background: rgba(14, 165, 233, 0.15) !important;
-            border: 1px solid rgba(14, 165, 233, 0.4) !important;
-            color: #38bdf8 !important;
+            background: rgba(100, 210, 255, 0.15) !important;
+            border: 1px solid rgba(100, 210, 255, 0.4) !important;
+            color: #64d2ff !important;
         }
 
         .fs-pt-download:hover {
-            background: rgba(14, 165, 233, 0.25) !important;
-            border-color: rgba(14, 165, 233, 0.6) !important;
+            background: rgba(100, 210, 255, 0.25) !important;
+            border-color: rgba(100, 210, 255, 0.6) !important;
         }
 
         .fs-pt-analyze {
-            background: rgba(168, 85, 247, 0.15) !important;
-            border: 1px solid rgba(168, 85, 247, 0.4) !important;
-            color: #c084fc !important;
+            background: rgba(191, 90, 242, 0.15) !important;
+            border: 1px solid rgba(191, 90, 242, 0.4) !important;
+            color: #bf5af2 !important;
         }
 
         .fs-pt-analyze:hover {
-            background: rgba(168, 85, 247, 0.25) !important;
-            border-color: rgba(168, 85, 247, 0.6) !important;
+            background: rgba(191, 90, 242, 0.25) !important;
+            border-color: rgba(191, 90, 242, 0.6) !important;
         }
 
         /* Paper Trade Analysis Modal */
@@ -19899,8 +20582,10 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 400px;
-            background: rgba(15, 23, 42, 0.95);
+            width: 460px;
+            max-width: 94vw;
+            max-height: 86vh;
+            background: rgba(15, 23, 42, 0.97);
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 8px;
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
@@ -19910,6 +20595,97 @@
             color: white;
             font-family: 'Lexend', sans-serif;
             backdrop-filter: blur(10px);
+            overflow: hidden;
+        }
+
+        #fs-pt-analysis-modal.open {
+            display: flex;
+        }
+
+        #fs-pt-analysis-body {
+            overflow-y: auto;
+            scrollbar-width: thin;
+        }
+
+        .fs-pt-equity-wrap {
+            padding: 12px 16px 0;
+        }
+
+        .fs-pt-equity-hdr {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 5px;
+        }
+
+        .fs-pt-equity-hdr span:first-child {
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.4);
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            font-weight: 700;
+        }
+
+        .fs-pt-equity-hdr span:last-child {
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        #pt-equity-canvas {
+            width: 100%;
+            height: 88px;
+            display: block;
+            border-radius: 6px;
+            background: rgba(0, 0, 0, 0.28);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .fs-pt-section-lbl {
+            grid-column: 1 / -1;
+            font-size: 9.5px;
+            font-weight: 800;
+            color: #c084fc;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            padding-top: 6px;
+            margin-top: 2px;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .fs-pt-analysis-grid .fs-pt-section-lbl:first-child {
+            border-top: none;
+            padding-top: 0;
+            margin-top: 0;
+        }
+
+        .fs-pt-analysis-card.wide {
+            grid-column: 1 / -1;
+        }
+
+        .fs-pt-side-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .fs-pt-side-card .fs-pt-side-lbl {
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .fs-pt-side-card .fs-pt-side-stats {
+            font-size: 9.5px;
+            color: rgba(255, 255, 255, 0.5);
+            text-align: right;
+            line-height: 1.5;
+        }
+
+        .fs-pt-analysis-card-title .fs-pt-hint {
+            font-weight: 400;
+            text-transform: none;
+            letter-spacing: 0;
+            opacity: 0.7;
         }
 
         .fs-pt-analysis-header {
@@ -20012,10 +20788,10 @@
         .fs-draw-btn {
             flex: 1;
             padding: 7px 4px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.04);
-            color: rgba(255, 255, 255, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 7px;
+            background: rgba(118, 118, 128, 0.18);
+            color: rgba(235, 235, 245, 0.55);
             cursor: pointer;
             font-size: 10px;
             font-weight: 600;
@@ -20024,22 +20800,22 @@
         }
 
         .fs-draw-btn.active {
-            background: rgba(245, 158, 11, 0.16);
-            color: #f59e0b;
-            border-color: rgba(245, 158, 11, 0.4);
+            background: rgba(255, 159, 10, 0.18);
+            color: #ff9f0a;
+            border-color: rgba(255, 159, 10, 0.4);
         }
 
         .fs-draw-btn:hover {
-            background: rgba(255, 255, 255, 0.08);
+            background: rgba(118, 118, 128, 0.28);
             color: #fff;
         }
 
         .fs-draw-clear {
             width: 100%;
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            color: rgba(255, 255, 255, 0.4);
+            border-radius: 7px;
+            background: rgba(118, 118, 128, 0.18);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            color: rgba(235, 235, 245, 0.45);
             padding: 7px;
             font-size: 10px;
             font-weight: 600;
@@ -20048,8 +20824,8 @@
         }
 
         .fs-draw-clear:hover {
-            background: rgba(255, 255, 255, 0.07);
-            color: rgba(255, 255, 255, 0.7);
+            background: rgba(118, 118, 128, 0.28);
+            color: rgba(255, 255, 255, 0.8);
         }
 
         /* Drawing overlay canvas */
@@ -20092,10 +20868,10 @@
         .fs-date-input {
             width: 100%;
             box-sizing: border-box;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.09);
-            border-radius: 8px;
-            color: #e8e8ed;
+            background: rgba(118, 118, 128, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 7px;
+            color: #f5f5f7;
             font-size: 12px;
             font-weight: 500;
             padding: 7px 10px;
@@ -20191,7 +20967,7 @@
         }
 
         #fs-drum-confirm {
-            background: #1d6fe8;
+            background: #0a84ff;
             color: #fff;
         }
 
@@ -20214,9 +20990,9 @@
             top: 50%;
             transform: translateY(-50%);
             height: 38px;
-            background: rgba(29, 111, 232, 0.18);
-            border-top: 1.5px solid rgba(29, 111, 232, 0.55);
-            border-bottom: 1.5px solid rgba(29, 111, 232, 0.55);
+            background: rgba(10, 132, 255, 0.18);
+            border-top: 1.5px solid rgba(10, 132, 255, 0.55);
+            border-bottom: 1.5px solid rgba(10, 132, 255, 0.55);
             pointer-events: none;
             z-index: 2;
             border-radius: 4px;
@@ -20302,7 +21078,7 @@
         }
 
         #fs-drum-ok {
-            color: #1d6fe8;
+            color: #0a84ff;
             border-right: 1px solid rgba(255, 255, 255, 0.07);
         }
 
@@ -20312,11 +21088,15 @@
 
 
 
-        /* ═══ SIDEBAR REDESIGN ═══ */
+        /* ═══ SIDEBAR REDESIGN — macOS vibrancy sidebar ═══ */
         #fs-sidebar {
             width: 194px;
             min-width: 194px;
-            background: linear-gradient(180deg, #131318 0%, #0d0d12 100%);
+            background: rgba(30, 30, 32, 0.82);
+            backdrop-filter: blur(30px) saturate(180%);
+            -webkit-backdrop-filter: blur(30px) saturate(180%);
+            border-right: 1px solid rgba(255, 255, 255, 0.08);
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif;
         }
 
         #fs-sidebar-header {
@@ -20393,11 +21173,11 @@
         }
 
         .fs-section.expanded .fs-section-label {
-            color: #22d3ee;
+            color: #0a84ff;
         }
 
         .fs-section.expanded .fs-section-chevron {
-            color: #22d3ee;
+            color: #0a84ff;
         }
 
         /* Trainer grid — 2×2 labeled buttons */
@@ -20413,17 +21193,17 @@
             align-items: center;
             gap: 3px;
             padding: 9px 2px 7px;
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(118, 118, 128, 0.16);
+            border: 1px solid rgba(255, 255, 255, 0.07);
             border-radius: 9px;
             cursor: pointer;
             transition: all 0.15s;
-            color: rgba(255, 255, 255, 0.75);
+            color: rgba(235, 235, 245, 0.75);
         }
 
         .fs-trainer-btn:hover {
-            background: rgba(34, 211, 238, 0.10);
-            border-color: rgba(34, 211, 238, 0.45);
+            background: rgba(10, 132, 255, 0.14);
+            border-color: rgba(10, 132, 255, 0.5);
             color: #fff;
             transform: translateY(-1px);
         }
@@ -20447,7 +21227,7 @@
 
         /* Replay transport buttons — cleaner trio */
         .fs-replay-btns button {
-            border-radius: 8px;
+            border-radius: 7px;
             font-weight: 700;
         }
 
@@ -20546,7 +21326,7 @@
 
             #fs-ticker-search {
                 font-size: 11px !important;
-                padding: 6px 10px !important;
+                padding: 6px 10px 6px 24px !important;
             }
 
             #fs-sidebar-header img {
@@ -20615,6 +21395,14 @@
             box-shadow: 0 2px 12px rgba(245, 158, 11, 0.35);
         }
 
+        /* ATR SL multiplier toggle - orange tint when active, matches the ATR stop line color */
+        #fs-atr-2x.active-idx-btn,
+        #fs-atr-3x.active-idx-btn {
+            background: rgba(255, 159, 10, 0.88);
+            border-color: rgba(255, 159, 10, 0.95);
+            box-shadow: 0 2px 12px rgba(255, 159, 10, 0.35);
+        }
+
         /* PB button - purple tint when active */
         #fs-idx-btn-pb.active-idx-btn {
             background: rgba(139, 92, 246, 0.85);
@@ -20655,6 +21443,7 @@
             <!-- Search bar at top -->
             <div class="fs-section" style="padding: 10px 14px 4px 14px; border-bottom: none;">
                 <div style="position: relative; width: 100%;">
+                    <span class="fs-search-ico">🔍</span>
                     <input type="text" id="fs-ticker-search" class="fs-search-input" placeholder="Search Ticker..."
                         oninput="window.updateFSTickers(true)" style="margin-bottom: 0; padding-right: 28px;">
                     <button id="fs-search-clear" onclick="window.clearFSSearch()"
@@ -21005,14 +21794,143 @@
 
                 </div>
 
-                <!-- Bottom Center Floating Trade Controls (Draggable) -->
-                <div id="fs-replay-trade-controls"
-                    style="display: none; position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); flex-direction: column; align-items: center; gap: 6px; background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 18px; padding: 8px 10px; box-shadow: 0 12px 32px rgba(0,0,0,0.6); pointer-events: auto; z-index: 20; touch-action: manipulation;">
-                    
-                    <div style="display: flex; flex-direction: row; align-items: center; gap: 8px;">
+                <!-- Bottom Center Floating Trade Controls (Draggable — touch / Apple Pencil friendly) -->
+                <style>
+                    #fs-replay-trade-controls {
+                        display: none;
+                        position: absolute;
+                        bottom: 24px;
+                        left: 50%;
+                        transform: translateX(-50%);
+                        flex-direction: column;
+                        align-items: stretch;
+                        gap: 8px;
+                        background: linear-gradient(180deg, rgba(21, 27, 41, 0.92), rgba(11, 15, 24, 0.95));
+                        backdrop-filter: blur(20px) saturate(1.4);
+                        -webkit-backdrop-filter: blur(20px) saturate(1.4);
+                        border: 1px solid rgba(255, 255, 255, 0.14);
+                        border-radius: 20px;
+                        padding: 8px 10px 10px;
+                        padding-bottom: max(10px, env(safe-area-inset-bottom, 10px));
+                        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+                        pointer-events: auto;
+                        z-index: 20;
+                        touch-action: manipulation;
+                        -webkit-user-select: none;
+                        user-select: none;
+                    }
+
+                    .fs-tp-row {
+                        display: flex;
+                        flex-direction: row;
+                        align-items: center;
+                        gap: 8px;
+                    }
+
+                    .fs-tp-handle {
+                        cursor: grab;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        width: 34px;
+                        height: 44px;
+                        flex-shrink: 0;
+                        opacity: 0.55;
+                        touch-action: none;
+                        border-radius: 10px;
+                        transition: opacity 0.15s, background-color 0.15s;
+                    }
+
+                    .fs-tp-handle:active {
+                        cursor: grabbing;
+                        opacity: 1;
+                        background: rgba(255, 255, 255, 0.08);
+                    }
+
+                    .fs-tp-btn {
+                        width: 44px;
+                        height: 44px;
+                        flex-shrink: 0;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        font-size: 14px;
+                        font-weight: 800;
+                        border-radius: 50%;
+                        cursor: pointer;
+                        padding: 0;
+                        touch-action: manipulation;
+                        -webkit-tap-highlight-color: transparent;
+                        transition: transform 0.1s ease, filter 0.1s ease;
+                    }
+
+                    .fs-tp-btn:active {
+                        transform: scale(0.88);
+                        filter: brightness(1.25);
+                    }
+
+                    .fs-tp-buy {
+                        border: 1px solid rgba(0, 230, 118, 0.5);
+                        background: rgba(0, 230, 118, 0.2);
+                        color: #00e676;
+                        box-shadow: 0 2px 10px rgba(0, 230, 118, 0.22);
+                    }
+
+                    .fs-tp-sell {
+                        border: 1px solid rgba(255, 51, 85, 0.5);
+                        background: rgba(255, 51, 85, 0.2);
+                        color: #ff3355;
+                        box-shadow: 0 2px 10px rgba(255, 51, 85, 0.22);
+                    }
+
+                    .fs-tp-close {
+                        border: 1px solid rgba(148, 163, 184, 0.45);
+                        background: rgba(148, 163, 184, 0.16);
+                        color: #e2e8f0;
+                    }
+
+                    #fs-replay-trade-status {
+                        flex: 1;
+                        min-width: 0;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        background: rgba(0, 0, 0, 0.4);
+                        border-radius: 14px;
+                        padding: 0 12px;
+                        height: 44px;
+                        font-family: 'Lexend', sans-serif;
+                        overflow: hidden;
+                    }
+
+                    .fs-tp-transport-btn {
+                        flex: 1;
+                        height: 44px;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        border-radius: 12px;
+                        border: 1px solid rgba(148, 163, 184, 0.4);
+                        background: rgba(148, 163, 184, 0.15);
+                        color: #e2e8f0;
+                        cursor: pointer;
+                        font-size: 15px;
+                        font-weight: 700;
+                        touch-action: manipulation;
+                        -webkit-tap-highlight-color: transparent;
+                        transition: transform 0.1s ease, background-color 0.1s ease;
+                    }
+
+                    .fs-tp-transport-btn:active {
+                        transform: scale(0.94);
+                        background: rgba(148, 163, 184, 0.28);
+                    }
+                </style>
+                <div id="fs-replay-trade-controls">
+                    <div class="fs-tp-row">
                         <!-- Drag Handle -->
-                        <div id="fs-trade-controls-drag-handle" style="cursor: grab; display: flex; align-items: center; justify-content: center; width: 26px; height: 32px; opacity: 0.6; touch-action: none;" title="Drag to move">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <div id="fs-trade-controls-drag-handle" class="fs-tp-handle" title="Drag to move">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                                 <circle cx="9" cy="5" r="1.5"></circle>
                                 <circle cx="9" cy="12" r="1.5"></circle>
                                 <circle cx="9" cy="19" r="1.5"></circle>
@@ -21022,35 +21940,44 @@
                             </svg>
                         </div>
 
-                        <button onclick="window.fsPaperBuy()" title="Paper Buy (Long)"
-                            style="width: 34px; height: 34px; display: flex; justify-content: center; align-items: center; font-size: 13px; font-weight: 800; border-radius: 50%; border: 1px solid rgba(0,230,118,0.5); background: rgba(0,230,118,0.2); color: #00e676; cursor: pointer; transition: transform 0.1s ease; box-shadow: 0 2px 8px rgba(0,230,118,0.2); padding: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">B</button>
-                        
-                        <button onclick="window.fsPaperSell()" title="Paper Sell (Short)"
-                            style="width: 34px; height: 34px; display: flex; justify-content: center; align-items: center; font-size: 13px; font-weight: 800; border-radius: 50%; border: 1px solid rgba(255,51,85,0.5); background: rgba(255,51,85,0.2); color: #ff3355; cursor: pointer; transition: transform 0.1s ease; box-shadow: 0 2px 8px rgba(255,51,85,0.2); padding: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">S</button>
-                        
-                        <button onclick="window.fsPaperClose()" title="Close Position"
-                            style="width: 34px; height: 34px; display: flex; justify-content: center; align-items: center; font-size: 13px; font-weight: 800; border-radius: 50%; border: 1px solid rgba(148,163,184,0.4); background: rgba(148,163,184,0.15); color: #e2e8f0; cursor: pointer; transition: transform 0.1s ease; padding: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">C</button>
-                            
+                        <button class="fs-tp-btn fs-tp-buy" onclick="window.fsPaperBuy()" title="Paper Buy (Long)">B</button>
+                        <button class="fs-tp-btn fs-tp-sell" onclick="window.fsPaperSell()" title="Paper Sell (Short)">S</button>
+                        <button class="fs-tp-btn fs-tp-close" onclick="window.fsPaperClose()" title="Close Position">C</button>
+
                         <!-- Running Trade Info Block -->
-                        <div id="fs-replay-trade-status"
-                            style="display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.4); border-radius: 14px; padding: 0 10px; font-family: 'Lexend', sans-serif; height: 32px;">
+                        <div id="fs-replay-trade-status">
                             <span style="color:#94a3b8; font-weight:700; font-size:11px;">FLAT</span>
                         </div>
                     </div>
 
                     <!-- Replay Transport Row -->
-                    <div style="display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 8px; width: 100%;">
-                        <button id="fs-mobile-replay-btn" onclick="window.toggleFsReplay()" title="Play / Pause" style="flex: 1; height: 30px; display: flex; justify-content: center; align-items: center; border-radius: 10px; border: 1px solid rgba(148,163,184,0.4); background: rgba(148,163,184,0.15); color: #e2e8f0; cursor: pointer; font-size: 13px; font-weight: 700; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">▶</button>
-                        <button id="fs-mobile-step-btn" onclick="window.fsFsStepForward()" title="Step +1 candle" style="flex: 1; height: 30px; display: flex; justify-content: center; align-items: center; border-radius: 10px; border: 1px solid rgba(148,163,184,0.4); background: rgba(148,163,184,0.15); color: #e2e8f0; cursor: pointer; font-size: 15px; font-weight: 700; touch-action: manipulation; -webkit-tap-highlight-color: transparent;">›</button>
+                    <div class="fs-tp-row">
+                        <button id="fs-mobile-replay-btn" class="fs-tp-transport-btn" onclick="window.toggleFsReplay()" title="Play / Pause">▶</button>
+                        <button id="fs-mobile-step-btn" class="fs-tp-transport-btn" onclick="window.fsFsStepForward()" title="Step +1 candle" style="font-size:17px;">›</button>
                     </div>
                 </div>
-                
+
                 <script>
                     setTimeout(() => {
                         if (typeof window._makeDraggable === 'function') {
                             window._makeDraggable(
                                 document.getElementById('fs-replay-trade-controls'),
-                                document.getElementById('fs-trade-controls-drag-handle')
+                                document.getElementById('fs-trade-controls-drag-handle'),
+                                null,
+                                function (el) {
+                                    // Snap to the nearest horizontal edge after a drag ends — a finger or
+                                    // Apple Pencil drop is rarely pixel-precise, and this mirrors the
+                                    // "floating window" behavior iPadOS users already expect (e.g. PiP).
+                                    const rotated = !!(el.closest('#fs-chart-modal') && window.innerWidth <= 1024 && window.innerHeight > window.innerWidth);
+                                    const boundW = rotated ? window.innerHeight : window.innerWidth;
+                                    const margin = 10;
+                                    const curLeft = parseFloat(el.style.left) || 0;
+                                    const mid = curLeft + el.offsetWidth / 2;
+                                    const snapLeft = mid < boundW / 2 ? margin : boundW - el.offsetWidth - margin;
+                                    el.style.transition = 'left 0.28s cubic-bezier(0.34, 1.4, 0.64, 1)';
+                                    el.style.left = snapLeft + 'px';
+                                    setTimeout(() => { el.style.transition = ''; }, 300);
+                                }
                             );
                         }
                     }, 500);
@@ -21075,6 +22002,17 @@
                         title="Dividend Yield %">💰 Div Yield</button>
                 </div>
 
+                <!-- ATR SuperTrend multiplier toggle (visible only when ticker is marked HOLD) -->
+                <div id="fs-atr-mult-toggle"
+                    style="display:none; position:absolute; right:12px; top:12px; z-index:26; gap:5px; align-items:center; pointer-events:auto;">
+                    <span
+                        style="font-size:9.5px; font-weight:700; color:rgba(148,163,184,0.9); letter-spacing:0.3px; margin-right:2px;">SuperTrend</span>
+                    <button id="fs-atr-2x" class="fs-idx-chart-btn" onclick="window.setFsAtrMult(2)"
+                        title="2x ATR SuperTrend">2x</button>
+                    <button id="fs-atr-3x" class="fs-idx-chart-btn active-idx-btn" onclick="window.setFsAtrMult(3)"
+                        title="3x ATR SuperTrend (default)">3x</button>
+                </div>
+
                 <!-- Index chart canvas (used for index line charts) -->
                 <canvas id="fs-index-chart-canvas"
                     style="display:none; position:absolute; top:0; left:0; width:100%; height:100%;"></canvas>
@@ -21096,68 +22034,134 @@
         <div class="fs-pt-analysis-header">
             <span>Professional Trade Analysis</span>
             <span class="fs-pt-analysis-close"
-                onclick="document.getElementById('fs-pt-analysis-modal').style.display='none'">✕</span>
+                onclick="document.getElementById('fs-pt-analysis-modal').classList.remove('open')">✕</span>
         </div>
-        <div class="fs-pt-analysis-grid">
-            <div class="fs-pt-analysis-card">
-                <div class="fs-pt-analysis-card-title">Net PnL</div>
-                <div class="fs-pt-analysis-card-value" id="pt-stat-netpnl">—</div>
+        <div id="fs-pt-analysis-body">
+            <div class="fs-pt-equity-wrap">
+                <div class="fs-pt-equity-hdr">
+                    <span>Equity Curve · ₹1L Base</span>
+                    <span id="pt-equity-final">—</span>
+                </div>
+                <canvas id="pt-equity-canvas"></canvas>
             </div>
-            <div class="fs-pt-analysis-card">
-                <div class="fs-pt-analysis-card-title">CAGR (1L Base)</div>
-                <div class="fs-pt-analysis-card-value" id="pt-stat-cagr">—</div>
-            </div>
-            <div class="fs-pt-analysis-card">
-                <div class="fs-pt-analysis-card-title">Win Rate</div>
-                <div class="fs-pt-analysis-card-value" id="pt-stat-winrate">—</div>
-            </div>
-            <div class="fs-pt-analysis-card">
-                <div class="fs-pt-analysis-card-title">Profit Factor</div>
-                <div class="fs-pt-analysis-card-value" id="pt-stat-pf">—</div>
-            </div>
-            <div class="fs-pt-analysis-card">
-                <div class="fs-pt-analysis-card-title">Sharpe Ratio</div>
-                <div class="fs-pt-analysis-card-value" id="pt-stat-sharpe">—</div>
-            </div>
-            <div class="fs-pt-analysis-card">
-                <div class="fs-pt-analysis-card-title">Expectancy</div>
-                <div class="fs-pt-analysis-card-value" id="pt-stat-exp">—</div>
-            </div>
-            <div class="fs-pt-analysis-card">
-                <div class="fs-pt-analysis-card-title">Total Trades</div>
-                <div class="fs-pt-analysis-card-value" id="pt-stat-trades">—</div>
-            </div>
-            <div class="fs-pt-analysis-card">
-                <div class="fs-pt-analysis-card-title">Avg Duration</div>
-                <div class="fs-pt-analysis-card-value" id="pt-stat-duration">—</div>
-            </div>
-            <div class="fs-pt-analysis-card">
-                <div class="fs-pt-analysis-card-title">Max Win Streak</div>
-                <div class="fs-pt-analysis-card-value green" id="pt-stat-winstreak">—</div>
-            </div>
-            <div class="fs-pt-analysis-card">
-                <div class="fs-pt-analysis-card-title">Max Loss Streak</div>
-                <div class="fs-pt-analysis-card-value red" id="pt-stat-lossstreak">—</div>
-            </div>
-            <div class="fs-pt-analysis-card">
-                <div class="fs-pt-analysis-card-title">Average Win</div>
-                <div class="fs-pt-analysis-card-value green" id="pt-stat-avgwin">—</div>
-            </div>
-            <div class="fs-pt-analysis-card">
-                <div class="fs-pt-analysis-card-title">Average Loss</div>
-                <div class="fs-pt-analysis-card-value red" id="pt-stat-avgloss">—</div>
-            </div>
-            <div class="fs-pt-analysis-card">
-                <div class="fs-pt-analysis-card-title">Largest Win</div>
-                <div class="fs-pt-analysis-card-value green" id="pt-stat-maxwin">—</div>
-            </div>
-            <div class="fs-pt-analysis-card">
-                <div class="fs-pt-analysis-card-title">Largest Loss</div>
-                <div class="fs-pt-analysis-card-value red" id="pt-stat-maxloss">—</div>
-            </div>
-            <div class="fs-pt-analysis-card" style="grid-column: 1 / -1;">
-                <div class="fs-pt-analysis-card-title">Max Drawdown</div>
-                <div class="fs-pt-analysis-card-value red" id="pt-stat-dd">—</div>
+            <div class="fs-pt-analysis-grid">
+                <div class="fs-pt-section-lbl">Bottom Line</div>
+                <div class="fs-pt-analysis-card">
+                    <div class="fs-pt-analysis-card-title">Gross P&amp;L</div>
+                    <div class="fs-pt-analysis-card-value" id="pt-stat-netpnl">—</div>
+                </div>
+                <div class="fs-pt-analysis-card">
+                    <div class="fs-pt-analysis-card-title">Est. Trading Costs</div>
+                    <div class="fs-pt-analysis-card-value red" id="pt-stat-costs">—</div>
+                </div>
+                <div class="fs-pt-analysis-card wide">
+                    <div class="fs-pt-analysis-card-title">Net P&amp;L <span class="fs-pt-hint">(after est. STT / charges)</span></div>
+                    <div class="fs-pt-analysis-card-value" id="pt-stat-netafter">—</div>
+                </div>
+                <div class="fs-pt-analysis-card">
+                    <div class="fs-pt-analysis-card-title">CAGR (1L Base)</div>
+                    <div class="fs-pt-analysis-card-value" id="pt-stat-cagr">—</div>
+                </div>
+                <div class="fs-pt-analysis-card">
+                    <div class="fs-pt-analysis-card-title">Trades / Month</div>
+                    <div class="fs-pt-analysis-card-value" id="pt-stat-freq">—</div>
+                </div>
+
+                <div class="fs-pt-section-lbl">Risk-Adjusted Returns</div>
+                <div class="fs-pt-analysis-card">
+                    <div class="fs-pt-analysis-card-title">Sharpe Ratio</div>
+                    <div class="fs-pt-analysis-card-value" id="pt-stat-sharpe">—</div>
+                </div>
+                <div class="fs-pt-analysis-card">
+                    <div class="fs-pt-analysis-card-title">Sortino Ratio</div>
+                    <div class="fs-pt-analysis-card-value" id="pt-stat-sortino">—</div>
+                </div>
+                <div class="fs-pt-analysis-card">
+                    <div class="fs-pt-analysis-card-title">Calmar Ratio</div>
+                    <div class="fs-pt-analysis-card-value" id="pt-stat-calmar">—</div>
+                </div>
+                <div class="fs-pt-analysis-card">
+                    <div class="fs-pt-analysis-card-title">Recovery Factor</div>
+                    <div class="fs-pt-analysis-card-value" id="pt-stat-recovery">—</div>
+                </div>
+                <div class="fs-pt-analysis-card">
+                    <div class="fs-pt-analysis-card-title">Max Drawdown ₹</div>
+                    <div class="fs-pt-analysis-card-value red" id="pt-stat-dd">—</div>
+                </div>
+                <div class="fs-pt-analysis-card">
+                    <div class="fs-pt-analysis-card-title">Max Drawdown %</div>
+                    <div class="fs-pt-analysis-card-value red" id="pt-stat-ddpct">—</div>
+                </div>
+
+                <div class="fs-pt-section-lbl">Edge &amp; Sizing</div>
+                <div class="fs-pt-analysis-card">
+                    <div class="fs-pt-analysis-card-title">Win Rate</div>
+                    <div class="fs-pt-analysis-card-value" id="pt-stat-winrate">—</div>
+                </div>
+                <div class="fs-pt-analysis-card">
+                    <div class="fs-pt-analysis-card-title">Profit Factor</div>
+                    <div class="fs-pt-analysis-card-value" id="pt-stat-pf">—</div>
+                </div>
+                <div class="fs-pt-analysis-card">
+                    <div class="fs-pt-analysis-card-title">Risk : Reward</div>
+                    <div class="fs-pt-analysis-card-value" id="pt-stat-rr">—</div>
+                </div>
+                <div class="fs-pt-analysis-card">
+                    <div class="fs-pt-analysis-card-title">Expectancy / Trade</div>
+                    <div class="fs-pt-analysis-card-value" id="pt-stat-exp">—</div>
+                </div>
+                <div class="fs-pt-analysis-card wide">
+                    <div class="fs-pt-analysis-card-title">Kelly Criterion <span class="fs-pt-hint">(suggested capital risk per trade)</span></div>
+                    <div class="fs-pt-analysis-card-value" id="pt-stat-kelly">—</div>
+                </div>
+
+                <div class="fs-pt-section-lbl">Trade Log Stats</div>
+                <div class="fs-pt-analysis-card">
+                    <div class="fs-pt-analysis-card-title">Total Trades</div>
+                    <div class="fs-pt-analysis-card-value" id="pt-stat-trades">—</div>
+                </div>
+                <div class="fs-pt-analysis-card">
+                    <div class="fs-pt-analysis-card-title">Avg Duration</div>
+                    <div class="fs-pt-analysis-card-value" id="pt-stat-duration">—</div>
+                </div>
+                <div class="fs-pt-analysis-card">
+                    <div class="fs-pt-analysis-card-title">Max Win Streak</div>
+                    <div class="fs-pt-analysis-card-value green" id="pt-stat-winstreak">—</div>
+                </div>
+                <div class="fs-pt-analysis-card">
+                    <div class="fs-pt-analysis-card-title">Max Loss Streak</div>
+                    <div class="fs-pt-analysis-card-value red" id="pt-stat-lossstreak">—</div>
+                </div>
+                <div class="fs-pt-analysis-card">
+                    <div class="fs-pt-analysis-card-title">Average Win</div>
+                    <div class="fs-pt-analysis-card-value green" id="pt-stat-avgwin">—</div>
+                </div>
+                <div class="fs-pt-analysis-card">
+                    <div class="fs-pt-analysis-card-title">Average Loss</div>
+                    <div class="fs-pt-analysis-card-value red" id="pt-stat-avgloss">—</div>
+                </div>
+                <div class="fs-pt-analysis-card">
+                    <div class="fs-pt-analysis-card-title">Largest Win</div>
+                    <div class="fs-pt-analysis-card-value green" id="pt-stat-maxwin">—</div>
+                </div>
+                <div class="fs-pt-analysis-card">
+                    <div class="fs-pt-analysis-card-title">Largest Loss</div>
+                    <div class="fs-pt-analysis-card-value red" id="pt-stat-maxloss">—</div>
+                </div>
+
+                <div class="fs-pt-section-lbl">Long vs Short</div>
+                <div class="fs-pt-analysis-card wide fs-pt-side-card">
+                    <div>
+                        <div class="fs-pt-side-lbl" style="color:#22c55e;">▲ Longs</div>
+                    </div>
+                    <div class="fs-pt-side-stats" id="pt-stat-long">—</div>
+                </div>
+                <div class="fs-pt-analysis-card wide fs-pt-side-card">
+                    <div>
+                        <div class="fs-pt-side-lbl" style="color:#f43f5e;">▼ Shorts</div>
+                    </div>
+                    <div class="fs-pt-side-stats" id="pt-stat-short">—</div>
+                </div>
             </div>
         </div>
     </div>
@@ -21959,7 +22963,22 @@
                         const isHold = window._fhTickers.H ? window._fhTickers.H.has(tkUpper) : false;
                         window._setFHGlow(btnFav, 'F', isFav);
                         window._setFHGlow(btnHold, 'H', isHold);
+                        const atrToggle = document.getElementById('fs-atr-mult-toggle');
+                        if (atrToggle) atrToggle.style.display = isHold ? 'flex' : 'none';
                     }
+                }
+
+                // Position the sidebar-toggle just below the mini financial card / Fav-Hold overlay
+                // (the card's cell size scales with window width, so its height is not fixed — measure it
+                // instead of hardcoding a top offset that would overlap on wide screens).
+                const sbToggleBtn = document.getElementById('fs-sidebar-toggle');
+                if (sbToggleBtn) {
+                    const overlayTop = 12; // matches the floating info/actions overlay wrapper's inline top:12px
+                    const gap = 14;
+                    const cardH = (cardEl && cardEl.style.display !== 'none') ? cardEl.offsetHeight : 0;
+                    const fhActionsEl = document.getElementById('fs-fh-actions-left');
+                    const fhH = fhActionsEl ? fhActionsEl.offsetHeight : 0;
+                    sbToggleBtn.style.top = (overlayTop + Math.max(cardH, fhH) + gap) + 'px';
                 }
 
                 if (typeof window._fsUpdateFloatingPaperTradeUI === 'function') {
@@ -23356,6 +24375,75 @@
                 URL.revokeObjectURL(url);
             };
 
+            // Approximate real-world Indian equity delivery round-trip cost: STT (0.1%
+            // each leg), NSE transaction charges, SEBI turnover fee, GST on those, and
+            // buy-side stamp duty, plus a flat DP (depository) charge on the sell leg.
+            // Brokerage is assumed ₹0 (standard for delivery on most discount brokers).
+            // This is an estimate, not tax advice — it exists so "paper" results don't
+            // read as unrealistically clean versus what a live account would actually see.
+            function _fsEstimateTradeCost(t) {
+                const buyVal = t.entryPrice * t.qty;
+                const sellVal = t.exitPrice * t.qty;
+                const stt = (buyVal + sellVal) * 0.001;
+                const exch = (buyVal + sellVal) * 0.0000297;
+                const sebi = (buyVal + sellVal) * 0.000001;
+                const stamp = buyVal * 0.00015;
+                const gst = (exch + sebi) * 0.18;
+                const dp = 15.34;
+                return stt + exch + sebi + stamp + gst + dp;
+            }
+
+            function _fsDrawEquityCurve(points) {
+                const cv = document.getElementById('pt-equity-canvas');
+                if (!cv || points.length < 2) return;
+                const dpr = Math.min(window.devicePixelRatio || 1, 2);
+                const W = cv.clientWidth || 420;
+                const H = cv.clientHeight || 88;
+                cv.width = W * dpr; cv.height = H * dpr;
+                const ctx = cv.getContext('2d');
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.scale(dpr, dpr);
+                ctx.clearRect(0, 0, W, H);
+
+                const vals = points.map(p => p.equity);
+                const minV = Math.min(...vals), maxV = Math.max(...vals);
+                const pad = (maxV - minV) * 0.1 || Math.max(1, minV * 0.02);
+                const yMin = minV - pad, yMax = maxV + pad;
+                const P = { l: 4, r: 4, t: 6, b: 4 };
+                const toX = i => P.l + (i / (points.length - 1)) * (W - P.l - P.r);
+                const toY = v => P.t + (1 - (v - yMin) / (yMax - yMin || 1)) * (H - P.t - P.b);
+
+                // Start-capital baseline
+                const baseY = toY(points[0].equity);
+                ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.moveTo(0, baseY); ctx.lineTo(W, baseY); ctx.stroke();
+                ctx.setLineDash([]);
+
+                const finalUp = points[points.length - 1].equity >= points[0].equity;
+                const lineColor = finalUp ? '#22c55e' : '#f43f5e';
+
+                const grad = ctx.createLinearGradient(0, P.t, 0, H - P.b);
+                grad.addColorStop(0, finalUp ? 'rgba(34,197,94,0.32)' : 'rgba(244,63,94,0.32)');
+                grad.addColorStop(1, finalUp ? 'rgba(34,197,94,0.02)' : 'rgba(244,63,94,0.02)');
+                ctx.beginPath();
+                points.forEach((p, i) => { const x = toX(i), y = toY(p.equity); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+                ctx.lineTo(toX(points.length - 1), H - P.b);
+                ctx.lineTo(toX(0), H - P.b);
+                ctx.closePath();
+                ctx.fillStyle = grad;
+                ctx.fill();
+
+                ctx.beginPath();
+                points.forEach((p, i) => { const x = toX(i), y = toY(p.equity); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+                ctx.strokeStyle = lineColor; ctx.lineWidth = 1.6; ctx.lineJoin = 'round'; ctx.stroke();
+
+                // Mark the equity peak (the drawdown reference point)
+                let peakIdx = 0, peakVal = -Infinity;
+                points.forEach((p, i) => { if (p.equity > peakVal) { peakVal = p.equity; peakIdx = i; } });
+                ctx.fillStyle = '#fbbf24';
+                ctx.beginPath(); ctx.arc(toX(peakIdx), toY(peakVal), 2.3, 0, Math.PI * 2); ctx.fill();
+            }
+
             window.fsPaperAnalyze = function () {
                 const pt = window._fsPaperTrade;
                 if (!pt.trades || pt.trades.length === 0) {
@@ -23363,6 +24451,7 @@
                     return;
                 }
 
+                const INITIAL_CAPITAL = 100000;
                 let grossProfit = 0;
                 let grossLoss = 0;
                 let wins = 0;
@@ -23372,20 +24461,36 @@
                 let runningPnl = 0;
                 let peakPnl = 0;
                 let maxDrawdown = 0;
-                
+                let maxDrawdownPct = 0;
+                let totalCosts = 0;
+
                 let currentWinStreak = 0;
                 let maxWinStreak = 0;
                 let currentLossStreak = 0;
                 let maxLossStreak = 0;
                 let totalDurationMs = 0;
                 let pnlArray = [];
+                let equityCurve = [{ equity: INITIAL_CAPITAL }];
+                let peakEquity = INITIAL_CAPITAL;
+
+                const longTrades = [], shortTrades = [];
 
                 pt.trades.forEach(t => {
                     runningPnl += t.pnl;
                     pnlArray.push(t.pnl);
                     if (runningPnl > peakPnl) peakPnl = runningPnl;
-                    let dd = peakPnl - runningPnl;
+                    const dd = peakPnl - runningPnl;
                     if (dd > maxDrawdown) maxDrawdown = dd;
+
+                    const equity = INITIAL_CAPITAL + runningPnl;
+                    equityCurve.push({ equity });
+                    if (equity > peakEquity) peakEquity = equity;
+                    const ddPct = peakEquity > 0 ? ((peakEquity - equity) / peakEquity) * 100 : 0;
+                    if (ddPct > maxDrawdownPct) maxDrawdownPct = ddPct;
+
+                    totalCosts += _fsEstimateTradeCost(t);
+
+                    if (t.side === 'long') longTrades.push(t); else if (t.side === 'short') shortTrades.push(t);
 
                     if (t.exitDate && t.entryDate) {
                         totalDurationMs += (t.exitDate.getTime() - t.entryDate.getTime());
@@ -23395,7 +24500,7 @@
                         wins++;
                         grossProfit += t.pnl;
                         if (t.pnl > maxWin) maxWin = t.pnl;
-                        
+
                         currentWinStreak++;
                         currentLossStreak = 0;
                         if (currentWinStreak > maxWinStreak) maxWinStreak = currentWinStreak;
@@ -23403,7 +24508,7 @@
                         losses++;
                         grossLoss += Math.abs(t.pnl);
                         if (t.pnl < maxLoss) maxLoss = t.pnl;
-                        
+
                         currentLossStreak++;
                         currentWinStreak = 0;
                         if (currentLossStreak > maxLossStreak) maxLossStreak = currentLossStreak;
@@ -23419,72 +24524,136 @@
                 const avgWin = wins > 0 ? grossProfit / wins : 0;
                 const avgLoss = losses > 0 ? grossLoss / losses : 0;
                 const expectancy = (avgWin * (winRate / 100)) - (avgLoss * (1 - (winRate / 100)));
-                
+                const netAfterCosts = runningPnl - totalCosts;
+                const rrRatio = avgLoss > 0 ? (avgWin / avgLoss) : (avgWin > 0 ? Infinity : 0);
+
+                // Kelly Criterion — suggested fraction of capital to risk per trade,
+                // derived from this system's actual win rate and reward:risk ratio.
+                // Negative/zero means the edge (as measured so far) doesn't justify sizing up.
+                let kellyPct = 0;
+                if (isFinite(rrRatio) && rrRatio > 0) {
+                    kellyPct = ((winRate / 100) - ((1 - winRate / 100) / rrRatio)) * 100;
+                } else if (rrRatio === Infinity) {
+                    kellyPct = winRate; // no losing trades recorded yet
+                }
+                kellyPct = Math.max(-100, Math.min(100, kellyPct));
+
+                const firstDate = pt.trades[0].entryDate;
+                const lastDate = pt.trades[totalTrades - 1].exitDate;
+                const spanDays = (firstDate && lastDate) ? Math.max((lastDate.getTime() - firstDate.getTime()) / 86400000, 1 / 24) : 1 / 24;
+
                 // CAGR
                 let cagr = 0;
-                if (totalTrades > 0) {
-                    const firstDate = pt.trades[0].entryDate;
-                    const lastDate = pt.trades[totalTrades - 1].exitDate;
-                    if (firstDate && lastDate) {
-                        const days = Math.max((lastDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24), 1/24);
-                        const years = days / 365.25;
-                        const initialCapital = 100000;
-                        const finalCapital = initialCapital + runningPnl;
-                        if (finalCapital > 0) {
-                            cagr = (Math.pow(finalCapital / initialCapital, 1 / years) - 1) * 100;
-                        } else {
-                            cagr = -100;
-                        }
-                    }
+                const years = spanDays / 365.25;
+                const finalCapital = INITIAL_CAPITAL + runningPnl;
+                if (finalCapital > 0) {
+                    cagr = (Math.pow(finalCapital / INITIAL_CAPITAL, 1 / years) - 1) * 100;
+                } else {
+                    cagr = -100;
                 }
-                
-                // Sharpe
+
+                const tradesPerMonth = totalTrades / Math.max(spanDays / 30.4368, 1 / 30.4368);
+
+                // Sharpe (per-trade mean / stdev of trade PnL — not annualized, since
+                // "trades" aren't a fixed time unit here)
                 let sharpe = 0;
                 if (totalTrades > 1) {
                     const meanPnl = runningPnl / totalTrades;
                     let sumSq = 0;
                     pnlArray.forEach(p => { sumSq += Math.pow(p - meanPnl, 2); });
                     const stdDev = Math.sqrt(sumSq / (totalTrades - 1));
-                    if (stdDev > 0) {
-                        sharpe = meanPnl / stdDev;
+                    if (stdDev > 0) sharpe = meanPnl / stdDev;
+                }
+
+                // Sortino — same idea as Sharpe, but only penalizes downside volatility
+                // (losing trades), which is what actually hurts a real account.
+                let sortino = 0;
+                if (totalTrades > 1) {
+                    const meanPnl = runningPnl / totalTrades;
+                    const downside = pnlArray.filter(p => p < 0);
+                    if (downside.length > 0) {
+                        const sumSqDown = downside.reduce((s, p) => s + p * p, 0);
+                        const downsideDev = Math.sqrt(sumSqDown / totalTrades);
+                        sortino = downsideDev > 0 ? meanPnl / downsideDev : (meanPnl > 0 ? Infinity : 0);
+                    } else {
+                        sortino = meanPnl > 0 ? Infinity : 0;
                     }
                 }
-                
+
+                // Calmar — annualized return per unit of max drawdown, and Recovery
+                // Factor — total profit banked per rupee of the worst peak-to-trough dip.
+                // Both are standard "how painful was the ride" fund-manager metrics.
+                const calmar = maxDrawdownPct > 0 ? (cagr / maxDrawdownPct) : (cagr > 0 ? Infinity : 0);
+                const recoveryFactor = maxDrawdown > 0 ? (runningPnl / maxDrawdown) : (runningPnl > 0 ? Infinity : 0);
+
                 // Duration
                 let avgDurationStr = "0m";
                 if (totalTrades > 0) {
                     const avgMs = totalDurationMs / totalTrades;
                     const mins = Math.floor(avgMs / 60000);
                     if (mins < 60) avgDurationStr = mins + "m";
-                    else if (mins < 1440) avgDurationStr = Math.floor(mins/60) + "h " + (mins%60) + "m";
-                    else avgDurationStr = Math.floor(mins/1440) + "d " + Math.floor((mins%1440)/60) + "h";
+                    else if (mins < 1440) avgDurationStr = Math.floor(mins / 60) + "h " + (mins % 60) + "m";
+                    else avgDurationStr = Math.floor(mins / 1440) + "d " + Math.floor((mins % 1440) / 60) + "h";
                 }
 
-                document.getElementById('pt-stat-netpnl').textContent = (runningPnl >= 0 ? '+' : '') + runningPnl.toFixed(2);
-                document.getElementById('pt-stat-netpnl').style.color = runningPnl >= 0 ? '#22c55e' : '#f43f5e';
-                
-                document.getElementById('pt-stat-cagr').textContent = (cagr >= 0 ? '+' : '') + cagr.toFixed(2) + '%';
-                document.getElementById('pt-stat-cagr').style.color = cagr >= 0 ? '#22c55e' : '#f43f5e';
+                const sideSummary = arr => {
+                    if (!arr.length) return null;
+                    const w = arr.filter(t => t.pnl > 0).length;
+                    const pnl = arr.reduce((s, t) => s + t.pnl, 0);
+                    return { n: arr.length, wr: (w / arr.length) * 100, pnl };
+                };
+                const longS = sideSummary(longTrades);
+                const shortS = sideSummary(shortTrades);
 
-                document.getElementById('pt-stat-sharpe').textContent = sharpe.toFixed(2);
-                document.getElementById('pt-stat-sharpe').style.color = sharpe >= 1 ? '#22c55e' : (sharpe >= 0 ? '#eab308' : '#f43f5e');
+                const setTxt = (id, txt, color) => {
+                    const el = document.getElementById(id);
+                    if (!el) return;
+                    el.textContent = txt;
+                    if (color) el.style.color = color;
+                };
+                const fmtRatio = v => v === Infinity ? '∞' : v.toFixed(2);
+                const posColor = v => v >= 0 ? '#22c55e' : '#f43f5e';
 
-                document.getElementById('pt-stat-winstreak').textContent = maxWinStreak;
-                document.getElementById('pt-stat-lossstreak').textContent = maxLossStreak;
-                document.getElementById('pt-stat-duration').textContent = avgDurationStr;
+                setTxt('pt-stat-netpnl', (runningPnl >= 0 ? '+' : '') + runningPnl.toFixed(2), posColor(runningPnl));
+                setTxt('pt-stat-costs', '-' + totalCosts.toFixed(2));
+                setTxt('pt-stat-netafter', (netAfterCosts >= 0 ? '+' : '') + netAfterCosts.toFixed(2), posColor(netAfterCosts));
+                setTxt('pt-stat-cagr', (cagr >= 0 ? '+' : '') + cagr.toFixed(2) + '%', posColor(cagr));
+                setTxt('pt-stat-freq', tradesPerMonth.toFixed(1));
 
-                document.getElementById('pt-stat-winrate').textContent = winRate.toFixed(1) + '%';
-                document.getElementById('pt-stat-pf').textContent = profitFactor === Infinity ? '∞' : profitFactor.toFixed(2);
-                document.getElementById('pt-stat-exp').textContent = expectancy >= 0 ? '+' + expectancy.toFixed(2) : expectancy.toFixed(2);
-                document.getElementById('pt-stat-exp').style.color = expectancy >= 0 ? '#22c55e' : '#f43f5e';
-                document.getElementById('pt-stat-trades').textContent = totalTrades;
-                document.getElementById('pt-stat-avgwin').textContent = '+' + avgWin.toFixed(2);
-                document.getElementById('pt-stat-avgloss').textContent = '-' + avgLoss.toFixed(2);
-                document.getElementById('pt-stat-maxwin').textContent = '+' + maxWin.toFixed(2);
-                document.getElementById('pt-stat-maxloss').textContent = maxLoss.toFixed(2);
-                document.getElementById('pt-stat-dd').textContent = '-' + maxDrawdown.toFixed(2);
+                setTxt('pt-stat-sharpe', sharpe.toFixed(2), sharpe >= 1 ? '#22c55e' : (sharpe >= 0 ? '#eab308' : '#f43f5e'));
+                setTxt('pt-stat-sortino', fmtRatio(sortino), sortino >= 1 || sortino === Infinity ? '#22c55e' : (sortino >= 0 ? '#eab308' : '#f43f5e'));
+                setTxt('pt-stat-calmar', fmtRatio(calmar), calmar >= 1 || calmar === Infinity ? '#22c55e' : (calmar >= 0 ? '#eab308' : '#f43f5e'));
+                setTxt('pt-stat-recovery', fmtRatio(recoveryFactor), recoveryFactor >= 1 || recoveryFactor === Infinity ? '#22c55e' : '#eab308');
+                setTxt('pt-stat-dd', '-' + maxDrawdown.toFixed(2));
+                setTxt('pt-stat-ddpct', '-' + maxDrawdownPct.toFixed(2) + '%');
 
-                document.getElementById('fs-pt-analysis-modal').style.display = 'flex';
+                setTxt('pt-stat-winrate', winRate.toFixed(1) + '%');
+                setTxt('pt-stat-pf', profitFactor === Infinity ? '∞' : profitFactor.toFixed(2));
+                setTxt('pt-stat-rr', (rrRatio === Infinity ? '∞' : rrRatio.toFixed(2)) + ' : 1');
+                setTxt('pt-stat-exp', (expectancy >= 0 ? '+' : '') + expectancy.toFixed(2), posColor(expectancy));
+                setTxt('pt-stat-kelly', (kellyPct >= 0 ? '+' : '') + kellyPct.toFixed(1) + '%', kellyPct > 0 ? '#22c55e' : '#f43f5e');
+
+                setTxt('pt-stat-winstreak', maxWinStreak);
+                setTxt('pt-stat-lossstreak', maxLossStreak);
+                setTxt('pt-stat-duration', avgDurationStr);
+                setTxt('pt-stat-trades', totalTrades);
+                setTxt('pt-stat-avgwin', '+' + avgWin.toFixed(2));
+                setTxt('pt-stat-avgloss', '-' + avgLoss.toFixed(2));
+                setTxt('pt-stat-maxwin', '+' + maxWin.toFixed(2));
+                setTxt('pt-stat-maxloss', maxLoss.toFixed(2));
+
+                setTxt('pt-stat-long', longS ? `${longS.n} trades · ${longS.wr.toFixed(0)}% win\n${longS.pnl >= 0 ? '+' : ''}${longS.pnl.toFixed(2)}` : 'No long trades');
+                const longEl = document.getElementById('pt-stat-long');
+                if (longEl) longEl.style.whiteSpace = 'pre-line';
+                setTxt('pt-stat-short', shortS ? `${shortS.n} trades · ${shortS.wr.toFixed(0)}% win\n${shortS.pnl >= 0 ? '+' : ''}${shortS.pnl.toFixed(2)}` : 'No short trades');
+                const shortEl = document.getElementById('pt-stat-short');
+                if (shortEl) shortEl.style.whiteSpace = 'pre-line';
+
+                setTxt('pt-equity-final', '₹' + Math.round(INITIAL_CAPITAL + runningPnl).toLocaleString('en-IN'), posColor(runningPnl));
+
+                document.getElementById('fs-pt-analysis-modal').classList.add('open');
+                // Canvas needs layout dimensions before drawing — wait a frame for display:flex to apply
+                requestAnimationFrame(() => _fsDrawEquityCurve(equityCurve));
             };
 
 
@@ -24299,6 +25468,15 @@
                     }
                 })();
                 return _loadPromise;
+            };
+
+            window.setFsAtrMult = function (mult) {
+                window._fsAtrMult = mult;
+                const btn2 = document.getElementById('fs-atr-2x');
+                const btn3 = document.getElementById('fs-atr-3x');
+                if (btn2) btn2.classList.toggle('active-idx-btn', mult === 2);
+                if (btn3) btn3.classList.toggle('active-idx-btn', mult === 3);
+                if (window.renderFullScreenChart) window.renderFullScreenChart();
             };
 
             window.setIndexChartType = function (type) {
