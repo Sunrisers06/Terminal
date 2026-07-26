@@ -10268,6 +10268,35 @@
             });
 
             window._syncLocks = new Set();
+
+            // Sets the is-fav/is-hold class AND, for the fullscreen chart's fs-btn-fav /
+            // fs-btn-hold buttons, mirrors the glow colors as inline styles. Those two
+            // buttons carry hardcoded inline background/border/color/box-shadow (needed so
+            // they read against the chart canvas), and inline styles always beat a class
+            // selector's specificity — so without this, toggling .is-fav/.is-hold never
+            // visibly changed anything on them.
+            window._setFHGlow = function (el, type, active) {
+                if (!el) return;
+                const cls = type === 'F' ? 'is-fav' : 'is-hold';
+                el.classList.toggle(cls, active);
+                if (el.id === 'fs-btn-fav' || el.id === 'fs-btn-hold') {
+                    if (active) {
+                        const c = type === 'F'
+                            ? { bg: 'rgba(234,179,8,0.22)', bd: 'rgba(234,179,8,0.6)', fg: '#fbbf24', sh: '0 0 14px rgba(234,179,8,0.4)' }
+                            : { bg: 'rgba(59,130,246,0.22)', bd: 'rgba(59,130,246,0.6)', fg: '#60a5fa', sh: '0 0 14px rgba(59,130,246,0.4)' };
+                        el.style.background = c.bg;
+                        el.style.borderColor = c.bd;
+                        el.style.color = c.fg;
+                        el.style.boxShadow = c.sh;
+                    } else {
+                        el.style.background = 'rgba(15,23,42,0.8)';
+                        el.style.borderColor = 'rgba(255,255,255,0.15)';
+                        el.style.color = '#cbd5e1';
+                        el.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+                    }
+                }
+            };
+
             window.toggleRemoteFH = async function (ticker, type, event) {
                 if (event) event.stopPropagation();
                 const tk = String(ticker || '').toUpperCase();
@@ -10297,7 +10326,7 @@
                         const finalSet = window._fhTickers.F;
                         const finalState = finalSet.has(tk);
                         const btns = document.querySelectorAll(`.fav-toggle-${tk}`);
-                        btns.forEach(b => b.classList.toggle('is-fav', finalState));
+                        btns.forEach(b => window._setFHGlow(b, 'F', finalState));
 
                         if (window._fhState.active === 'F' || window._fhState.active === 'FF' || window._fhState.active === 'TF') doFilter();
                     } catch (e) {
@@ -10316,7 +10345,7 @@
 
                 // Optimistic UI update
                 const btns = document.querySelectorAll(selector);
-                btns.forEach(b => b.classList.toggle(cls, !isSet));
+                btns.forEach(b => window._setFHGlow(b, 'H', !isSet));
 
                 try {
                     const resp = await fetch(`${SYNC_URL}?action=${action}&ticker=${tk}&type=${type}`);
@@ -10329,12 +10358,12 @@
                     // Final UI sync
                     const finalSet = window._fhTickers.H;
                     const finalState = finalSet.has(tk);
-                    btns.forEach(b => b.classList.toggle(cls, finalState));
+                    btns.forEach(b => window._setFHGlow(b, 'H', finalState));
 
                     if (window._fhState.active === type) doFilter();
                 } catch (e) {
                     console.error('[SundarX] Sync failed:', e.message);
-                    btns.forEach(b => b.classList.toggle(cls, isSet));
+                    btns.forEach(b => window._setFHGlow(b, 'H', isSet));
                 } finally {
                     window._syncLocks.delete(lockKey);
                 }
@@ -14701,11 +14730,28 @@
             hdr.style.cursor = 'grab';
             hdr.style.touchAction = 'none'; // tell browser: this element owns the touch, no scroll
 
+            // On portrait tablets/phones #fs-chart-modal is rotated 90deg via CSS (see
+            // "Force Landscape Mode on Portrait Mobile/Tablet") so the fullscreen chart
+            // displays in landscape. Once an ancestor is rotated, raw screen-space touch
+            // deltas (clientX/clientY) no longer line up with the element's own left/top
+            // axes — dragging right on screen must move the element along its LOCAL
+            // y-axis, not x. Without correcting for that, a dragged element visibly jumps
+            // "to the other side" relative to the finger. Same clockwise 90deg mapping as
+            // window._getRotatedCoords, which already does this for canvas hit-testing.
+            function _isRotated() {
+                return !!(el.closest('#fs-chart-modal') && window.innerWidth <= 1024 && window.innerHeight > window.innerWidth);
+            }
+
+            function _screenDeltaToLocal(dx, dy) {
+                return _isRotated() ? { dx: dy, dy: -dx } : { dx, dy };
+            }
+
             // Capture the element's true rendered top-left (works even with CSS translate)
             // and lock in explicit left/top so transform no longer applies.
             function _anchorAndMove(nx, ny) {
-                const maxX = window.innerWidth - el.offsetWidth;
-                const maxY = window.innerHeight - el.offsetHeight;
+                const rotated = _isRotated();
+                const maxX = (rotated ? window.innerHeight : window.innerWidth) - el.offsetWidth;
+                const maxY = (rotated ? window.innerWidth : window.innerHeight) - el.offsetHeight;
                 el.style.transform = 'none';
                 el.style.bottom = 'auto';
                 el.style.right = 'auto';
@@ -14728,7 +14774,8 @@
 
             document.addEventListener('mousemove', function (e) {
                 if (!mDragging) return;
-                _anchorAndMove(ox + e.clientX - sx, oy + e.clientY - sy);
+                const d = _screenDeltaToLocal(e.clientX - sx, e.clientY - sy);
+                _anchorAndMove(ox + d.dx, oy + d.dy);
             });
 
             document.addEventListener('mouseup', function () {
@@ -14758,7 +14805,8 @@
                 }
                 if (!touch) return;
                 e.preventDefault(); // block page scroll while dragging
-                _anchorAndMove(tOx + touch.clientX - tSx, tOy + touch.clientY - tSy);
+                const d = _screenDeltaToLocal(touch.clientX - tSx, touch.clientY - tSy);
+                _anchorAndMove(tOx + d.dx, tOy + d.dy);
             }, { passive: false });
 
             document.addEventListener('touchend', function (e) {
@@ -21747,13 +21795,20 @@
                 }
             };
 
-            window.renderFullScreenChart = function () {
+            window.renderFullScreenChart = function (opts) {
+                // During candle-formation replay animation this fires every rAF tick (up to
+                // ~60x/sec). Ticker/company chrome (bg watermark, mini financial card) never
+                // changes mid-animation, so callers on that hot path pass skipChrome:true to
+                // avoid the O(n) allData.find() scans + innerHTML rebuild below — those alone
+                // were enough to saturate the main thread on iPad and cause missed taps on the
+                // replay/buy/sell/cancel buttons (desktop CPUs just absorbed the waste).
+                const skipChrome = !!(opts && opts.skipChrome);
                 const tk = document.getElementById('fs-ticker-select').value;
                 const tf = document.getElementById('fs-duration-select').value;
                 if (!tk) return;
 
                 const bgTickerEl = document.getElementById('fs-bg-ticker-name');
-                if (bgTickerEl) {
+                if (bgTickerEl && !skipChrome) {
                     const tkUpper = tk.toUpperCase();
                     const r = (window.allData || []).find(d => String(d._ticker || '').toUpperCase() === tkUpper);
                     const fullCoName = (window.tickerToName && (window.tickerToName[tkUpper] || window.tickerToName[tk])) || (r ? r._coName : '');
@@ -21843,7 +21898,7 @@
 
                 // Update mini financial card in full chart (Top 2 blocks: Quick Trendline toggle | Bottom 2 blocks: Clear drawings)
                 const cardEl = document.getElementById('fs-mini-financial-card');
-                if (cardEl) {
+                if (cardEl && !skipChrome) {
                     cardEl.onclick = function (e) {
                         const rect = cardEl.getBoundingClientRect();
                         const clickY = e.clientY - rect.top;
@@ -21902,8 +21957,8 @@
                     if (window._fhTickers) {
                         const isFav = window._fhTickers.F ? window._fhTickers.F.has(tkUpper) : false;
                         const isHold = window._fhTickers.H ? window._fhTickers.H.has(tkUpper) : false;
-                        btnFav.classList.toggle('is-fav', isFav);
-                        btnHold.classList.toggle('is-hold', isHold);
+                        window._setFHGlow(btnFav, 'F', isFav);
+                        window._setFHGlow(btnHold, 'H', isHold);
                     }
                 }
 
@@ -22010,7 +22065,7 @@
                 function frame(ts) {
                     if (window._fsReplay.paused || !window._fsReplay.active) {
                         window._fsReplay.partialCandle = null;
-                        window.renderFullScreenChart();
+                        window.renderFullScreenChart({ skipChrome: true });
                         return;
                     }
                     if (!startTime) startTime = ts;
@@ -22042,7 +22097,7 @@
                         vol: Math.round(candle.vol * t) // dynamically growing volume
                     };
 
-                    window.renderFullScreenChart();
+                    window.renderFullScreenChart({ skipChrome: true });
 
                     if (t < 1) {
                         window._fsReplay._animRaf = requestAnimationFrame(frame);
@@ -22131,12 +22186,21 @@
                     return;
                 }
 
-                // If paused → resume
-                if (window._fsReplay.timer && window._fsReplay.paused) {
+                // If paused → resume from currentMaxDate (covers both the Pause button,
+                // where the interval was left running, and Step mode, where
+                // fsFsStepForward/fsFsStepBack clear the interval — either way `paused`
+                // stays true and currentMaxDate already holds the stepped-to position, so
+                // resuming must NOT fall through to the "start fresh" branch below.)
+                if (window._fsReplay.active && window._fsReplay.paused) {
                     window._fsReplay.paused = false;
                     if (btn) btn.textContent = '⏸';
                     if (mBtn) mBtn.textContent = '⏸';
                     if (statusEl) statusEl.textContent = '';
+                    if (!window._fsReplay.timer) {
+                        const speedSel = document.getElementById('fs-replay-speed');
+                        const interval = speedSel ? parseInt(speedSel.value) || 500 : 500;
+                        window._fsReplay.timer = setInterval(_fsReplayTick, interval);
+                    }
                     return;
                 }
 
