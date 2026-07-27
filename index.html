@@ -12047,7 +12047,13 @@
                     actionColor,
                     setup: null,
                     volume: vol,
-                    lines: outLines
+                    lines: outLines,
+                    // Generic "pattern formation window" — the base/lookback range most of the
+                    // chart-pattern checks above are evaluated over. Used to highlight the
+                    // matched pattern's region on the chart (additive field, safe for existing
+                    // callers that don't read it).
+                    patternStartIdx: baseStartIdx,
+                    patternEndIdx: i
                 };
             }
             window._fsBuildPriceActionAnalysis = buildPriceActionAnalysis;
@@ -13355,6 +13361,39 @@
                         pc.fillRect(x - bW / 2, yTop, bW, bH);
                     }
                 });
+
+                // ── Candlestick Pattern Trainer: highlight box around the pattern candle(s) ──
+                if (isFs && window._fsCandlePatternHighlight && window._fsCandlePatternHighlight.ticker === UC) {
+                    const hl = window._fsCandlePatternHighlight;
+                    const relA = hl.span[0] - actualStart, relB = hl.span[1] - actualStart;
+                    if (relB >= 0 && relA < raw.length) {
+                        const a = Math.max(0, relA), b = Math.min(raw.length - 1, relB);
+                        let lo = Infinity, hi = -Infinity;
+                        for (let k = a; k <= b; k++) {
+                            if (raw[k].low < lo) lo = raw[k].low;
+                            if (raw[k].high > hi) hi = raw[k].high;
+                        }
+                        if (isFinite(lo) && isFinite(hi)) {
+                            const x1 = toX(a) - bW * 0.75, x2 = toX(b) + bW * 0.75;
+                            const yTop = toY(hi) - 10, yBot = toY(lo) + 8;
+                            pc.save();
+                            pc.strokeStyle = '#fbbf24';
+                            pc.lineWidth = 1.8;
+                            pc.setLineDash([5, 3]);
+                            pc.beginPath();
+                            if (pc.roundRect) pc.roundRect(x1, yTop, x2 - x1, yBot - yTop, 6);
+                            else pc.rect(x1, yTop, x2 - x1, yBot - yTop);
+                            pc.stroke();
+                            pc.setLineDash([]);
+                            pc.fillStyle = '#fbbf24';
+                            pc.font = 'bold 9px "Lexend",monospace';
+                            pc.textAlign = 'center';
+                            pc.textBaseline = 'bottom';
+                            pc.fillText(hl.label || '🕯 PATTERN', (x1 + x2) / 2, yTop - 2);
+                            pc.restore();
+                        }
+                    }
+                }
 
                 // ── Overlay: Volume inside Price Pane (bottom 15% height) ──
                 let fsVolMilestoneMap = null;
@@ -21242,7 +21281,7 @@
         #fs-flashcard-ui,
         #fs-pattern-quiz-ui,
         #fs-decision-ui,
-        #fs-volread-ui,
+        #fs-candle-pattern-ui,
         #fs-exit-ui {
             background: rgba(30, 41, 59, 0.55) !important;
             border: 1px solid rgba(148, 163, 184, 0.15);
@@ -21559,9 +21598,9 @@
                             title="Buy or Skip? Trade simulated 8 weeks with a −7% stop">
                             <span class="tb-ico">🎯</span><span class="tb-lbl">Decision</span>
                         </button>
-                        <button class="fs-trainer-btn" id="fs-volread-btn" onclick="window.fsVolReadTraining()"
-                            title="Read the last candle's price + volume: accumulation, distribution, dry-up or churn?">
-                            <span class="tb-ico">🔊</span><span class="tb-lbl">Volume Read</span>
+                        <button class="fs-trainer-btn" id="fs-candle-pattern-btn" onclick="window.fsCandlePatternTraining()"
+                            title="Identify the highlighted candlestick pattern — singles, doubles and triples">
+                            <span class="tb-ico">🕯️</span><span class="tb-lbl">Candle Pattern</span>
                         </button>
                         <button class="fs-trainer-btn" id="fs-exit-btn" onclick="window.fsExitTraining()"
                             title="Hold, trim or sell? You're already in this trade — read the current chart, not the entry.">
@@ -21593,33 +21632,9 @@
                         style="display:none; margin-top: 4px; padding: 10px; border-radius: 8px; text-align: center;">
                         <div style="font-size: 12px; font-weight: bold; margin-bottom: 6px; color: #f8fafc;">🧠
                             Pattern-ID Quiz</div>
-                        <div style="font-size: 10px; margin-bottom: 8px; color: #94a3b8;">Identify the primary chart
-                            pattern:</div>
-                        <div style="display: flex; flex-direction: column; gap: 5px; justify-content: center;">
-                            <button onclick="window.fsPatternQuizGuess('cup')"
-                                style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Cup
-                                w/ Handle / Rounding Bottom</button>
-                            <button onclick="window.fsPatternQuizGuess('flat')"
-                                style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Flat
-                                Base / VCP / Tight</button>
-                            <button onclick="window.fsPatternQuizGuess('hs')"
-                                style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Head
-                                &amp; Shoulders (Top/Bottom)</button>
-                            <button onclick="window.fsPatternQuizGuess('bullflag')"
-                                style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Bull
-                                Flag / Pennant / Ascending</button>
-                            <button onclick="window.fsPatternQuizGuess('bearflag')"
-                                style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Bear
-                                Flag / Downtrend / Descending</button>
-                            <button onclick="window.fsPatternQuizGuess('triangle')"
-                                style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Triangle
-                                / Wedge / Coil</button>
-                            <button onclick="window.fsPatternQuizGuess('dtb')"
-                                style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Double
-                                / Triple Top-Bottom</button>
-                            <button onclick="window.fsPatternQuizGuess('reversal')"
-                                style="background: #334155; color: white; border: 1px solid #475569; padding: 5px 4px; border-radius: 5px; cursor: pointer; font-size: 10px;">Reversal
-                                (Island / Climax / V-Bottom)</button>
+                        <div style="font-size: 10px; margin-bottom: 8px; color: #94a3b8;">Identify the chart pattern
+                            highlighted in the <span style="color:#fbbf24; font-weight:700;">amber box</span>:</div>
+                        <div id="fs-pattern-quiz-choices" style="display: flex; flex-direction: column; gap: 5px; justify-content: center;">
                         </div>
                         <div id="fs-pattern-quiz-result" style="margin-top: 8px; font-size: 10px; font-weight: bold;">
                         </div>
@@ -21649,35 +21664,26 @@
                             style="display: none; margin-top: 8px; background: #14b8a6; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; width: 100%; font-weight: 700;">Next
                             Setup 🎯</button>
                     </div>
-                    <div id="fs-volread-ui"
+                    <div id="fs-candle-pattern-ui"
                         style="display:none; margin-top: 4px; padding: 10px; border-radius: 8px; text-align: center;">
-                        <div style="font-size: 12px; font-weight: bold; margin-bottom: 6px; color: #f8fafc;">🔊 Volume
-                            Read</div>
-                        <div style="font-size: 10px; margin-bottom: 8px; color: #94a3b8;">Read the <b>last candle</b> —
-                            its spread, close location and volume vs the 50-week average. What is the smart money doing?
+                        <div style="font-size: 12px; font-weight: bold; margin-bottom: 6px; color: #f8fafc;">🕯️
+                            Candlestick Pattern</div>
+                        <div style="font-size: 10px; margin-bottom: 8px; color: #94a3b8;">The candle(s) inside the
+                            <span style="color:#fbbf24; font-weight:700;">amber box</span> on the chart form a classic
+                            pattern. Which one?
                         </div>
-                        <div style="display: flex; flex-direction: column; gap: 5px;">
-                            <button onclick="window.fsVolReadGuess('accum')"
-                                style="background: rgba(34,197,94,0.14); color: #4ade80; border: 1px solid rgba(34,197,94,0.4); padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 10.5px; font-weight: 700; text-align: left; padding-left: 10px;">🟢
-                                Accumulation — big buying</button>
-                            <button onclick="window.fsVolReadGuess('dist')"
-                                style="background: rgba(239,68,68,0.14); color: #f87171; border: 1px solid rgba(239,68,68,0.4); padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 10.5px; font-weight: 700; text-align: left; padding-left: 10px;">🔴
-                                Distribution — big selling</button>
-                            <button onclick="window.fsVolReadGuess('dryup')"
-                                style="background: rgba(56,189,248,0.12); color: #38bdf8; border: 1px solid rgba(56,189,248,0.4); padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 10.5px; font-weight: 700; text-align: left; padding-left: 10px;">💤
-                                Supply dry-up — sellers gone</button>
-                            <button onclick="window.fsVolReadGuess('churn')"
-                                style="background: rgba(245,158,11,0.12); color: #fbbf24; border: 1px solid rgba(245,158,11,0.4); padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 10.5px; font-weight: 700; text-align: left; padding-left: 10px;">⚠️
-                                Churn — effort, no result</button>
+                        <div id="fs-candle-pattern-choices" style="display: flex; flex-direction: column; gap: 5px;">
                         </div>
-                        <div id="fs-volread-result" style="margin-top: 8px; font-size: 11px; font-weight: bold;"></div>
-                        <div id="fs-volread-explain"
+                        <div id="fs-candle-pattern-result" style="margin-top: 8px; font-size: 11px; font-weight: bold;">
+                        </div>
+                        <div id="fs-candle-pattern-explain"
                             style="margin-top: 6px; font-size: 9.5px; color: #cbd5e1; text-align: left; line-height: 1.55;">
                         </div>
-                        <div id="fs-volread-stats" style="margin-top: 6px; font-size: 9px; color: #94a3b8;"></div>
-                        <button id="fs-volread-next-btn" onclick="window.fsVolReadTraining()"
+                        <div id="fs-candle-pattern-stats" style="margin-top: 6px; font-size: 9px; color: #94a3b8;">
+                        </div>
+                        <button id="fs-candle-pattern-next-btn" onclick="window.fsCandlePatternTraining()"
                             style="display: none; margin-top: 8px; background: #0ea5e9; color: white; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; width: 100%; font-weight: 700;">Next
-                            Candle 🔊</button>
+                            Pattern 🕯️</button>
                     </div>
                     <div id="fs-exit-ui"
                         style="display:none; margin-top: 4px; padding: 10px; border-radius: 8px; text-align: center;">
@@ -23325,7 +23331,7 @@
                 flash: { c: 0, t: 0, s: 0, bs: 0 },
                 quiz: { c: 0, t: 0, s: 0, bs: 0 },
                 decide: { c: 0, t: 0, s: 0, bs: 0, pnl: 0 },
-                vol: { c: 0, t: 0, s: 0, bs: 0 },
+                candle: { c: 0, t: 0, s: 0, bs: 0 },
                 exit: { c: 0, t: 0, s: 0, bs: 0, pnl: 0 }
             };
             // Restore saved training stats, if any, keeping the default shape for missing/new modes
@@ -23362,11 +23368,12 @@
                 // Make sure the Trainers section is expanded so its result panel is visible
                 const sec = document.getElementById('fs-sec-train');
                 if (sec) sec.classList.add('expanded');
-                ['fs-flashcard-ui', 'fs-pattern-quiz-ui', 'fs-decision-ui', 'fs-volread-ui', 'fs-exit-ui'].forEach(id => {
+                ['fs-flashcard-ui', 'fs-pattern-quiz-ui', 'fs-decision-ui', 'fs-candle-pattern-ui', 'fs-exit-ui'].forEach(id => {
                     if (id === except) return;
                     const el = document.getElementById(id);
                     if (el) el.style.display = 'none';
                 });
+                if (except !== 'fs-candle-pattern-ui' && except !== 'fs-pattern-quiz-ui') window._fsCandlePatternHighlight = null;
             }
 
             // Put the chart into a masked, paused replay at raw[idx]
@@ -23437,33 +23444,58 @@
             };
 
             /* ═══ 🃏 NEXT-CANDLE FLASHCARD ═══
-               Finds pivot-breakout weeks and pre-classifies the 5-week outcome:
+               Finds genuine BASE breakouts (not just incidental new highs inside
+               an ongoing uptrend) and pre-classifies the 5-week outcome:
                  success = a weekly close ≥ pivot +5% comes first
                  fail    = a weekly close < pivot −5% comes first
+               A pivot only qualifies if it capped a real consolidation — 7-55%
+               deep, never breached by more than 2% since it formed — mirroring
+               the base-validation the main analyzer uses, so the deck teaches
+               "clear a real level of resistance" rather than "make a new high."
                Ambiguous / sideways events are skipped so every card has a clean
                answer, and the target outcome is randomized ~50/50 so the deck
                cannot be gamed by always answering one way. */
             window._fsFindBreakouts = function (raw) {
                 const events = [];
-                for (let i = 55; i < raw.length - 6; i++) {
+                for (let i = 60; i < raw.length - 6; i++) {
                     const r = raw[i];
-                    let prior50High = 0, prior20High = 0;
-                    for (let j = Math.max(0, i - 50); j < i; j++) {
-                        if (raw[j].high > prior50High) prior50High = raw[j].high;
-                        if (j >= i - 20 && raw[j].high > prior20High) prior20High = raw[j].high;
+                    // Locate the base's resistance high — the swing high that set
+                    // up the level this candle is trying to clear.
+                    let pivotIdx = -1, pivot = 0;
+                    for (let j = Math.max(0, i - 50); j < i - 4; j++) {
+                        if (raw[j].high > pivot) { pivot = raw[j].high; pivotIdx = j; }
                     }
-                    const pivot = Math.min(prior50High, prior20High) || prior20High || prior50High;
-                    if (!pivot) continue;
-                    if (!(r.close >= pivot && r.open < pivot * 1.005 && raw[i - 1].close < pivot)) continue;
+                    if (pivotIdx === -1 || !pivot) continue;
+
+                    // Require real base depth — too shallow isn't a base, too deep
+                    // is a blown-out stock, neither is a clean "breakout" setup.
+                    let baseLow = pivot;
+                    for (let j = pivotIdx; j < i; j++) { if (raw[j].low < baseLow) baseLow = raw[j].low; }
+                    const baseDepthPct = ((pivot - baseLow) / pivot) * 100;
+                    if (baseDepthPct < 7 || baseDepthPct > 55) continue;
+
+                    // The resistance must have actually held since it formed —
+                    // otherwise it isn't a level, just noise.
+                    let resistanceHeld = true;
+                    for (let j = pivotIdx + 1; j < i; j++) {
+                        if (raw[j].high > pivot * 1.02) { resistanceHeld = false; break; }
+                    }
+                    if (!resistanceHeld) continue;
+
+                    // This candle must be the first weekly close through the level.
+                    if (!(r.close >= pivot * 0.998 && raw[i - 1].close < pivot)) continue;
+
                     const avgVol = raw[i - 1].volSma50 || 0;
-                    if (avgVol && r.vol < avgVol * 0.9) continue; // demand a real (≥ ~avg vol) attempt
+                    const volRatio = avgVol ? r.vol / avgVol : null;
+                    if (avgVol && r.vol < avgVol * 0.85) continue; // demand a real attempt, not a drift-through on dead volume
+
                     let outcome = null;
                     for (let j = i + 1; j <= Math.min(raw.length - 1, i + 5); j++) {
                         if (raw[j].close < pivot * 0.95) { outcome = 'fail'; break; }
                         if (raw[j].close >= pivot * 1.05) { outcome = 'success'; break; }
                     }
                     if (!outcome) continue; // sideways — no clean answer, skip
-                    events.push({ idx: i, pivot: pivot, outcome: outcome });
+                    events.push({ idx: i, pivot: pivot, outcome: outcome, baseDepthPct: baseDepthPct, volRatio: volRatio });
                 }
                 return events;
             };
@@ -23521,6 +23553,8 @@
                     breakoutIdx: chosen.idx,
                     pivot: chosen.pivot,
                     outcome: chosen.outcome,
+                    baseDepthPct: chosen.baseDepthPct,
+                    volRatio: chosen.volRatio,
                     raw: chosenRaw,
                     answered: false
                 };
@@ -23532,7 +23566,7 @@
             window.fsFlashcardGuess = function (guessSucceeds) {
                 if (!window._fsFlashcardState || window._fsFlashcardState.answered) return; // one answer per question — no stat double-counting
                 window._fsFlashcardState.answered = true;
-                const { raw, breakoutIdx, pivot, outcome, ticker } = window._fsFlashcardState;
+                const { raw, breakoutIdx, pivot, outcome, ticker, baseDepthPct, volRatio } = window._fsFlashcardState;
 
                 // Reveal the full 5-week resolution window
                 const targetIdx = Math.min(breakoutIdx + 5, raw.length - 1);
@@ -23546,9 +23580,13 @@
                 if (result) {
                     const post = pivot ? ((raw[targetIdx].close - pivot) / pivot) * 100 : 0;
                     const col = isCorrect ? '#22c55e' : '#ef4444';
+                    const volTxt = volRatio ? volRatio.toFixed(1) + 'x avg' : 'n/a';
+                    const volCol = volRatio >= 1.3 ? '#4ade80' : volRatio >= 0.9 ? '#facc15' : '#f87171';
                     result.innerHTML = '<span style="color:' + col + ';">' + (isCorrect ? '✅ Correct!' : '❌ Incorrect!') +
                         ' Breakout ' + (didSucceed ? 'followed through' : 'failed') +
-                        ' — now ' + (post >= 0 ? '+' : '') + post.toFixed(1) + '% vs pivot.</span>';
+                        ' — now ' + (post >= 0 ? '+' : '') + post.toFixed(1) + '% vs pivot.</span>' +
+                        '<div style="margin-top:4px; font-weight:normal; font-size:9.5px; color:#94a3b8;">Base depth ' +
+                        baseDepthPct.toFixed(0) + '% · Breakout volume <span style="color:' + volCol + ';">' + volTxt + '</span></div>';
                 }
                 const statsEl = document.getElementById('fs-flashcard-stats');
                 if (statsEl) statsEl.innerHTML = _fsStatHtml(st);
@@ -23563,25 +23601,53 @@
             };
 
             /* ═══ 🧠 PATTERN-ID QUIZ ═══
-               Group-based grading: the true pattern is mapped to exactly ONE
-               answer group up-front (ordered matchers), so overlapping keywords
-               can never mark a right answer wrong. Only clear patterns
-               (|score| ≥ 12) are quizzed, and the explanation shows the
-               analyzer's reasoning plus secondary patterns. */
-            const _FS_QUIZ_GROUPS = [
-                { key: 'cup', label: 'Cup w/ Handle / Rounding Bottom', match: a => a.includes('cup') || a.includes('rounding bottom') },
-                { key: 'hs', label: 'Head & Shoulders', match: a => a.includes('shoulders') },
-                { key: 'dtb', label: 'Double / Triple Top-Bottom', match: a => a.includes('double') || a.includes('triple') },
-                { key: 'triangle', label: 'Triangle / Wedge / Coil', match: a => a.includes('triangle') || a.includes('wedge') || a.includes('broadening') || a.includes('diamond') },
-                { key: 'bullflag', label: 'Bull Flag / Pennant / Ascending', match: a => a.includes('bull flag') || a.includes('bull pennant') || a.includes('power play') || a.includes('high tight') || (a.includes('rectangle') && a.includes('bull')) || a.includes('ascending') || a.includes('breakaway gap') },
-                { key: 'bearflag', label: 'Bear Flag / Downtrend / Descending', match: a => a.includes('bear flag') || a.includes('bear pennant') || a.includes('downtrend') || a.includes('distribution') || (a.includes('rectangle') && a.includes('bear')) || a.includes('descending') || a.includes('base failure') },
-                { key: 'reversal', label: 'Reversal (Island / Climax / V-Bottom)', match: a => a.includes('island') || a.includes('climax') || a.includes('v-bottom') || a.includes('shakeout') || a.includes('bump-and-run') || a.includes('rounding top') || a.includes('follow-through') },
-                { key: 'flat', label: 'Flat Base / VCP / Tight', match: a => a.includes('flat') || a.includes('vcp') || a.includes('tight') || a.includes('3-weeks') || (a.includes('base') && !a.includes('failure')) }
+               Refined, granular grading: the true pattern maps to exactly ONE
+               specific chart-pattern key (ordered matchers, so overlapping
+               keywords can never mark a right answer wrong) drawn from the full
+               canon the analyzer supports — cup/base patterns, tops, bottoms,
+               flags/pennants, triangles/wedges/channels, and reversal patterns
+               — rather than the old 8 broad umbrella buckets. Only clear
+               patterns (|score| ≥ 12) are quizzed, each question offers 4
+               choices (answer + 3 shuffled distractors), and the pattern's own
+               formation window is boxed on the chart itself. */
+            const _FS_CHART_PATTERNS = [
+                { key: 'cup', label: 'Cup with Handle', match: a => a.includes('cup') },
+                { key: 'flatbase', label: 'Flat Base', match: a => a.includes('flat-base') || a.includes('flat base') },
+                { key: 'vcp', label: 'VCP (Volatility Contraction)', match: a => a.includes('vcp') },
+                { key: 'doublebottom', label: 'Double Bottom', match: a => a.includes('double-bottom') || a.includes('double bottom') },
+                { key: 'triplebottom', label: 'Triple Bottom', match: a => a.includes('triple bottom') },
+                { key: 'ascbase', label: 'Ascending Base', match: a => a.includes('ascending-base') || a.includes('ascending base') },
+                { key: 'ihs', label: 'Inverse Head & Shoulders', match: a => a.includes('inverse head') },
+                { key: 'hs', label: 'Head & Shoulders Top', match: a => a.includes('head') && a.includes('shoulders') },
+                { key: 'doubletop', label: 'Double Top', match: a => a.includes('double top') },
+                { key: 'tripletop', label: 'Triple Top', match: a => a.includes('triple top') },
+                { key: 'roundbot', label: 'Rounding Bottom', match: a => a.includes('rounding bottom') },
+                { key: 'roundtop', label: 'Rounding Top', match: a => a.includes('rounding top') },
+                { key: 'bullflag', label: 'Bull Flag', match: a => a.includes('bull flag') },
+                { key: 'bearflag', label: 'Bear Flag', match: a => a.includes('bear flag') },
+                { key: 'bullpennant', label: 'Bull Pennant', match: a => a.includes('bull pennant') },
+                { key: 'bearpennant', label: 'Bear Pennant', match: a => a.includes('bear pennant') },
+                { key: 'powerplay', label: 'Power Play / High Tight Flag', match: a => a.includes('power play') || a.includes('high tight') },
+                { key: 'symtri', label: 'Symmetrical Triangle', match: a => a.includes('symmetrical triangle') },
+                { key: 'asctri', label: 'Ascending Triangle', match: a => a.includes('ascending triangle') },
+                { key: 'desctri', label: 'Descending Triangle', match: a => a.includes('descending triangle') },
+                { key: 'risewedge', label: 'Rising Wedge', match: a => a.includes('rising wedge') },
+                { key: 'fallwedge', label: 'Falling Wedge', match: a => a.includes('falling wedge') },
+                { key: 'bullrect', label: 'Bullish Rectangle', match: a => a.includes('bullish rectangle') },
+                { key: 'bearrect', label: 'Bearish Rectangle', match: a => a.includes('bearish rectangle') },
+                { key: 'broadening', label: 'Broadening Formation', match: a => a.includes('broadening') },
+                { key: 'diamond', label: 'Diamond Top', match: a => a.includes('diamond') },
+                { key: 'aschannel', label: 'Ascending Channel', match: a => a.includes('ascending channel') },
+                { key: 'deschannel', label: 'Descending Channel', match: a => a.includes('descending channel') },
+                { key: 'islandtop', label: 'Island Reversal Top', match: a => a.includes('island reversal top') },
+                { key: 'islandbot', label: 'Island Reversal Bottom', match: a => a.includes('island reversal bottom') },
+                { key: 'vbottom', label: 'V-Bottom Recovery', match: a => a.includes('v-bottom') },
+                { key: 'bumprun', label: 'Bump-and-Run Reversal', match: a => a.includes('bump-and-run') }
             ];
 
-            function _fsQuizGroupOf(name) {
+            function _fsChartPatternKeyOf(name) {
                 const a = String(name || '').toLowerCase();
-                for (const g of _FS_QUIZ_GROUPS) {
+                for (const g of _FS_CHART_PATTERNS) {
                     if (g.match(a)) return g.key;
                 }
                 return null;
@@ -23601,10 +23667,18 @@
                 if (result) result.textContent = 'Searching for a clear pattern…';
                 const statsEl = document.getElementById('fs-pattern-quiz-stats');
                 if (statsEl) statsEl.innerHTML = _fsStatHtml(window._fsTrainStats.quiz);
+                const choicesEl = document.getElementById('fs-pattern-quiz-choices');
+                if (choicesEl) choicesEl.innerHTML = '';
+                window._fsCandlePatternHighlight = null;
 
-                let found = null, scanned = 0;
+                // Balanced deck: target pattern is randomized so the drill can't be gamed
+                // into only ever surfacing the most common/easiest-to-find patterns.
+                const patKeys = _FS_CHART_PATTERNS.map(g => g.key);
+                const want = patKeys[Math.floor(Math.random() * patKeys.length)];
                 const keys = _fsShuffleArr(Array.from(window._ohlcvTickers.keys()))
                     .filter(k => _FS_INDEX_TICKERS.indexOf(k) === -1);
+
+                let chosen = null, fallback = null, scanned = 0;
                 outer:
                 for (const k of keys) {
                     const data = window._ohlcvTickers.get(k);
@@ -23618,46 +23692,64 @@
                         if (!analysis || !analysis.lines || !analysis.lines.length) continue;
                         const top = analysis.lines[0];
                         if (typeof top.score === 'number' && Math.abs(top.score) < 12) continue; // demand a CLEAR pattern
-                        const grp = _fsQuizGroupOf(top.text);
-                        if (!grp) continue;
-                        found = {
-                            ticker: k, idx: rIdx, raw: data,
-                            pattern: top.text, group: grp,
-                            detail: top.detail || '',
+                        const key = _fsChartPatternKeyOf(top.text);
+                        if (!key) continue;
+                        const span = [
+                            typeof analysis.patternStartIdx === 'number' ? analysis.patternStartIdx : Math.max(0, rIdx - 20),
+                            typeof analysis.patternEndIdx === 'number' ? analysis.patternEndIdx : rIdx
+                        ];
+                        const candidate = {
+                            ticker: k, idx: rIdx, raw: data, key, span,
+                            pattern: top.text, detail: top.detail || '',
                             others: analysis.lines.slice(1, 3).map(l => l.text)
                         };
-                        break outer;
+                        if (key === want) { chosen = candidate; break outer; }
+                        if (!fallback) fallback = candidate;
                     }
-                    if (scanned >= 40) break; // safety cap — avoid scanning the entire ticker universe
+                    if (scanned >= 40 && fallback) break; // safety cap — avoid scanning the entire ticker universe
                 }
-                if (!found) {
+                if (!chosen) chosen = fallback;
+                if (!chosen) {
                     if (result) result.textContent = 'No clear pattern found. Try again.';
                     return;
                 }
 
+                // 4 choices: the correct pattern + 3 shuffled distractors from the full canon
+                const others4 = _fsShuffleArr(patKeys.filter(k => k !== chosen.key)).slice(0, 3);
+                const choiceKeys = _fsShuffleArr([chosen.key, ...others4]);
+
                 window._fsPatternQuizState = {
-                    ticker: found.ticker,
-                    idx: found.idx,
-                    raw: found.raw,
-                    truePattern: found.pattern,
-                    trueGroup: found.group,
-                    detail: found.detail,
-                    others: found.others,
+                    ticker: chosen.ticker,
+                    idx: chosen.idx,
+                    raw: chosen.raw,
+                    truePattern: chosen.pattern,
+                    trueKey: chosen.key,
+                    detail: chosen.detail,
+                    others: chosen.others,
                     answered: false
                 };
-                _fsEnterTrainingReplay(found.ticker, found.raw, found.idx, 'Pattern Quiz Mode', 'PATTERN_QUIZ');
+                window._fsCandlePatternHighlight = { ticker: chosen.ticker, span: chosen.span, label: '📐 PATTERN' };
+
+                if (choicesEl) {
+                    choicesEl.innerHTML = choiceKeys.map(k => {
+                        const g = _FS_CHART_PATTERNS.find(x => x.key === k);
+                        return '<button onclick="window.fsPatternQuizGuess(\'' + k + '\')" style="background:#334155; color:white; border:1px solid #475569; padding:5px 4px; border-radius:5px; cursor:pointer; font-size:10px; text-align:left; padding-left:8px;">' + (g ? g.label : k) + '</button>';
+                    }).join('');
+                }
+
+                _fsEnterTrainingReplay(chosen.ticker, chosen.raw, chosen.idx, 'Pattern Quiz Mode', 'PATTERN_QUIZ');
                 if (result) result.textContent = '';
             };
 
             window.fsPatternQuizGuess = function (guessKey) {
                 if (!window._fsPatternQuizState || window._fsPatternQuizState.answered) return; // one answer per question — no stat double-counting
                 window._fsPatternQuizState.answered = true;
-                const { truePattern, trueGroup, ticker, detail, others } = window._fsPatternQuizState;
+                const { truePattern, trueKey, ticker, detail, others } = window._fsPatternQuizState;
 
-                const isCorrect = guessKey === trueGroup;
+                const isCorrect = guessKey === trueKey;
                 const st = _fsRecordStat('quiz', isCorrect);
-                const grpDef = _FS_QUIZ_GROUPS.filter(g => g.key === trueGroup)[0];
-                const trueLabel = grpDef ? grpDef.label : trueGroup;
+                const trueDef = _FS_CHART_PATTERNS.find(g => g.key === trueKey);
+                const trueLabel = trueDef ? trueDef.label : trueKey;
 
                 const result = document.getElementById('fs-pattern-quiz-result');
                 if (result) {
@@ -23676,6 +23768,8 @@
 
                 const nextBtn = document.getElementById('fs-pattern-quiz-next-btn');
                 if (nextBtn) nextBtn.style.display = 'block';
+
+                window.renderFullScreenChart();
             };
 
             /* ═══ 🎯 SWING DECISION TRAINER (new) ═══
@@ -23713,8 +23807,12 @@
                         const analysis = window._fsBuildPriceActionAnalysis ? window._fsBuildPriceActionAnalysis(snippet) : null;
                         if (!analysis) continue;
                         // Only bull-leaning, tempting-looking spots qualify — the hard
-                        // part is telling which of them actually work.
+                        // part is telling which of them actually work. A raw score
+                        // cutoff alone lets through the generic default "WAIT" read
+                        // (nothing tempting there at all), so the action itself must
+                        // also be one of the analyzer's bullish-leaning categories.
                         if (analysis.score < 52) continue;
+                        if (analysis.action === 'WAIT' || analysis.action === 'SELL / AVOID') continue;
                         found = { ticker: k, idx: idx, raw: data, analysis: analysis };
                         break outer;
                     }
@@ -23753,6 +23851,7 @@
                     exitIdx: exitIdx,
                     action: found.analysis.action,
                     score: found.analysis.score,
+                    setup: found.analysis.setup,
                     answered: false
                 };
                 _fsEnterTrainingReplay(found.ticker, raw, idx, 'Decision Trainer', 'TICKER_A');
@@ -23762,7 +23861,7 @@
             window.fsDecisionGuess = function (buys) {
                 if (!window._fsDecisionState || window._fsDecisionState.answered) return; // one answer per question — no stat double-counting
                 window._fsDecisionState.answered = true;
-                const { ticker, idx, raw, pnl, stopped, action, score } = window._fsDecisionState;
+                const { ticker, idx, raw, pnl, stopped, action, score, setup } = window._fsDecisionState;
 
                 // Reveal the full 8-week outcome window
                 window._fsReplay.currentMaxDate = raw[Math.min(idx + 8, raw.length - 1)].date.getTime();
@@ -23778,7 +23877,8 @@
                         '<div style="color:' + (isCorrect ? '#22c55e' : '#ef4444') + ';">' + (isCorrect ? '✅ Good decision!' : '❌ Wrong call.') + '</div>' +
                         '<div style="color:#e2e8f0; margin-top:3px;">8-week result: <b style="color:' + pcol + '">' +
                         (pnl >= 0 ? '+' : '') + pnl.toFixed(1) + '%</b>' + (stopped ? ' (stopped out)' : '') + '</div>' +
-                        '<div style="color:#64748b; font-weight:normal; margin-top:2px;">Analyzer said: ' + action + ' (' + score + '/100)</div>';
+                        '<div style="color:#64748b; font-weight:normal; margin-top:2px;">Analyzer said: ' + action + ' (' + score + '/100)</div>' +
+                        (setup ? '<div style="color:#94a3b8; font-weight:normal; margin-top:2px;">' + setup + '</div>' : '');
                 }
                 const statsEl = document.getElementById('fs-decision-stats');
                 if (statsEl) statsEl.innerHTML = _fsStatHtml(st, true);
@@ -23792,125 +23892,208 @@
                 window.renderFullScreenChart();
             };
 
-            /* ═══ 🔊 VOLUME READ TRAINER ═══
-               Price-action + volume interpretation drill. A weekly candle only
-               becomes a question when its price/volume signature is textbook-clean
-               AND the following 4 weeks CONFIRMED the reading — so every answer
-               is objective and defensible, never a coin flip. After answering, a
-               structured explanation teaches the read: candle anatomy, volume vs
-               the 50-week average, trend context, the underlying principle, and
-               the actual forward outcome (revealed on the chart). */
-            const _FS_VOL_CLASSES = {
-                accum: {
-                    label: 'Accumulation', color: '#4ade80', icon: '🟢',
-                    principle: 'A wide up-bar closing near its high on heavy volume means demand overwhelmed supply. Institutions buy in size and leave exactly this footprint.'
-                },
-                dist: {
-                    label: 'Distribution', color: '#f87171', icon: '🔴',
-                    principle: 'A wide down-bar closing near its low on heavy volume means supply swamped demand. Institutions were unloading into the market.'
-                },
-                dryup: {
-                    label: 'Supply Dry-Up', color: '#38bdf8', icon: '💤',
-                    principle: 'A quiet, narrow bar on very low volume in an uptrend means sellers are exhausted. With no supply left, the path of least resistance is up.'
-                },
-                churn: {
-                    label: 'Churn / No-Result', color: '#fbbf24', icon: '⚠️',
-                    principle: 'Huge effort (volume) with no result (no price progress) means buying is being absorbed by sellers — a caution flag, especially after a run-up.'
-                }
+            /* ═══ 🕯️ CANDLESTICK PATTERN TRAINER ═══
+               Shape-recognition drill over the full classic canon — 8 single-candle,
+               6 two-candle and 4 three-candle patterns. A bar (or bar group) only
+               becomes a question when its geometry is textbook-clean (relative to the
+               recent average range, so it scales across cheap/expensive stocks) —
+               ambiguous shapes are skipped rather than guessed at. Hammer/Hanging Man
+               and Inverted Hammer/Shooting Star share identical shapes and are told
+               apart purely by the preceding trend, exactly as the textbook defines
+               them. The matched candle(s) are boxed on the chart itself, and each
+               question offers 4 choices (the answer + 3 shuffled distractors) so it
+               can't be gamed by pattern-matching the UI. */
+            const _FS_CANDLE_PATTERNS = {
+                bullMarubozu: { label: 'Bullish Marubozu', dir: 'bull', icon: '🟩', principle: 'A full-body candle with almost no wicks — buyers were in control from open to close, no hesitation either side.' },
+                bearMarubozu: { label: 'Bearish Marubozu', dir: 'bear', icon: '🟥', principle: 'A full-body down candle with almost no wicks — sellers dominated the entire session, no relief buying at all.' },
+                doji: { label: 'Doji', dir: 'neutral', icon: '➕', principle: 'Open and close are nearly identical — a tug-of-war that ended in a draw. Signals indecision, often a pause before a turn.' },
+                hammer: { label: 'Hammer', dir: 'bull', icon: '🔨', principle: 'After a decline, a long lower wick shows sellers pushed price down but buyers slammed it back up by the close — a bullish reversal signal.' },
+                hangingMan: { label: 'Hanging Man', dir: 'bear', icon: '🪢', principle: 'The same shape as a Hammer, but after an ADVANCE — the long lower wick shows selling pressure emerged intraday, a warning the uptrend may be tiring.' },
+                invertedHammer: { label: 'Inverted Hammer', dir: 'bull', icon: '🔻', principle: 'After a decline, a long upper wick shows buyers tried to push price up and mostly held it — an early bullish clue, best confirmed by the next candle.' },
+                shootingStar: { label: 'Shooting Star', dir: 'bear', icon: '⭐', principle: 'The same shape as an Inverted Hammer, but after an ADVANCE — buyers pushed price up intraday, then sellers slammed it back down. A bearish reversal warning.' },
+                spinningTop: { label: 'Spinning Top', dir: 'neutral', icon: '🌀', principle: 'A small body with meaningful wicks on both sides — neither side won control. Pure indecision.' },
+                bullEngulf: { label: 'Bullish Engulfing', dir: 'bull', icon: '🟢', principle: 'A down candle followed by an up candle whose body fully swallows it — buyers overwhelmed the prior sellers completely. A strong reversal signal.' },
+                bearEngulf: { label: 'Bearish Engulfing', dir: 'bear', icon: '🔴', principle: 'An up candle followed by a down candle whose body fully swallows it — sellers overwhelmed the prior buyers completely. A strong reversal signal.' },
+                piercing: { label: 'Piercing Line', dir: 'bull', icon: '🗡️', principle: 'A down candle followed by an up candle that opens below the prior low but closes back above its midpoint — a strong two-candle reversal of a decline.' },
+                darkCloud: { label: 'Dark Cloud Cover', dir: 'bear', icon: '☁️', principle: 'An up candle followed by a down candle that opens above the prior high but closes back below its midpoint — a strong two-candle reversal of an advance.' },
+                bullHarami: { label: 'Bullish Harami', dir: 'bull', icon: '🤰', principle: 'A large down candle followed by a small up candle contained entirely within its body — momentum stalled hard, often the first sign of a bottom.' },
+                bearHarami: { label: 'Bearish Harami', dir: 'bear', icon: '🫃', principle: 'A large up candle followed by a small down candle contained entirely within its body — momentum stalled hard, often the first sign of a top.' },
+                morningStar: { label: 'Morning Star', dir: 'bull', icon: '🌅', principle: 'A down candle, a small indecisive candle, then a strong up candle closing back into the first body — a textbook three-candle bottom reversal.' },
+                eveningStar: { label: 'Evening Star', dir: 'bear', icon: '🌆', principle: 'An up candle, a small indecisive candle, then a strong down candle closing back into the first body — a textbook three-candle top reversal.' },
+                threeSoldiers: { label: 'Three White Soldiers', dir: 'bull', icon: '⚔️', principle: 'Three consecutive long up candles, each closing higher with small wicks — sustained, orderly buying and a strong continuation/reversal signal.' },
+                threeCrows: { label: 'Three Black Crows', dir: 'bear', icon: '🐦', principle: 'Three consecutive long down candles, each closing lower with small wicks — sustained, orderly selling and a strong continuation/reversal signal.' }
             };
 
-            // Classify raw[i] from plain OHLCV only (no lookahead in the features;
-            // the forward window is used purely to CONFIRM the textbook read).
-            window._fsVolClassify = function (raw, i) {
-                if (i < 55 || i > raw.length - 5) return null;
-                const r = raw[i], prev = raw[i - 1];
-                if (!r || !prev || !prev.close || !r.vol) return null;
-                let sumV = 0;
-                for (let j = i - 50; j < i; j++) sumV += raw[j].vol;
-                const avgVol = sumV / 50;
-                if (avgVol <= 0) return null;
-                const volR = r.vol / avgVol;
-                let sumRg = 0;
-                for (let j = i - 14; j < i; j++) sumRg += Math.max(0, raw[j].high - raw[j].low);
-                const avgRg = sumRg / 14;
+            function _fsCandleGeom(r) {
                 const range = r.high - r.low;
-                if (range <= 0 || avgRg <= 0) return null;
-                const spreadR = range / avgRg;
-                const closeLoc = ((r.close - r.low) / range) * 100;
-                const bodyPct = (Math.abs(r.close - r.open) / range) * 100;
-                const chgPct = ((r.close - prev.close) / prev.close) * 100;
-                let sum40 = 0;
-                for (let j = i - 39; j <= i; j++) sum40 += raw[j].close;
-                const above40 = r.close > sum40 / 40;
-                const fEnd = Math.min(raw.length - 1, i + 4);
-                const fwdPct = ((raw[fEnd].close - r.close) / r.close) * 100;
-                let fwdMinLow = Infinity, fwdMaxHigh = -Infinity;
-                for (let j = i + 1; j <= fEnd; j++) {
-                    if (raw[j].low < fwdMinLow) fwdMinLow = raw[j].low;
-                    if (raw[j].high > fwdMaxHigh) fwdMaxHigh = raw[j].high;
-                }
-                const feats = { volR, spreadR, closeLoc, bodyPct, chgPct, above40, fwdPct };
+                const body = Math.abs(r.close - r.open);
+                const top = Math.max(r.open, r.close);
+                const bot = Math.min(r.open, r.close);
+                return {
+                    range, body, top, bot,
+                    upperWick: r.high - top, lowerWick: bot - r.low,
+                    bull: r.close > r.open, bear: r.close < r.open
+                };
+            }
 
-                // ACCUMULATION: heavy-vol wide up-bar closing strong; confirmed = low held, price advanced
-                if (volR >= 1.6 && chgPct >= 2.5 && closeLoc >= 62 && bodyPct >= 45 && spreadR >= 1.0) {
-                    return (fwdMinLow >= r.low && fwdPct > 1.5) ? { cls: 'accum', feats } : null;
+            // Trend BEFORE the pattern (ending at i-1) — decides Hammer vs Hanging Man,
+            // and Inverted Hammer vs Shooting Star, exactly as the textbook does.
+            function _fsCandleTrend(raw, i, n) {
+                n = n || 8;
+                if (i - 1 - n < 0) return 'flat';
+                const chg = (raw[i - 1].close - raw[i - 1 - n].close) / raw[i - 1 - n].close;
+                if (chg >= 0.05) return 'up';
+                if (chg <= -0.05) return 'down';
+                return 'flat';
+            }
+
+            // Classify raw[i] (and, for multi-candle patterns, raw[i-1]/raw[i-2]) from
+            // plain OHLC only — no lookahead in the shape checks. Returns the single
+            // best-matching pattern (triples > doubles > singles, most-specific first)
+            // as { key, span:[startIdx,endIdx], feats } or null if nothing clean matches.
+            window._fsClassifyCandlePattern = function (raw, i) {
+                if (i < 10 || i > raw.length - 4) return null;
+                const r0 = raw[i], r1 = raw[i - 1], r2 = raw[i - 2];
+                if (!r0 || !r1) return null;
+                const g0 = _fsCandleGeom(r0);
+                if (g0.range <= 0) return null;
+
+                let sumRg = 0, cnt = 0;
+                for (let j = Math.max(0, i - 14); j < i; j++) { sumRg += (raw[j].high - raw[j].low); cnt++; }
+                const avgRg = cnt ? sumRg / cnt : g0.range;
+                if (avgRg <= 0) return null;
+
+                const trend = _fsCandleTrend(raw, i);
+                const fEnd = Math.min(raw.length - 1, i + 3);
+                const fwdPct = ((raw[fEnd].close - r0.close) / r0.close) * 100;
+                const feats = { trend, fwdPct };
+
+                // ── Triple-candle (checked first — most specific) ──
+                if (i >= 2 && r2) {
+                    const g1 = _fsCandleGeom(r1), g2 = _fsCandleGeom(r2);
+                    if (g2.bear && g2.body >= avgRg * 0.5 && g1.body <= avgRg * 0.35 &&
+                        g0.bull && g0.body >= avgRg * 0.5 &&
+                        r0.close > (r2.open + r2.close) / 2 && Math.max(r1.open, r1.close) < r2.close) {
+                        return { key: 'morningStar', span: [i - 2, i], feats };
+                    }
+                    if (g2.bull && g2.body >= avgRg * 0.5 && g1.body <= avgRg * 0.35 &&
+                        g0.bear && g0.body >= avgRg * 0.5 &&
+                        r0.close < (r2.open + r2.close) / 2 && Math.min(r1.open, r1.close) > r2.close) {
+                        return { key: 'eveningStar', span: [i - 2, i], feats };
+                    }
+                    if (g2.bull && g1.bull && g0.bull &&
+                        g2.body >= avgRg * 0.45 && g1.body >= avgRg * 0.45 && g0.body >= avgRg * 0.45 &&
+                        r1.close > r2.close && r0.close > r1.close &&
+                        r1.open > r2.open && r1.open < r2.close &&
+                        r0.open > r1.open && r0.open < r1.close &&
+                        g1.upperWick <= g1.body * 0.4 && g0.upperWick <= g0.body * 0.4) {
+                        return { key: 'threeSoldiers', span: [i - 2, i], feats };
+                    }
+                    if (g2.bear && g1.bear && g0.bear &&
+                        g2.body >= avgRg * 0.45 && g1.body >= avgRg * 0.45 && g0.body >= avgRg * 0.45 &&
+                        r1.close < r2.close && r0.close < r1.close &&
+                        r1.open < r2.open && r1.open > r2.close &&
+                        r0.open < r1.open && r0.open > r1.close &&
+                        g1.lowerWick <= g1.body * 0.4 && g0.lowerWick <= g0.body * 0.4) {
+                        return { key: 'threeCrows', span: [i - 2, i], feats };
+                    }
                 }
-                // DISTRIBUTION: heavy-vol wide down-bar closing weak; confirmed = high capped, price kept falling
-                if (volR >= 1.6 && chgPct <= -2.5 && closeLoc <= 38 && bodyPct >= 45 && spreadR >= 1.0) {
-                    return (fwdMaxHigh <= r.high && fwdPct < -1.5) ? { cls: 'dist', feats } : null;
+
+                // ── Double-candle ──
+                if (i >= 1) {
+                    const g1 = _fsCandleGeom(r1);
+                    if (g1.bear && g0.bull && g0.body >= avgRg * 0.5 && r0.open <= r1.close && r0.close >= r1.open) {
+                        return { key: 'bullEngulf', span: [i - 1, i], feats };
+                    }
+                    if (g1.bull && g0.bear && g0.body >= avgRg * 0.5 && r0.open >= r1.close && r0.close <= r1.open) {
+                        return { key: 'bearEngulf', span: [i - 1, i], feats };
+                    }
+                    if (g1.bear && g1.body >= avgRg * 0.4 && g0.bull &&
+                        r0.open < r1.low && r0.close > (r1.open + r1.close) / 2 && r0.close < r1.open) {
+                        return { key: 'piercing', span: [i - 1, i], feats };
+                    }
+                    if (g1.bull && g1.body >= avgRg * 0.4 && g0.bear &&
+                        r0.open > r1.high && r0.close < (r1.open + r1.close) / 2 && r0.close > r1.open) {
+                        return { key: 'darkCloud', span: [i - 1, i], feats };
+                    }
+                    if (g1.bear && g1.body >= avgRg * 0.5 && g0.bull &&
+                        r0.open >= r1.close && r0.close <= r1.open && g0.body <= g1.body * 0.6) {
+                        return { key: 'bullHarami', span: [i - 1, i], feats };
+                    }
+                    if (g1.bull && g1.body >= avgRg * 0.5 && g0.bear &&
+                        r0.open <= r1.close && r0.close >= r1.open && g0.body <= g1.body * 0.6) {
+                        return { key: 'bearHarami', span: [i - 1, i], feats };
+                    }
                 }
-                // SUPPLY DRY-UP: very low vol, narrow quiet bar in an uptrend; confirmed = advance followed
-                if (volR <= 0.55 && spreadR <= 0.8 && above40 && Math.abs(chgPct) <= 3.5) {
-                    return (fwdPct > 2.5) ? { cls: 'dryup', feats } : null;
+
+                // ── Single-candle ──
+                if (g0.body >= g0.range * 0.92) {
+                    return { key: g0.bull ? 'bullMarubozu' : 'bearMarubozu', span: [i, i], feats };
                 }
-                // CHURN: heavy vol, tiny body, no net progress in an uptrend; confirmed = stall or decline
-                if (volR >= 1.6 && bodyPct <= 25 && Math.abs(chgPct) <= 1.5 && above40 && spreadR <= 1.15) {
-                    return (fwdPct < 0.5) ? { cls: 'churn', feats } : null;
+                if (g0.body <= g0.range * 0.08 && g0.range >= avgRg * 0.4) {
+                    return { key: 'doji', span: [i, i], feats };
+                }
+                if (g0.body <= g0.range * 0.35 && g0.lowerWick >= g0.body * 2 &&
+                    g0.upperWick <= g0.body * 0.6 && g0.lowerWick >= g0.range * 0.5) {
+                    if (trend === 'down') return { key: 'hammer', span: [i, i], feats };
+                    if (trend === 'up') return { key: 'hangingMan', span: [i, i], feats };
+                }
+                if (g0.body <= g0.range * 0.35 && g0.upperWick >= g0.body * 2 &&
+                    g0.lowerWick <= g0.body * 0.6 && g0.upperWick >= g0.range * 0.5) {
+                    if (trend === 'down') return { key: 'invertedHammer', span: [i, i], feats };
+                    if (trend === 'up') return { key: 'shootingStar', span: [i, i], feats };
+                }
+                if (g0.body >= g0.range * 0.1 && g0.body <= g0.range * 0.4 &&
+                    g0.upperWick >= g0.range * 0.2 && g0.lowerWick >= g0.range * 0.2) {
+                    return { key: 'spinningTop', span: [i, i], feats };
                 }
                 return null;
             };
 
-            window.fsVolReadTraining = function () {
+            window.fsCandlePatternTraining = function () {
                 if (!window._ohlcvTickers || window._ohlcvTickers.size === 0) {
                     alert("Data not fully loaded yet.");
                     return;
                 }
-                _fsCloseTrainingUIs('fs-volread-ui');
-                const ui = document.getElementById('fs-volread-ui');
+                _fsCloseTrainingUIs('fs-candle-pattern-ui');
+                const ui = document.getElementById('fs-candle-pattern-ui');
                 if (ui) ui.style.display = 'block';
-                const nextBtn = document.getElementById('fs-volread-next-btn');
+                const nextBtn = document.getElementById('fs-candle-pattern-next-btn');
                 if (nextBtn) nextBtn.style.display = 'none';
-                const result = document.getElementById('fs-volread-result');
-                if (result) result.textContent = 'Searching for a clean volume event…';
-                const explain = document.getElementById('fs-volread-explain');
+                const result = document.getElementById('fs-candle-pattern-result');
+                if (result) result.textContent = 'Searching for a clean pattern…';
+                const explain = document.getElementById('fs-candle-pattern-explain');
                 if (explain) explain.innerHTML = '';
-                const statsEl = document.getElementById('fs-volread-stats');
-                if (statsEl) statsEl.innerHTML = _fsStatHtml(window._fsTrainStats.vol);
+                const statsEl = document.getElementById('fs-candle-pattern-stats');
+                if (statsEl) statsEl.innerHTML = _fsStatHtml(window._fsTrainStats.candle);
+                const choicesEl = document.getElementById('fs-candle-pattern-choices');
+                if (choicesEl) choicesEl.innerHTML = '';
+                window._fsCandlePatternHighlight = null;
 
-                // Balanced deck: target class is randomized so the drill can't be gamed
-                const clsKeys = Object.keys(_FS_VOL_CLASSES);
-                const want = clsKeys[Math.floor(Math.random() * clsKeys.length)];
+                // Balanced deck: target pattern is randomized so the drill can't be gamed
+                const patKeys = Object.keys(_FS_CANDLE_PATTERNS);
+                const want = patKeys[Math.floor(Math.random() * patKeys.length)];
                 const keys = _fsShuffleArr(Array.from(window._ohlcvTickers.keys()))
                     .filter(k => _FS_INDEX_TICKERS.indexOf(k) === -1);
 
                 let chosen = null, fallback = null, scanned = 0;
                 for (const k of keys) {
                     const data = window._ohlcvTickers.get(k);
-                    if (!data || data.length < 90) continue;
+                    if (!data || data.length < 40) continue;
                     scanned++;
                     const matches = [];
-                    for (let i = 55; i < data.length - 5; i++) {
-                        const res = window._fsVolClassify(data, i);
+                    for (let i = 10; i < data.length - 4; i++) {
+                        const res = window._fsClassifyCandlePattern(data, i);
                         if (!res) continue;
-                        if (res.cls === want) matches.push({ idx: i, res });
-                        else if (!fallback) fallback = { ticker: k, raw: data, idx: i, cls: res.cls, feats: res.feats };
+                        if (res.key === want) matches.push(res);
+                        else if (!fallback) fallback = { ticker: k, raw: data, key: res.key, span: res.span, feats: res.feats };
                     }
                     if (matches.length) {
                         const pick = matches[Math.floor(Math.random() * matches.length)];
-                        chosen = { ticker: k, raw: data, idx: pick.idx, cls: pick.res.cls, feats: pick.res.feats };
+                        chosen = { ticker: k, raw: data, key: pick.key, span: pick.span, feats: pick.feats };
                         break;
                     }
-                    if (scanned >= 40 && fallback) break;
+                    if (scanned >= 50 && fallback) break;
                 }
                 if (!chosen) chosen = fallback;
                 if (!chosen) {
@@ -23918,75 +24101,83 @@
                     return;
                 }
 
-                window._fsVolReadState = {
-                    ticker: chosen.ticker, idx: chosen.idx, raw: chosen.raw,
-                    cls: chosen.cls, feats: chosen.feats, answered: false
+                // 4 choices: the correct pattern + 3 shuffled distractors from the full canon
+                const others = _fsShuffleArr(patKeys.filter(k => k !== chosen.key)).slice(0, 3);
+                const choiceKeys = _fsShuffleArr([chosen.key, ...others]);
+
+                window._fsCandlePatternState = {
+                    ticker: chosen.ticker, raw: chosen.raw,
+                    key: chosen.key, span: chosen.span, feats: chosen.feats, answered: false
                 };
+                window._fsCandlePatternHighlight = { ticker: chosen.ticker, span: chosen.span };
+
+                if (choicesEl) {
+                    choicesEl.innerHTML = choiceKeys.map(k => {
+                        const info = _FS_CANDLE_PATTERNS[k];
+                        const c = info.dir === 'bull' ? '#4ade80' : info.dir === 'bear' ? '#f87171' : '#94a3b8';
+                        const bg = info.dir === 'bull' ? 'rgba(34,197,94,0.14)' : info.dir === 'bear' ? 'rgba(239,68,68,0.14)' : 'rgba(148,163,184,0.12)';
+                        const bd = info.dir === 'bull' ? 'rgba(34,197,94,0.4)' : info.dir === 'bear' ? 'rgba(239,68,68,0.4)' : 'rgba(148,163,184,0.35)';
+                        return '<button onclick="window.fsCandlePatternGuess(\'' + k + '\')" style="background:' + bg + '; color:' + c + '; border:1px solid ' + bd + '; padding:6px 4px; border-radius:6px; cursor:pointer; font-size:10.5px; font-weight:700; text-align:left; padding-left:10px;">' + info.icon + ' ' + info.label + '</button>';
+                    }).join('');
+                }
 
                 window._fsReplay.paused = true;
                 const btn = document.getElementById('fs-replay-btn');
                 const mBtn = document.getElementById('fs-mobile-replay-btn');
                 if (btn) btn.textContent = '▶';
                 if (mBtn) mBtn.textContent = '▶';
-                _fsEnterTrainingReplay(chosen.ticker, chosen.raw, chosen.idx, 'Volume Read', 'TICKER_A');
+                _fsEnterTrainingReplay(chosen.ticker, chosen.raw, chosen.span[1], 'Candle Pattern', 'TICKER_A');
                 if (result) result.textContent = '';
             };
 
-            window.fsVolReadGuess = function (guessKey) {
-                const state = window._fsVolReadState;
+            window.fsCandlePatternGuess = function (guessKey) {
+                const state = window._fsCandlePatternState;
                 if (!state || state.answered) return; // one answer per question — no stat double-counting
                 state.answered = true;
-                const { ticker, idx, raw, cls, feats } = state;
+                const { ticker, raw, key, span, feats } = state;
 
-                // Reveal the 4-week confirmation window on the chart
-                window._fsReplay.currentMaxDate = raw[Math.min(idx + 4, raw.length - 1)].date.getTime();
+                // Reveal a few bars forward so the pattern's implied bias's follow-through is visible
+                const revealIdx = Math.min(span[1] + 3, raw.length - 1);
+                window._fsReplay.currentMaxDate = raw[revealIdx].date.getTime();
 
-                const isCorrect = guessKey === cls;
-                const st = _fsRecordStat('vol', isCorrect);
-                const info = _FS_VOL_CLASSES[cls];
-                const guessInfo = _FS_VOL_CLASSES[guessKey];
+                const isCorrect = guessKey === key;
+                const st = _fsRecordStat('candle', isCorrect);
+                const info = _FS_CANDLE_PATTERNS[key];
+                const guessInfo = _FS_CANDLE_PATTERNS[guessKey];
+                const dirColor = info.dir === 'bull' ? '#4ade80' : info.dir === 'bear' ? '#f87171' : '#94a3b8';
 
-                const result = document.getElementById('fs-volread-result');
+                const result = document.getElementById('fs-candle-pattern-result');
                 if (result) {
                     result.innerHTML = isCorrect
                         ? '<span style="color:#22c55e;">✅ Correct — ' + info.icon + ' ' + info.label + '</span>'
                         : '<span style="color:#ef4444;">❌ You said "' + (guessInfo ? guessInfo.label : guessKey) +
-                        '" — it was ' + info.icon + ' <span style="color:' + info.color + '">' + info.label + '</span></span>';
+                        '" — it was ' + info.icon + ' <span style="color:' + dirColor + '">' + info.label + '</span></span>';
                 }
 
-                // ── Structured price-action explanation ──
-                const f = feats;
+                // ── Structured explanation ──
+                const barsTxt = span[1] > span[0] ? (span[1] - span[0] + 1) + '-candle pattern' : 'single-candle pattern';
                 const sg = v => (v >= 0 ? '+' : '');
                 const row = 'display:flex; gap:6px; margin-top:3px;';
-                const key = 'color:#64748b; min-width:50px; flex-shrink:0; font-weight:700;';
-                const volDesc = f.volR >= 2.5 ? 'massive — unmistakable institutional activity'
-                    : f.volR >= 1.6 ? 'clearly above normal — institutions were active'
-                        : f.volR <= 0.55 ? 'a fraction of normal — the crowd stepped away'
-                            : 'near normal';
-                const closeDesc = f.closeLoc >= 70 ? ' (buyers won the week)'
-                    : f.closeLoc <= 30 ? ' (sellers won the week)'
-                        : ' (a stand-off)';
+                const keyStyle = 'color:#64748b; min-width:50px; flex-shrink:0; font-weight:700;';
+                const dirTxt = info.dir === 'bull' ? 'Bullish' : info.dir === 'bear' ? 'Bearish' : 'Neutral / Indecision';
                 const lines = [
-                    '<div style="' + row + '"><span style="' + key + '">Price</span><span>' +
-                    sg(f.chgPct) + f.chgPct.toFixed(1) + '% week · closed at <b>' + Math.round(f.closeLoc) + '%</b> of its range' + closeDesc +
-                    ' · spread <b>' + f.spreadR.toFixed(1) + '×</b> normal · body ' + Math.round(f.bodyPct) + '% of range</span></div>',
-                    '<div style="' + row + '"><span style="' + key + '">Volume</span><span><b>' + f.volR.toFixed(1) + '×</b> the 50-week average — ' + volDesc + '</span></div>',
-                    '<div style="' + row + '"><span style="' + key + '">Trend</span><span>' + (f.above40 ? 'Above' : 'Below') + ' the 40-week MA — the same bar means different things in different trends</span></div>',
-                    '<div style="' + row + '"><span style="' + key + '">Next 4w</span><span><b style="color:' + (f.fwdPct >= 0 ? '#4ade80' : '#f87171') + ';">' +
-                    sg(f.fwdPct) + f.fwdPct.toFixed(1) + '%</b> — the market confirmed this read (now revealed on the chart)</span></div>',
-                    '<div style="margin-top:7px; padding:6px 8px; background:rgba(148,163,184,0.08); border-left:2px solid ' + info.color +
-                    '; border-radius:0 5px 5px 0; color:#e2e8f0;">' + info.icon + ' <b style="color:' + info.color + '">' + info.label + ':</b> ' + info.principle + '</div>'
+                    '<div style="' + row + '"><span style="' + keyStyle + '">Shape</span><span>' + barsTxt + ' · preceding trend: <b>' + feats.trend + '</b></span></div>',
+                    '<div style="' + row + '"><span style="' + keyStyle + '">Bias</span><span style="color:' + dirColor + ';font-weight:700;">' + dirTxt + '</span></div>',
+                    '<div style="' + row + '"><span style="' + keyStyle + '">Next 3w</span><span><b style="color:' + (feats.fwdPct >= 0 ? '#4ade80' : '#f87171') + ';">' +
+                    sg(feats.fwdPct) + feats.fwdPct.toFixed(1) + '%</b> — now revealed on the chart</span></div>',
+                    '<div style="margin-top:7px; padding:6px 8px; background:rgba(148,163,184,0.08); border-left:2px solid ' + dirColor +
+                    '; border-radius:0 5px 5px 0; color:#e2e8f0;">' + info.icon + ' <b style="color:' + dirColor + '">' + info.label + ':</b> ' + info.principle + '</div>'
                 ];
-                const explain = document.getElementById('fs-volread-explain');
+                const explain = document.getElementById('fs-candle-pattern-explain');
                 if (explain) explain.innerHTML = lines.join('');
 
-                const statsEl = document.getElementById('fs-volread-stats');
+                const statsEl = document.getElementById('fs-candle-pattern-stats');
                 if (statsEl) statsEl.innerHTML = _fsStatHtml(st);
 
                 const tickerSearch = document.getElementById('fs-ticker-search');
                 if (tickerSearch) tickerSearch.value = ticker; // reveal ticker
 
-                const nextBtn = document.getElementById('fs-volread-next-btn');
+                const nextBtn = document.getElementById('fs-candle-pattern-next-btn');
                 if (nextBtn) nextBtn.style.display = 'block';
 
                 window.renderFullScreenChart();
@@ -24134,7 +24325,7 @@
                     (confirmPct >= 0 ? '#4ade80' : '#f87171') + ';">' + sg(confirmPct) + confirmPct.toFixed(1) +
                     '%</b> — the market confirmed this read (now revealed on the chart)</span></div>');
                 const principle = label === 'trim'
-                    ? 'A climax run on heavy volume after a big advance is often the last gasp of a move. Selling into that strength — instead of waiting for the reversal to prove itself — locks in the gain.'
+                    ? 'A parabolic run this stretched from its moving averages, showing churn or a reversal wick at the highs, is often the last gasp of a move. Selling into that strength — instead of waiting for the reversal to prove itself — locks in the gain.'
                     : label === 'sell'
                         ? 'Once the weekly chart flips to distribution, the trend that justified the buy is gone. Holding and hoping just adds risk to a broken thesis.'
                         : 'The trend was still healthy and the drawdown was shallow. Exiting a working trade on noise is how good trades get cut short.';
