@@ -6432,11 +6432,88 @@
                         title="Price / volume breadth">📈 Technical</button>
                     <button class="breadth-mode-btn" id="breadth-mode-fund" onclick="switchBreadthMode('fund')"
                         title="Earnings &amp; revenue growth from quarterly results">💰 Fundamental</button>
+                    <button class="breadth-mode-btn" id="breadth-mode-charts" onclick="switchBreadthMode('charts')"
+                        title="Historical % of stocks below key moving averages">📉 Breadth Charts</button>
                 </div>
                 <div class="deal-sub-pane active-sub-pane" style="overflow-y:auto;flex:1;">
                     <div id="breadth-content" style="padding:8px;">
                         <div style="color:rgba(255,255,255,0.4);text-align:center;padding:40px 20px;font-size:12px;">
                             Breadth data will load after OHLCV data is ready…</div>
+                    </div>
+                    <!-- Historical Market Breadth Charts: % of stocks below 50D/100D/200D MA + 52W High/Low, over time -->
+                    <div id="breadth-charts" style="display:none;">
+                        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 8px 4px;">
+                            <select id="bc-group-sel" class="breadth-index-select"
+                                onchange="window._bcGroup=this.value; window.renderBreadthCharts();">
+                                <option value="all">All Stocks</option>
+                            </select>
+                            <div class="breadth-subtabs" id="bc-dur-tabs">
+                                <button class="breadth-subtab" data-dur="6m" onclick="window._bcSetDuration('6m')">6M</button>
+                                <button class="breadth-subtab active" data-dur="1y" onclick="window._bcSetDuration('1y')">1Y</button>
+                                <button class="breadth-subtab" data-dur="3y" onclick="window._bcSetDuration('3y')">3Y</button>
+                                <button class="breadth-subtab" data-dur="5y" onclick="window._bcSetDuration('5y')">5Y</button>
+                                <button class="breadth-subtab" data-dur="all" onclick="window._bcSetDuration('all')">All</button>
+                            </div>
+                        </div>
+                        <div id="bc-charts-wrap" style="padding:6px 8px 12px;position:relative;">
+                            <div class="bc-mode-card" id="bc-mode-card">
+                                <div class="bc-mode-head">
+                                    <div class="bc-mode-title">
+                                        <span class="bc-mode-icon" id="bc-mode-icon">❔</span>
+                                        <div>
+                                            <div class="bc-mode-label" id="bc-mode-label">Loading…</div>
+                                            <div class="bc-mode-sub" id="bc-mode-sub">—</div>
+                                        </div>
+                                    </div>
+                                    <div class="bc-mode-score-wrap">
+                                        <div class="bc-mode-score-val" id="bc-mode-score-val">—</div>
+                                        <div class="bc-mode-score-delta" id="bc-mode-score-delta"></div>
+                                    </div>
+                                </div>
+                                <div class="bc-mode-gauge-track">
+                                    <div class="bc-mode-gauge-pointer" id="bc-mode-pointer"></div>
+                                </div>
+                                <div class="bc-mode-gauge-labels">
+                                    <span>Risk-Off</span><span>Neutral</span><span>Risk-On</span>
+                                </div>
+                                <div class="bc-mode-chips" id="bc-mode-chips"></div>
+                                <div class="bc-mode-history-label">Regime History <span
+                                        id="bc-mode-history-range"></span></div>
+                                <canvas id="bc-mode-history" class="bc-mode-history"></canvas>
+                            </div>
+                            <div class="bc-chart-card" data-accent="200">
+                                <div class="bc-chart-head">
+                                    <div class="bc-chart-title">% Below 200D MA <span>(40-week)</span></div>
+                                </div>
+                                <canvas id="bc-canvas-200" class="bc-canvas"></canvas>
+                            </div>
+                            <div class="bc-chart-card" data-accent="100">
+                                <div class="bc-chart-head">
+                                    <div class="bc-chart-title">% Below 100D MA <span>(20-week)</span></div>
+                                </div>
+                                <canvas id="bc-canvas-100" class="bc-canvas"></canvas>
+                            </div>
+                            <div class="bc-chart-card" data-accent="50">
+                                <div class="bc-chart-head">
+                                    <div class="bc-chart-title">% Below 50D MA <span>(10-week)</span></div>
+                                </div>
+                                <canvas id="bc-canvas-50" class="bc-canvas"></canvas>
+                            </div>
+                            <div class="bc-chart-card" data-accent="hl">
+                                <div class="bc-chart-head">
+                                    <div class="bc-chart-title">52-Week High / Low <span>(within 3% of a 52W
+                                            extreme)</span></div>
+                                    <div class="bc-legend">
+                                        <span class="bc-legend-item"><span class="bc-legend-swatch"
+                                                style="background:#4ade80;"></span>New Highs</span>
+                                        <span class="bc-legend-item"><span class="bc-legend-swatch"
+                                                style="background:#f87171;"></span>New Lows</span>
+                                    </div>
+                                </div>
+                                <canvas id="bc-canvas-hl" class="bc-canvas"></canvas>
+                            </div>
+                            <div class="bc-tooltip" id="bc-tooltip"></div>
+                        </div>
                     </div>
                     <!-- Fundamental breadth = Results Analysis, inline -->
                     <div id="breadth-fundamental" style="display:none;">
@@ -9732,13 +9809,18 @@
             window._breadthMode = mode;
             const techBtn = document.getElementById('breadth-mode-tech');
             const fundBtn = document.getElementById('breadth-mode-fund');
+            const chartsBtn = document.getElementById('breadth-mode-charts');
             const techPane = document.getElementById('breadth-content');
             const fundPane = document.getElementById('breadth-fundamental');
+            const chartsPane = document.getElementById('breadth-charts');
             if (techBtn) techBtn.classList.toggle('active', mode === 'tech');
             if (fundBtn) fundBtn.classList.toggle('active', mode === 'fund');
+            if (chartsBtn) chartsBtn.classList.toggle('active', mode === 'charts');
             if (techPane) techPane.style.display = mode === 'tech' ? '' : 'none';
             if (fundPane) fundPane.style.display = mode === 'fund' ? '' : 'none';
+            if (chartsPane) chartsPane.style.display = mode === 'charts' ? '' : 'none';
             if (mode === 'fund' && typeof window.refreshResultsDash === 'function') window.refreshResultsDash();
+            if (mode === 'charts' && typeof window.renderBreadthCharts === 'function') window.renderBreadthCharts();
         }
         window.switchBreadthMode = switchBreadthMode;
 
@@ -9746,6 +9828,8 @@
         function refreshActiveBreadth() {
             if (window._breadthMode === 'fund') {
                 if (typeof window.refreshResultsDash === 'function') window.refreshResultsDash();
+            } else if (window._breadthMode === 'charts') {
+                if (typeof window.renderBreadthCharts === 'function') window.renderBreadthCharts();
             } else {
                 renderBreadthTab(window._breadthSort || 'momentum', window._breadthDir || 1);
             }
@@ -9983,6 +10067,749 @@
             pane.innerHTML = toolbar + summaryStrip + strengthRadar + `<div style="padding:0 4px 8px;">` + content + `</div>`;
         }
         window.renderBreadthTab = renderBreadthTab;
+
+        // ══════════════════════════════════════════════════════
+        //   MARKET BREADTH CHARTS — historical % of stocks below
+        //   the 50D/100D/200D (10/20/40-week) moving averages, plus
+        //   a 52-week new-high / new-low breadth line. The classic
+        //   "how healthy is this market" gauges, over time.
+        // ══════════════════════════════════════════════════════
+        window._bcDuration = window._bcDuration || '1y';
+        window._bcGroup = window._bcGroup || 'idx_Nifty_750';
+        const _BC_DUR_WEEKS = { '6m': 26, '1y': 52, '3y': 156, '5y': 260, 'all': Infinity };
+
+        window._bcSetDuration = function (dur) {
+            window._bcDuration = dur;
+            document.querySelectorAll('#bc-dur-tabs .breadth-subtab').forEach(function (b) {
+                b.classList.toggle('active', b.dataset.dur === dur);
+            });
+            window.renderBreadthCharts();
+        };
+
+        // Mirrors the Full Screen Chart's fs-group-select convention (all /
+        // favorites / holdings / index_main / idx_<Name>) so indices — which
+        // carry the FULL constituent list, unlike a personal watchlist — are
+        // first-class filter options here too.
+        function _bcPopulateGroupSelect() {
+            const sel = document.getElementById('bc-group-sel');
+            if (!sel) return;
+            const prev = sel.value || window._bcGroup || 'all';
+            let html = '<option value="all">All Stocks</option>' +
+                '<option value="favorites">⭐ Favorites</option>' +
+                '<option value="holdings">💼 Holdings</option>';
+            if (window.indexDataMap) {
+                const names = Object.keys(window.indexDataMap).sort();
+                if (names.some(function (nm) { return nm.toLowerCase() === 'index_main'; })) {
+                    html += '<option value="index_main">📈 Index_main</option>';
+                }
+                names.forEach(function (idxName) {
+                    if (idxName.toLowerCase() === 'index_main') return;
+                    html += '<option value="idx_' + idxName + '">' + idxName + '</option>';
+                });
+            }
+            if (sel.innerHTML !== html) sel.innerHTML = html;
+            const hasPrev = Array.prototype.some.call(sel.options, function (o) { return o.value === prev; });
+            sel.value = hasPrev ? prev : 'all';
+            window._bcGroup = sel.value;
+        }
+
+        function _bcUniverseSet() {
+            const g = window._bcGroup || 'all';
+            if (g === 'all') return null; // null = no filter, whole universe
+            if (g === 'favorites' || g === 'holdings') {
+                const key = g === 'favorites' ? 'F' : 'H';
+                const s = new Set();
+                if (window._fhTickers && window._fhTickers[key]) {
+                    window._fhTickers[key].forEach(function (t) { s.add(String(t).replace(/\.NS$/i, '').toUpperCase()); });
+                }
+                return s;
+            }
+            if (g === 'index_main') {
+                const key = Object.keys(window.indexDataMap || {}).find(function (k) { return k.toLowerCase() === 'index_main'; }) || 'Index_main';
+                return (window.indexDataMap && window.indexDataMap[key]) ? window.indexDataMap[key] : new Set();
+            }
+            if (g.indexOf('idx_') === 0) {
+                const idxName = g.slice(4);
+                return (window.indexDataMap && window.indexDataMap[idxName]) ? window.indexDataMap[idxName] : new Set();
+            }
+            return null;
+        }
+
+        // Single pass per ticker with rolling 10/20/40-week sums plus a
+        // monotonic-deque 52-week high/low tracker — O(total bars), not
+        // O(bars × window), so even a full "All" history stays instant.
+        function _bcComputeSeries(maxWeeks) {
+            if (!window._ohlcvTickers || !window._ohlcvTickers.size) return null;
+            const universe = _bcUniverseSet();
+
+            let maxLen = 0;
+            const list = [];
+            window._ohlcvTickers.forEach(function (arr, tk) {
+                if (universe && !universe.has(tk)) return;
+                if (!arr || arr.length < 40) return;
+                list.push(arr);
+                if (arr.length > maxLen) maxLen = arr.length;
+            });
+            if (!list.length) return null;
+
+            const K = isFinite(maxWeeks) ? Math.min(maxWeeks, maxLen) : maxLen;
+            const cnt10 = new Float64Array(K), below10 = new Float64Array(K);
+            const cnt20 = new Float64Array(K), below20 = new Float64Array(K);
+            const cnt40 = new Float64Array(K), below40 = new Float64Array(K);
+            const cntHL = new Float64Array(K), newHigh = new Float64Array(K), newLow = new Float64Array(K);
+            const dateAt = new Array(K).fill(null);
+            const HL_WIN = 52;
+            const HL_BUFFER = 0.03; // within 3% of the 52-week high/low still counts
+
+            for (let t = 0; t < list.length; t++) {
+                const arr = list[t];
+                const n = arr.length;
+                let sum10 = 0, sum20 = 0, sum40 = 0;
+                const maxDq = [], minDq = []; // indices into arr, monotonic on close, window = HL_WIN
+                for (let idx = 0; idx < n; idx++) {
+                    const c = arr[idx].close;
+                    sum10 += c; if (idx >= 10) sum10 -= arr[idx - 10].close;
+                    sum20 += c; if (idx >= 20) sum20 -= arr[idx - 20].close;
+                    sum40 += c; if (idx >= 40) sum40 -= arr[idx - 40].close;
+
+                    while (maxDq.length && arr[maxDq[maxDq.length - 1]].close <= c) maxDq.pop();
+                    maxDq.push(idx);
+                    while (minDq.length && arr[minDq[minDq.length - 1]].close >= c) minDq.pop();
+                    minDq.push(idx);
+                    while (maxDq[0] <= idx - HL_WIN) maxDq.shift();
+                    while (minDq[0] <= idx - HL_WIN) minDq.shift();
+
+                    const k = n - 1 - idx; // weeks back from THIS ticker's latest bar
+                    if (k >= K) continue;
+                    if (!dateAt[k]) dateAt[k] = arr[idx].date;
+
+                    if (idx >= 9) { cnt10[k]++; if (c < sum10 / 10) below10[k]++; }
+                    if (idx >= 19) { cnt20[k]++; if (c < sum20 / 20) below20[k]++; }
+                    if (idx >= 39) { cnt40[k]++; if (c < sum40 / 40) below40[k]++; }
+                    if (idx >= HL_WIN - 1) {
+                        cntHL[k]++;
+                        // 3% buffer: count stocks WITHIN 3% of their 52-week extreme too,
+                        // not just the exact new high/low — a "near-high/near-low" breadth read.
+                        if (c >= arr[maxDq[0]].close * (1 - HL_BUFFER)) newHigh[k]++;
+                        if (c <= arr[minDq[0]].close * (1 + HL_BUFFER)) newLow[k]++;
+                    }
+                }
+            }
+
+            const MIN_SAMPLE = 15; // guard against noisy % from a handful of stocks deep in history
+            const dates = [], out10 = [], out20 = [], out40 = [], outNH = [], outNL = [];
+            for (let k = K - 1; k >= 0; k--) { // oldest → newest
+                if (cnt40[k] < MIN_SAMPLE && cnt10[k] < MIN_SAMPLE && cntHL[k] < MIN_SAMPLE) continue;
+                dates.push(dateAt[k]);
+                out10.push(cnt10[k] >= MIN_SAMPLE ? (below10[k] / cnt10[k]) * 100 : NaN);
+                out20.push(cnt20[k] >= MIN_SAMPLE ? (below20[k] / cnt20[k]) * 100 : NaN);
+                out40.push(cnt40[k] >= MIN_SAMPLE ? (below40[k] / cnt40[k]) * 100 : NaN);
+                outNH.push(cntHL[k] >= MIN_SAMPLE ? (newHigh[k] / cntHL[k]) * 100 : NaN);
+                outNL.push(cntHL[k] >= MIN_SAMPLE ? (newLow[k] / cntHL[k]) * 100 : NaN);
+            }
+            return { dates: dates, pct10: out10, pct20: out20, pct40: out40, pctNewHigh: outNH, pctNewLow: outNL };
+        }
+
+        // Smooth a polyline through midpoints (quadratic curves) — a modern,
+        // continuous read instead of jagged week-to-week angles.
+        function _bcSmoothPath(ctx, pts) {
+            if (!pts.length) return;
+            if (pts.length === 1) { ctx.moveTo(pts[0].x, pts[0].y); ctx.lineTo(pts[0].x, pts[0].y); return; }
+            ctx.moveTo(pts[0].x, pts[0].y);
+            for (let i = 1; i < pts.length - 1; i++) {
+                const mx = (pts[i].x + pts[i + 1].x) / 2, my = (pts[i].y + pts[i + 1].y) / 2;
+                ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+            }
+            const last = pts[pts.length - 1];
+            ctx.lineTo(last.x, last.y);
+        }
+
+        // Contiguous non-NaN index ranges — gaps (thin universes deep in history) break the line/fill.
+        function _bcSegments(values) {
+            const segs = [];
+            let s = -1;
+            for (let i = 0; i <= values.length; i++) {
+                const bad = i === values.length || isNaN(values[i]);
+                if (!bad && s === -1) s = i;
+                if (bad && s !== -1) { segs.push([s, i - 1]); s = -1; }
+            }
+            return segs;
+        }
+
+        function _bcFmtDate(d) {
+            return d ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+        }
+
+        function _bcHideTooltip() {
+            const tt = document.getElementById('bc-tooltip');
+            if (tt) tt.style.display = 'none';
+        }
+
+        function _bcPositionTooltip(cv, xInCanvasCss) {
+            const tt = document.getElementById('bc-tooltip');
+            const wrap = document.getElementById('bc-charts-wrap');
+            if (!tt || !wrap) return;
+            const cvRect = cv.getBoundingClientRect();
+            const wrapRect = wrap.getBoundingClientRect();
+            let left = (cvRect.left - wrapRect.left) + xInCanvasCss + 14;
+            const top = (cvRect.top - wrapRect.top) + 8;
+            tt.style.display = 'block';
+            const ttW = tt.offsetWidth || 120;
+            if (left + ttW > wrap.clientWidth - 4) left = (cvRect.left - wrapRect.left) + xInCanvasCss - ttW - 14;
+            tt.style.left = Math.max(4, left) + 'px';
+            tt.style.top = top + 'px';
+        }
+
+        function _bcNearestIdx(n, mouseXCss, PAD, pW) {
+            if (n <= 1) return 0;
+            const rel = (mouseXCss - PAD.l) / pW;
+            let i = Math.round(rel * (n - 1));
+            if (i < 0) i = 0; if (i > n - 1) i = n - 1;
+            return i;
+        }
+
+        // Redraws from the data cached on the canvas by the last full render —
+        // used by the hover handler so a mousemove never re-sizes the canvas
+        // or recomputes the series, just repaints with a crosshair overlay.
+        function _bcRedraw(cv, hoverIdx) {
+            const d = cv._bcData;
+            if (!d) return;
+            if (d.kind === 'ma') _bcDrawChart(cv, d.dates, d.values, { accent: d.accent, hoverIdx: hoverIdx, reuseSize: true });
+            else if (d.kind === 'hl') _bcDrawHighLowChart(cv, d.dates, d.pctHigh, d.pctLow, { hoverIdx: hoverIdx, reuseSize: true });
+            else if (d.kind === 'mode') _bcDrawModeStrip(cv, d.dates, d.scores, { hoverIdx: hoverIdx, reuseSize: true });
+        }
+
+        function _bcAttachHover(cv) {
+            if (!cv || cv._bcHoverBound) return;
+            cv._bcHoverBound = true;
+            let raf = 0, pendingEvt = null;
+            cv.addEventListener('mousemove', function (e) {
+                pendingEvt = e;
+                if (raf) return;
+                raf = requestAnimationFrame(function () {
+                    raf = 0;
+                    const data = cv._bcData, geom = cv._bcGeom;
+                    if (!data || !geom) return;
+                    const rect = cv.getBoundingClientRect();
+                    const xCss = pendingEvt.clientX - rect.left;
+                    const idx = _bcNearestIdx(data.dates.length, xCss, geom.PAD, geom.pW);
+                    _bcRedraw(cv, idx);
+
+                    const tt = document.getElementById('bc-tooltip');
+                    if (tt) {
+                        let html = '<div class="bc-tt-date">' + _bcFmtDate(data.dates[idx]) + '</div>';
+                        if (data.kind === 'ma') {
+                            const v = data.values[idx];
+                            html += '<div class="bc-tt-row"><span class="bc-tt-key" style="background:' + data.accent + ';"></span><span class="bc-tt-val">' + (isNaN(v) ? '—' : v.toFixed(1) + '%') + '</span></div>';
+                        } else if (data.kind === 'hl') {
+                            const vh = data.pctHigh[idx], vl = data.pctLow[idx];
+                            html += '<div class="bc-tt-row"><span class="bc-tt-key" style="background:#4ade80;"></span><span class="bc-tt-val">' + (isNaN(vh) ? '—' : vh.toFixed(1) + '%') + '</span></div>';
+                            html += '<div class="bc-tt-row"><span class="bc-tt-key" style="background:#f87171;"></span><span class="bc-tt-val">' + (isNaN(vl) ? '—' : vl.toFixed(1) + '%') + '</span></div>';
+                        } else if (data.kind === 'mode') {
+                            const s = data.scores[idx];
+                            const info = _bcModeInfo(s);
+                            html += '<div class="bc-tt-row"><span class="bc-tt-key" style="background:' + info.color + ';"></span><span class="bc-tt-val">' + (isNaN(s) ? '—' : Math.round(s)) + '</span> <span style="color:rgba(255,255,255,0.6);">' + info.label + '</span></div>';
+                        }
+                        tt.innerHTML = html;
+                        _bcPositionTooltip(cv, xCss);
+                    }
+                });
+            });
+            cv.addEventListener('mouseleave', function () {
+                if (cv._bcData) _bcRedraw(cv, null);
+                _bcHideTooltip();
+            });
+        }
+
+        function _bcDrawChart(cv, dates, values, opts) {
+            if (!cv || !dates || !dates.length) return;
+            opts = opts || {};
+            const accent = opts.accent || '#60a5fa';
+            const hoverIdx = opts.hoverIdx;
+            cv._bcData = { dates: dates, values: values, accent: accent, kind: 'ma' };
+
+            const DPR = Math.min(window.devicePixelRatio || 1, 2);
+            let W, H;
+            if (opts.reuseSize && cv._bcGeom) {
+                W = cv._bcGeom.W; H = cv._bcGeom.H;
+            } else {
+                W = Math.max(120, (cv.parentElement ? cv.parentElement.clientWidth : cv.clientWidth || 320) - 4);
+                H = 190;
+                cv.style.width = W + 'px';
+                cv.style.height = H + 'px';
+                cv.width = Math.round(W * DPR);
+                cv.height = Math.round(H * DPR);
+            }
+            const ctx = cv.getContext('2d');
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.scale(DPR, DPR);
+            ctx.clearRect(0, 0, W, H);
+
+            const PAD = { l: 32, r: 42, t: 26, b: 18 };
+            const pW = W - PAD.l - PAD.r, pH = H - PAD.t - PAD.b;
+            cv._bcGeom = { PAD: PAD, pW: pW, pH: pH, W: W, H: H };
+
+            const valid = values.filter(function (v) { return !isNaN(v); });
+            const dataMin = valid.length ? Math.min.apply(null, valid) : 0;
+            const dataMax = valid.length ? Math.max.apply(null, valid) : 100;
+            let yMin = Math.max(0, Math.floor((dataMin - 8) / 5) * 5);
+            let yMax = Math.min(100, Math.ceil((dataMax + 8) / 5) * 5);
+            if (yMax - yMin < 20) yMax = Math.min(100, yMin + 20);
+            if (yMin > 50) yMin = 45;
+            if (yMax < 50) yMax = 55;
+
+            const n = dates.length;
+            const toX = function (i) { return PAD.l + (n <= 1 ? 0 : (i / (n - 1)) * pW); };
+            const toY = function (v) { return PAD.t + (1 - (v - yMin) / (yMax - yMin)) * pH; };
+
+            // Soft vertical "heat" backdrop — red (unhealthy, majority below MA) fading
+            // through neutral to teal (healthy) — anchored at the 50% line, no hard edge.
+            const y50 = toY(50);
+            const bgGrad = ctx.createLinearGradient(0, PAD.t, 0, PAD.t + pH);
+            const mid = Math.max(0, Math.min(1, (y50 - PAD.t) / pH));
+            bgGrad.addColorStop(0, 'rgba(225,45,68,0.20)');
+            bgGrad.addColorStop(mid, 'rgba(148,163,184,0.04)');
+            bgGrad.addColorStop(1, 'rgba(16,185,129,0.16)');
+            ctx.fillStyle = bgGrad;
+            ctx.fillRect(PAD.l, PAD.t, pW, pH);
+
+            // Gridlines + y-axis labels — hairline, recessive
+            ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+            ctx.fillStyle = 'rgba(255,255,255,0.38)';
+            ctx.font = '9px "Lexend",sans-serif';
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+            ctx.lineWidth = 1;
+            const ySteps = 3;
+            for (let s = 0; s <= ySteps; s++) {
+                const v = yMin + (yMax - yMin) * (s / ySteps);
+                const y = toY(v);
+                ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(PAD.l + pW, y); ctx.stroke();
+                ctx.fillText(v.toFixed(0), PAD.l - 6, y);
+            }
+
+            // Dashed 50% reference line
+            ctx.strokeStyle = 'rgba(245,158,11,0.85)';
+            ctx.setLineDash([4, 3]);
+            ctx.lineWidth = 1.2;
+            ctx.beginPath(); ctx.moveTo(PAD.l, y50); ctx.lineTo(PAD.l + pW, y50); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = '#f59e0b';
+            ctx.font = 'bold 9px "Lexend",sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('50%', PAD.l + pW + 5, y50);
+
+            const segs = _bcSegments(values);
+
+            // Gradient area fill — a wash fading toward the baseline, not a flat block
+            const fillGrad = ctx.createLinearGradient(0, PAD.t, 0, PAD.t + pH);
+            fillGrad.addColorStop(0, accent + '4a');
+            fillGrad.addColorStop(1, accent + '03');
+            ctx.fillStyle = fillGrad;
+            segs.forEach(function (seg) {
+                const pts = [];
+                for (let i = seg[0]; i <= seg[1]; i++) pts.push({ x: toX(i), y: toY(values[i]) });
+                ctx.beginPath();
+                _bcSmoothPath(ctx, pts);
+                ctx.lineTo(pts[pts.length - 1].x, PAD.t + pH);
+                ctx.lineTo(pts[0].x, PAD.t + pH);
+                ctx.closePath();
+                ctx.fill();
+            });
+
+            // Smoothed line, round joins/caps
+            ctx.strokeStyle = accent;
+            ctx.lineWidth = 2;
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+            segs.forEach(function (seg) {
+                const pts = [];
+                for (let i = seg[0]; i <= seg[1]; i++) pts.push({ x: toX(i), y: toY(values[i]) });
+                ctx.beginPath();
+                _bcSmoothPath(ctx, pts);
+                ctx.stroke();
+            });
+
+            // X-axis date labels
+            ctx.fillStyle = 'rgba(255,255,255,0.38)';
+            ctx.font = '9px "Lexend",sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            const labelCount = Math.min(6, n);
+            for (let li = 0; li < labelCount; li++) {
+                const i = Math.round((li / Math.max(1, labelCount - 1)) * (n - 1));
+                const d = dates[i];
+                if (!d) continue;
+                ctx.fillText(d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }), toX(i), PAD.t + pH + 4);
+            }
+
+            // End marker (ring + dot) with its value directly labeled — "line → value at the end"
+            let lastIdx = -1;
+            for (let i = n - 1; i >= 0; i--) { if (!isNaN(values[i])) { lastIdx = i; break; } }
+            if (lastIdx !== -1) {
+                const ex = toX(lastIdx), ey = toY(values[lastIdx]);
+                ctx.fillStyle = '#0b0b10';
+                ctx.beginPath(); ctx.arc(ex, ey, 5, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = accent;
+                ctx.beginPath(); ctx.arc(ex, ey, 3.2, 0, Math.PI * 2); ctx.fill();
+                ctx.font = '10px "Lexend",sans-serif';
+                ctx.fillStyle = 'rgba(255,255,255,0.85)';
+                ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+                ctx.fillText(values[lastIdx].toFixed(1) + '%', ex + 7, ey);
+            }
+
+            // Hover crosshair + point marker
+            if (hoverIdx != null && hoverIdx >= 0 && hoverIdx < n) {
+                const hx = toX(hoverIdx);
+                ctx.save();
+                ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([3, 3]);
+                ctx.beginPath(); ctx.moveTo(hx, PAD.t); ctx.lineTo(hx, PAD.t + pH); ctx.stroke();
+                ctx.setLineDash([]);
+                if (!isNaN(values[hoverIdx])) {
+                    const hy = toY(values[hoverIdx]);
+                    ctx.fillStyle = '#0b0b10';
+                    ctx.beginPath(); ctx.arc(hx, hy, 5, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = accent;
+                    ctx.beginPath(); ctx.arc(hx, hy, 3.2, 0, Math.PI * 2); ctx.fill();
+                }
+                ctx.restore();
+            }
+        }
+
+        // 52-week new-high / new-low breadth: two lines (no 50% split — only a
+        // small slice of the universe makes an extreme on any given week). Identity
+        // rides the HTML legend above the chart; this only carries the marks.
+        function _bcDrawHighLowChart(cv, dates, pctHigh, pctLow, opts) {
+            if (!cv || !dates || !dates.length) return;
+            opts = opts || {};
+            const hoverIdx = opts.hoverIdx;
+            cv._bcData = { dates: dates, pctHigh: pctHigh, pctLow: pctLow, kind: 'hl' };
+
+            const DPR = Math.min(window.devicePixelRatio || 1, 2);
+            let W, H;
+            if (opts.reuseSize && cv._bcGeom) {
+                W = cv._bcGeom.W; H = cv._bcGeom.H;
+            } else {
+                W = Math.max(120, (cv.parentElement ? cv.parentElement.clientWidth : cv.clientWidth || 320) - 4);
+                H = 190;
+                cv.style.width = W + 'px';
+                cv.style.height = H + 'px';
+                cv.width = Math.round(W * DPR);
+                cv.height = Math.round(H * DPR);
+            }
+            const ctx = cv.getContext('2d');
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.scale(DPR, DPR);
+            ctx.clearRect(0, 0, W, H);
+
+            const PAD = { l: 28, r: 44, t: 14, b: 18 };
+            const pW = W - PAD.l - PAD.r, pH = H - PAD.t - PAD.b;
+            cv._bcGeom = { PAD: PAD, pW: pW, pH: pH, W: W, H: H };
+
+            const allVals = pctHigh.concat(pctLow).filter(function (v) { return !isNaN(v); });
+            const dataMax = allVals.length ? Math.max.apply(null, allVals) : 10;
+            const yMax = Math.max(10, Math.ceil((dataMax + 2) / 5) * 5);
+            const yMin = 0;
+
+            const n = dates.length;
+            const toX = function (i) { return PAD.l + (n <= 1 ? 0 : (i / (n - 1)) * pW); };
+            const toY = function (v) { return PAD.t + (1 - (v - yMin) / (yMax - yMin)) * pH; };
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+            ctx.fillStyle = 'rgba(255,255,255,0.38)';
+            ctx.font = '9px "Lexend",sans-serif';
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+            ctx.lineWidth = 1;
+            const ySteps = 3;
+            for (let s = 0; s <= ySteps; s++) {
+                const v = yMin + (yMax - yMin) * (s / ySteps);
+                const y = toY(v);
+                ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(PAD.l + pW, y); ctx.stroke();
+                ctx.fillText(v.toFixed(0) + '%', PAD.l - 6, y);
+            }
+
+            function drawSeries(vals, color, withFill) {
+                const segs = _bcSegments(vals);
+                if (withFill) {
+                    const grad = ctx.createLinearGradient(0, PAD.t, 0, PAD.t + pH);
+                    grad.addColorStop(0, color + '30');
+                    grad.addColorStop(1, color + '02');
+                    ctx.fillStyle = grad;
+                    segs.forEach(function (seg) {
+                        const pts = [];
+                        for (let i = seg[0]; i <= seg[1]; i++) pts.push({ x: toX(i), y: toY(vals[i]) });
+                        ctx.beginPath();
+                        _bcSmoothPath(ctx, pts);
+                        ctx.lineTo(pts[pts.length - 1].x, PAD.t + pH);
+                        ctx.lineTo(pts[0].x, PAD.t + pH);
+                        ctx.closePath();
+                        ctx.fill();
+                    });
+                }
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2;
+                ctx.lineJoin = 'round';
+                ctx.lineCap = 'round';
+                segs.forEach(function (seg) {
+                    const pts = [];
+                    for (let i = seg[0]; i <= seg[1]; i++) pts.push({ x: toX(i), y: toY(vals[i]) });
+                    ctx.beginPath();
+                    _bcSmoothPath(ctx, pts);
+                    ctx.stroke();
+                });
+                let lastIdx = -1;
+                for (let i = vals.length - 1; i >= 0; i--) { if (!isNaN(vals[i])) { lastIdx = i; break; } }
+                if (lastIdx !== -1) {
+                    const ex = toX(lastIdx), ey = toY(vals[lastIdx]);
+                    ctx.fillStyle = '#0b0b10';
+                    ctx.beginPath(); ctx.arc(ex, ey, 5, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = color;
+                    ctx.beginPath(); ctx.arc(ex, ey, 3.2, 0, Math.PI * 2); ctx.fill();
+                    ctx.font = '10px "Lexend",sans-serif';
+                    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+                    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+                    ctx.fillText(vals[lastIdx].toFixed(1) + '%', ex + 7, ey);
+                }
+            }
+
+            drawSeries(pctLow, '#f87171', false);
+            drawSeries(pctHigh, '#4ade80', true);
+
+            ctx.fillStyle = 'rgba(255,255,255,0.38)';
+            ctx.font = '9px "Lexend",sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            const labelCount = Math.min(6, n);
+            for (let li = 0; li < labelCount; li++) {
+                const i = Math.round((li / Math.max(1, labelCount - 1)) * (n - 1));
+                const d = dates[i];
+                if (!d) continue;
+                ctx.fillText(d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }), toX(i), PAD.t + pH + 4);
+            }
+
+            if (hoverIdx != null && hoverIdx >= 0 && hoverIdx < n) {
+                const hx = toX(hoverIdx);
+                ctx.save();
+                ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([3, 3]);
+                ctx.beginPath(); ctx.moveTo(hx, PAD.t); ctx.lineTo(hx, PAD.t + pH); ctx.stroke();
+                ctx.setLineDash([]);
+                [[pctHigh, '#4ade80'], [pctLow, '#f87171']].forEach(function (pair) {
+                    const vals = pair[0], color = pair[1];
+                    if (!isNaN(vals[hoverIdx])) {
+                        const hy = toY(vals[hoverIdx]);
+                        ctx.fillStyle = '#0b0b10';
+                        ctx.beginPath(); ctx.arc(hx, hy, 5, 0, Math.PI * 2); ctx.fill();
+                        ctx.fillStyle = color;
+                        ctx.beginPath(); ctx.arc(hx, hy, 3.2, 0, Math.PI * 2); ctx.fill();
+                    }
+                });
+                ctx.restore();
+            }
+        }
+
+        // ── MARKET MODE — a single regime read (Risk-On … Risk-Off) distilled
+        // from the same breadth series that feed the four charts above. Longer
+        // timeframes (200D/100D) are weighted heaviest since they carry the
+        // structural trend; 50D adds responsiveness; the 52W hi/lo spread adds
+        // a leadership/participation signal. This is a heuristic composite, not
+        // a formal indicator — it exists to give an at-a-glance read, with the
+        // charts above always available to verify the "why". ──
+        function _bcComputeMarketMode(series) {
+            const n = series.dates.length;
+            const scores = new Array(n);
+            for (let i = 0; i < n; i++) {
+                const above10 = isNaN(series.pct10[i]) ? NaN : 100 - series.pct10[i];
+                const above20 = isNaN(series.pct20[i]) ? NaN : 100 - series.pct20[i];
+                const above40 = isNaN(series.pct40[i]) ? NaN : 100 - series.pct40[i];
+                const hlSpread = (!isNaN(series.pctNewHigh[i]) && !isNaN(series.pctNewLow[i]))
+                    ? series.pctNewHigh[i] - series.pctNewLow[i] : NaN;
+                const hlTerm = isNaN(hlSpread) ? NaN : Math.max(0, Math.min(100, 50 + hlSpread * 2.5));
+
+                const parts = [[above10, 0.2], [above20, 0.3], [above40, 0.35], [hlTerm, 0.15]].filter(function (p) { return !isNaN(p[0]); });
+                if (!parts.length) { scores[i] = NaN; continue; }
+                const wSum = parts.reduce(function (s, p) { return s + p[1]; }, 0);
+                scores[i] = parts.reduce(function (s, p) { return s + p[0] * p[1]; }, 0) / wSum;
+            }
+            return scores;
+        }
+
+        function _bcModeInfo(score) {
+            if (isNaN(score)) return { label: 'No Data', short: '—', color: '#94a3b8', icon: '❔' };
+            if (score >= 70) return { label: 'Strong Uptrend', short: 'Risk-On', color: '#22c55e', icon: '🚀' };
+            if (score >= 58) return { label: 'Uptrend', short: 'Bullish', color: '#4ade80', icon: '📈' };
+            if (score >= 44) return { label: 'Neutral / Choppy', short: 'Mixed', color: '#facc15', icon: '😐' };
+            if (score >= 30) return { label: 'Downtrend', short: 'Bearish', color: '#fb923c', icon: '📉' };
+            return { label: 'Strong Downtrend', short: 'Risk-Off', color: '#ef4444', icon: '🔻' };
+        }
+
+        // Heatmap-style regime strip: one colored bar per week, no axes — a fast
+        // "how has the mood shifted" read, with the exact score on hover.
+        function _bcDrawModeStrip(cv, dates, scores, opts) {
+            if (!cv || !dates || !dates.length) return;
+            opts = opts || {};
+            const hoverIdx = opts.hoverIdx;
+            cv._bcData = { dates: dates, scores: scores, kind: 'mode' };
+
+            const DPR = Math.min(window.devicePixelRatio || 1, 2);
+            let W, H;
+            if (opts.reuseSize && cv._bcGeom) {
+                W = cv._bcGeom.W; H = cv._bcGeom.H;
+            } else {
+                W = Math.max(120, (cv.parentElement ? cv.parentElement.clientWidth : cv.clientWidth || 320) - 4);
+                H = 30;
+                cv.style.width = W + 'px';
+                cv.style.height = H + 'px';
+                cv.width = Math.round(W * DPR);
+                cv.height = Math.round(H * DPR);
+            }
+            const ctx = cv.getContext('2d');
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.scale(DPR, DPR);
+            ctx.clearRect(0, 0, W, H);
+
+            const PAD = { l: 1, r: 1, t: 1, b: 1 };
+            const pW = W - PAD.l - PAD.r, pH = H - PAD.t - PAD.b;
+            cv._bcGeom = { PAD: PAD, pW: pW, pH: pH, W: W, H: H };
+
+            const n = dates.length;
+            const bw = pW / n;
+            for (let i = 0; i < n; i++) {
+                const s = scores[i];
+                ctx.fillStyle = isNaN(s) ? 'rgba(255,255,255,0.06)' : _bcModeInfo(s).color;
+                ctx.globalAlpha = isNaN(s) ? 1 : 0.82;
+                ctx.fillRect(PAD.l + i * bw, PAD.t, Math.ceil(bw) + 0.6, pH);
+            }
+            ctx.globalAlpha = 1;
+
+            if (hoverIdx != null && hoverIdx >= 0 && hoverIdx < n) {
+                const hx = PAD.l + (hoverIdx + 0.5) * bw;
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath(); ctx.moveTo(hx, PAD.t); ctx.lineTo(hx, PAD.t + pH); ctx.stroke();
+            }
+        }
+
+        function _bcRenderModeCard(series, scores) {
+            const card = document.getElementById('bc-mode-card');
+            if (!card) return;
+            const n = series.dates.length;
+            if (!n) { card.style.display = 'none'; return; }
+            card.style.display = '';
+
+            let curIdx = -1;
+            for (let i = n - 1; i >= 0; i--) { if (!isNaN(scores[i])) { curIdx = i; break; } }
+            const cur = curIdx === -1 ? NaN : scores[curIdx];
+            const info = _bcModeInfo(cur);
+
+            card.style.setProperty('--bc-mode-color', info.color);
+            const iconEl = document.getElementById('bc-mode-icon');
+            const labelEl = document.getElementById('bc-mode-label');
+            const subEl = document.getElementById('bc-mode-sub');
+            const scoreEl = document.getElementById('bc-mode-score-val');
+            const deltaEl = document.getElementById('bc-mode-score-delta');
+            const pointer = document.getElementById('bc-mode-pointer');
+            const rangeEl = document.getElementById('bc-mode-history-range');
+            if (iconEl) iconEl.textContent = info.icon;
+            if (labelEl) labelEl.textContent = info.label;
+            if (subEl) subEl.textContent = info.short;
+            if (scoreEl) scoreEl.textContent = isNaN(cur) ? '—' : Math.round(cur);
+            if (pointer) pointer.style.left = (isNaN(cur) ? 50 : Math.max(1, Math.min(99, cur))) + '%';
+
+            const cmpIdx = curIdx === -1 ? -1 : Math.max(0, curIdx - 4); // ~4 weeks ago
+            const delta = (curIdx !== -1 && cmpIdx !== curIdx && !isNaN(scores[cmpIdx])) ? cur - scores[cmpIdx] : NaN;
+            if (deltaEl) {
+                if (isNaN(delta)) { deltaEl.textContent = ''; }
+                else {
+                    deltaEl.textContent = (delta >= 0 ? '▲ +' : '▼ ') + Math.abs(delta).toFixed(1) + ' (4w)';
+                    deltaEl.style.color = delta >= 0 ? '#4ade80' : '#f87171';
+                }
+            }
+            if (rangeEl && n) {
+                rangeEl.textContent = '(' + _bcFmtDate(series.dates[0]) + ' → ' + _bcFmtDate(series.dates[n - 1]) + ')';
+            }
+
+            const chipsEl = document.getElementById('bc-mode-chips');
+            if (chipsEl) {
+                if (curIdx === -1) {
+                    chipsEl.innerHTML = '';
+                } else {
+                    const above10 = isNaN(series.pct10[curIdx]) ? NaN : 100 - series.pct10[curIdx];
+                    const above20 = isNaN(series.pct20[curIdx]) ? NaN : 100 - series.pct20[curIdx];
+                    const above40 = isNaN(series.pct40[curIdx]) ? NaN : 100 - series.pct40[curIdx];
+                    const hlSpread = (!isNaN(series.pctNewHigh[curIdx]) && !isNaN(series.pctNewLow[curIdx]))
+                        ? series.pctNewHigh[curIdx] - series.pctNewLow[curIdx] : NaN;
+                    const chips = [
+                        { label: 'Above 50D', val: above10 },
+                        { label: 'Above 100D', val: above20 },
+                        { label: 'Above 200D', val: above40 },
+                        { label: 'Hi − Lo Spread', val: hlSpread, signed: true }
+                    ];
+                    chipsEl.innerHTML = chips.map(function (c) {
+                        const txt = isNaN(c.val) ? '—' : (c.signed && c.val >= 0 ? '+' : '') + c.val.toFixed(1) + '%';
+                        const col = isNaN(c.val) ? 'rgba(255,255,255,0.5)' : (c.signed ? (c.val >= 0 ? '#4ade80' : '#f87171') : (c.val >= 50 ? '#4ade80' : '#f87171'));
+                        return '<div class="bc-mode-chip"><div class="bc-mode-chip-label">' + c.label + '</div><div class="bc-mode-chip-val" style="color:' + col + ';">' + txt + '</div></div>';
+                    }).join('');
+                }
+            }
+
+            const stripCv = document.getElementById('bc-mode-history');
+            if (stripCv) {
+                _bcDrawModeStrip(stripCv, series.dates, scores);
+                _bcAttachHover(stripCv);
+            }
+        }
+
+        window.renderBreadthCharts = async function () {
+            const pane = document.getElementById('breadth-charts');
+            if (!pane || pane.style.display === 'none') return;
+            if (!window._ohlcvTickers || !window._ohlcvTickers.size) return;
+
+            _bcPopulateGroupSelect();
+
+            const g = window._bcGroup || 'all';
+            if (g === 'favorites' || g === 'holdings') {
+                if (typeof window.loadFHTickers === 'function') await window.loadFHTickers();
+            }
+
+            const weeks = _BC_DUR_WEEKS[window._bcDuration] || 52;
+            const series = _bcComputeSeries(weeks);
+            const c200 = document.getElementById('bc-canvas-200');
+            const c100 = document.getElementById('bc-canvas-100');
+            const c50 = document.getElementById('bc-canvas-50');
+            const cHL = document.getElementById('bc-canvas-hl');
+            if (!series) {
+                [c200, c100, c50, cHL].forEach(function (cv) {
+                    if (!cv) return;
+                    const ctx = cv.getContext('2d');
+                    ctx.clearRect(0, 0, cv.width, cv.height);
+                });
+                const modeCard = document.getElementById('bc-mode-card');
+                if (modeCard) modeCard.style.display = 'none';
+                return;
+            }
+            _bcDrawChart(c200, series.dates, series.pct40, { accent: '#818cf8' });
+            _bcDrawChart(c100, series.dates, series.pct20, { accent: '#60a5fa' });
+            _bcDrawChart(c50, series.dates, series.pct10, { accent: '#5eead4' });
+            _bcDrawHighLowChart(cHL, series.dates, series.pctNewHigh, series.pctNewLow);
+            [c200, c100, c50, cHL].forEach(function (cv) { _bcAttachHover(cv); });
+
+            _bcRenderModeCard(series, _bcComputeMarketMode(series));
+        };
+
+        (function () {
+            let t = null;
+            window.addEventListener('resize', function () {
+                if (window._breadthMode !== 'charts') return;
+                clearTimeout(t);
+                t = setTimeout(function () { window.renderBreadthCharts(); }, 150);
+            });
+        })();
 
         // ══════════════════════════════════════════════════════
         //   PEAD FLAG CALCULATION  (Feature 4)
@@ -17164,6 +17991,301 @@
         /* Fundamental (Results Analysis) — inline inside the Breadth pane */
         #breadth-fundamental {
             font-family: 'Lexend', sans-serif;
+        }
+
+        /* Historical Breadth Charts (% of stocks below 50D/100D/200D MA + 52W High/Low, over time) */
+        .bc-chart-card {
+            position: relative;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015));
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 12px;
+            padding: 10px 10px 6px;
+            margin-bottom: 10px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+            overflow: hidden;
+            transition: border-color 0.15s;
+        }
+
+        .bc-chart-card:hover {
+            border-color: rgba(255, 255, 255, 0.13);
+        }
+
+        .bc-chart-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--bc-accent, #60a5fa);
+            opacity: 0.75;
+        }
+
+        .bc-chart-card[data-accent="200"] { --bc-accent: #818cf8; }
+        .bc-chart-card[data-accent="100"] { --bc-accent: #60a5fa; }
+        .bc-chart-card[data-accent="50"] { --bc-accent: #5eead4; }
+        .bc-chart-card[data-accent="hl"] { --bc-accent: linear-gradient(90deg, #4ade80, #f87171); }
+
+        .bc-chart-head {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .bc-chart-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.85);
+            letter-spacing: 0.2px;
+            font-family: 'Lexend', sans-serif;
+        }
+
+        .bc-chart-title span {
+            opacity: .5;
+            font-weight: 500;
+        }
+
+        .bc-legend {
+            display: flex;
+            gap: 10px;
+            flex-shrink: 0;
+        }
+
+        .bc-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 9.5px;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.65);
+            font-family: 'Lexend', sans-serif;
+        }
+
+        .bc-legend-swatch {
+            width: 10px;
+            height: 2px;
+            border-radius: 1px;
+            display: inline-block;
+        }
+
+        .bc-canvas {
+            width: 100%;
+            height: 190px;
+            display: block;
+            cursor: crosshair;
+        }
+
+        /* Shared floating tooltip for all breadth charts */
+        .bc-tooltip {
+            position: absolute;
+            pointer-events: none;
+            display: none;
+            background: rgba(17, 17, 22, 0.96);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 7px;
+            padding: 6px 9px;
+            font-family: 'Lexend', sans-serif;
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+            z-index: 20;
+            white-space: nowrap;
+        }
+
+        .bc-tooltip .bc-tt-date {
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 9px;
+            margin-bottom: 3px;
+            font-weight: 600;
+        }
+
+        .bc-tooltip .bc-tt-row {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .bc-tooltip .bc-tt-row + .bc-tt-row {
+            margin-top: 2px;
+        }
+
+        .bc-tooltip .bc-tt-key {
+            width: 8px;
+            height: 2px;
+            border-radius: 1px;
+            display: inline-block;
+            flex-shrink: 0;
+        }
+
+        .bc-tooltip .bc-tt-val {
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Market Mode — hero card summarizing the breadth charts into one regime read */
+        .bc-mode-card {
+            --bc-mode-color: #94a3b8;
+            position: relative;
+            background: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
+            border: 1px solid rgba(255, 255, 255, 0.09);
+            border-radius: 14px;
+            padding: 12px 14px 10px;
+            margin-bottom: 12px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+            overflow: hidden;
+            font-family: 'Lexend', sans-serif;
+        }
+
+        .bc-mode-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--bc-mode-color) 14%, transparent), transparent 60%);
+            pointer-events: none;
+        }
+
+        .bc-mode-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
+            position: relative;
+        }
+
+        .bc-mode-title {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+        }
+
+        .bc-mode-icon {
+            font-size: 24px;
+            line-height: 1;
+            filter: drop-shadow(0 0 8px color-mix(in srgb, var(--bc-mode-color) 60%, transparent));
+        }
+
+        .bc-mode-label {
+            font-size: 15px;
+            font-weight: 800;
+            color: var(--bc-mode-color);
+            letter-spacing: 0.2px;
+            line-height: 1.2;
+        }
+
+        .bc-mode-sub {
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.6px;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.45);
+            margin-top: 1px;
+        }
+
+        .bc-mode-score-wrap {
+            text-align: right;
+        }
+
+        .bc-mode-score-val {
+            font-size: 28px;
+            font-weight: 800;
+            line-height: 1;
+            color: #f1f5f9;
+        }
+
+        .bc-mode-score-delta {
+            font-size: 10px;
+            font-weight: 700;
+            margin-top: 3px;
+        }
+
+        .bc-mode-gauge-track {
+            position: relative;
+            height: 9px;
+            border-radius: 5px;
+            background: linear-gradient(90deg, #ef4444 0%, #fb923c 28%, #facc15 50%, #4ade80 72%, #22c55e 100%);
+            margin: 12px 2px 5px;
+        }
+
+        .bc-mode-gauge-pointer {
+            position: absolute;
+            top: -4px;
+            left: 50%;
+            width: 3px;
+            height: 17px;
+            background: #fff;
+            border-radius: 2px;
+            box-shadow: 0 0 6px rgba(255, 255, 255, 0.65), 0 1px 3px rgba(0, 0, 0, 0.5);
+            transform: translateX(-50%);
+            transition: left 0.6s cubic-bezier(0.22, 0.8, 0.2, 1);
+        }
+
+        .bc-mode-gauge-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 8.5px;
+            font-weight: 700;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.35);
+            margin: 0 2px;
+        }
+
+        .bc-mode-chips {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+            position: relative;
+        }
+
+        .bc-mode-chip {
+            flex: 1;
+            min-width: 74px;
+            background: rgba(255, 255, 255, 0.035);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 8px;
+            padding: 6px 8px;
+            text-align: center;
+        }
+
+        .bc-mode-chip-label {
+            font-size: 8px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            color: rgba(255, 255, 255, 0.42);
+        }
+
+        .bc-mode-chip-val {
+            font-size: 12.5px;
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+            margin-top: 2px;
+        }
+
+        .bc-mode-history-label {
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            color: rgba(255, 255, 255, 0.4);
+            margin: 12px 0 4px;
+            text-transform: uppercase;
+        }
+
+        .bc-mode-history-label span {
+            text-transform: none;
+            font-weight: 500;
+            opacity: 0.75;
+        }
+
+        .bc-mode-history {
+            width: 100%;
+            height: 30px;
+            display: block;
+            border-radius: 5px;
+            cursor: crosshair;
         }
 
         #rd-fund-head {
