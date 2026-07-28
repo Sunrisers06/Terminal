@@ -2760,6 +2760,7 @@
             background: rgba(255, 255, 255, 0.1);
             color: var(--text);
             transform: translateY(-1px);
+            opacity: 1;
         }
 
         .fav-toggle-btn.is-fav {
@@ -6442,7 +6443,7 @@
                     </div>
                     <!-- Historical Market Breadth Charts: % of stocks below 50D/100D/200D MA + 52W High/Low, over time -->
                     <div id="breadth-charts" style="display:none;">
-                        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 8px 4px;">
+                        <div id="bc-toolbar" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 8px 4px;">
                             <select id="bc-group-sel" class="breadth-index-select"
                                 onchange="window._bcGroup=this.value; window.renderBreadthCharts();">
                                 <option value="all">All Stocks</option>
@@ -6486,12 +6487,6 @@
                                     <div class="bc-chart-title">% Below 200D MA <span>(40-week)</span></div>
                                 </div>
                                 <canvas id="bc-canvas-200" class="bc-canvas"></canvas>
-                            </div>
-                            <div class="bc-chart-card" data-accent="100">
-                                <div class="bc-chart-head">
-                                    <div class="bc-chart-title">% Below 100D MA <span>(20-week)</span></div>
-                                </div>
-                                <canvas id="bc-canvas-100" class="bc-canvas"></canvas>
                             </div>
                             <div class="bc-chart-card" data-accent="50">
                                 <div class="bc-chart-head">
@@ -6886,6 +6881,18 @@
             } else {
                 btnEl.innerHTML = '⛶';
                 btnEl.title = "Fullscreen";
+            }
+
+            // Canvas-based panels (Breadth Charts) size themselves from their
+            // container's clientWidth at render time — toggling fullscreen resizes
+            // the container via CSS alone, so without an explicit redraw here the
+            // charts stayed pinned at their pre-fullscreen size instead of filling it.
+            if (sectionId === 'breadth-section') {
+                requestAnimationFrame(function () {
+                    if (window._breadthMode === 'charts' && typeof window.renderBreadthCharts === 'function') {
+                        window.renderBreadthCharts();
+                    }
+                });
             }
         }
 
@@ -10078,6 +10085,77 @@
         window._bcGroup = window._bcGroup || 'idx_Nifty_750';
         const _BC_DUR_WEEKS = { '6m': 26, '1y': 52, '3y': 156, '5y': 260, 'all': Infinity };
 
+        // Screen-size-aware floor — mobile/iPad get a shorter, denser minimum so
+        // the section never gets too squished; desktop's floor is the old fixed
+        // height. _bcChartHeight() below grows past this floor to actually fill
+        // whatever vertical room is available (the point of it — e.g. fullscreen).
+        function _bcFallbackChartHeight() {
+            const w = window.innerWidth;
+            if (w <= 480) return 130;
+            if (w <= 768) return 150;
+            if (w <= 1400) return 172;
+            return 190;
+        }
+
+        // Measures the real, currently-rendered "chrome" around the 3 charts
+        // (toolbar, Market Mode card, each card's own title row/padding/margin)
+        // and splits whatever vertical space is left in the scrollable pane
+        // evenly between them — so on a roomy view (fullscreen especially) the
+        // charts actually grow to use the screen instead of sitting fixed-height
+        // with dead space below them.
+        function _bcChartHeight() {
+            const wrap = document.getElementById('bc-charts-wrap');
+            const subPane = wrap ? wrap.closest('.deal-sub-pane') : null;
+            const floor = _bcFallbackChartHeight();
+            if (!wrap || !subPane) return floor;
+
+            const chartCards = wrap.querySelectorAll('.bc-chart-card');
+            const numCharts = chartCards.length;
+            if (!numCharts) return floor;
+
+            const toolbar = document.getElementById('bc-toolbar');
+            const modeCard = document.getElementById('bc-mode-card');
+            let chrome = (toolbar ? toolbar.offsetHeight : 0) + (modeCard ? modeCard.offsetHeight : 0);
+
+            chartCards.forEach(function (card) {
+                const head = card.querySelector('.bc-chart-head');
+                const cs = window.getComputedStyle(card);
+                chrome += (head ? head.offsetHeight : 20) + 4 /* title margin-bottom */
+                    + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
+                    + parseFloat(cs.marginBottom)
+                    + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+            });
+            const wrapCs = window.getComputedStyle(wrap);
+            chrome += parseFloat(wrapCs.paddingTop) + parseFloat(wrapCs.paddingBottom);
+
+            const available = subPane.clientHeight - chrome;
+            const perChart = Math.floor(available / numCharts);
+            return Math.max(floor, Math.min(520, perChart));
+        }
+        function _bcStripHeight() {
+            const w = window.innerWidth;
+            if (w <= 480) return 22;
+            if (w <= 768) return 26;
+            return 30;
+        }
+
+        // Shared across every chart in this section (MA charts, High/Low, mode
+        // strip) so a given index always lands on the same pixel column no
+        // matter which panel drew it — that's what makes the crosshair line up.
+        const BC_PAD_L = 34, BC_PAD_R = 44;
+
+        // Measures the canvas's own true content width by briefly clearing any
+        // stale inline width so the .bc-canvas/.bc-mode-history CSS "100%" rule
+        // resolves against the real content box — immune to each card's padding
+        // (which can legitimately differ) and to feedback from a previous render's
+        // inline width. This is what guarantees every canvas in the section ends
+        // up the same W, which combined with BC_PAD_L/R keeps dates aligned.
+        function _bcMeasureWidth(cv) {
+            cv.style.width = '';
+            const w = cv.clientWidth || (cv.parentElement ? cv.parentElement.clientWidth : 0) || 320;
+            return Math.max(120, w - 2);
+        }
+
         window._bcSetDuration = function (dur) {
             window._bcDuration = dur;
             document.querySelectorAll('#bc-dur-tabs .breadth-subtab').forEach(function (b) {
@@ -10279,46 +10357,89 @@
             else if (d.kind === 'mode') _bcDrawModeStrip(cv, d.dates, d.scores, { hoverIdx: hoverIdx, reuseSize: true });
         }
 
+        // Every attached canvas in the section, so one panel's mousemove can
+        // redraw the crosshair on all of them at the same index — a linked
+        // crosshair, the way a multi-pane price/volume/indicator chart works.
+        window._bcHoverCanvases = window._bcHoverCanvases || new Set();
+
+        // Shared by both mouse hover and touch-drag — clientX is the pointer's
+        // viewport X regardless of which input produced it.
+        function _bcHandlePointerMove(cv, clientX) {
+            const data = cv._bcData, geom = cv._bcGeom;
+            if (!data || !geom) return;
+            const rect = cv.getBoundingClientRect();
+            const xCss = clientX - rect.left;
+            const idx = _bcNearestIdx(data.dates.length, xCss, geom.PAD, geom.pW);
+
+            // Same index, every panel — this is what keeps the dates aligned on hover.
+            window._bcHoverCanvases.forEach(function (otherCv) { _bcRedraw(otherCv, idx); });
+
+            const tt = document.getElementById('bc-tooltip');
+            if (tt) {
+                let html = '<div class="bc-tt-date">' + _bcFmtDate(data.dates[idx]) + '</div>';
+                if (data.kind === 'ma') {
+                    const v = data.values[idx];
+                    html += '<div class="bc-tt-row"><span class="bc-tt-key" style="background:' + data.accent + ';"></span><span class="bc-tt-val">' + (isNaN(v) ? '—' : v.toFixed(1) + '%') + '</span></div>';
+                } else if (data.kind === 'hl') {
+                    const vh = data.pctHigh[idx], vl = data.pctLow[idx];
+                    html += '<div class="bc-tt-row"><span class="bc-tt-key" style="background:#4ade80;"></span><span class="bc-tt-val">' + (isNaN(vh) ? '—' : vh.toFixed(1) + '%') + '</span></div>';
+                    html += '<div class="bc-tt-row"><span class="bc-tt-key" style="background:#f87171;"></span><span class="bc-tt-val">' + (isNaN(vl) ? '—' : vl.toFixed(1) + '%') + '</span></div>';
+                } else if (data.kind === 'mode') {
+                    const s = data.scores[idx];
+                    const info = _bcModeInfo(s);
+                    html += '<div class="bc-tt-row"><span class="bc-tt-key" style="background:' + info.color + ';"></span><span class="bc-tt-val">' + (isNaN(s) ? '—' : Math.round(s)) + '</span> <span style="color:rgba(255,255,255,0.6);">' + info.label + '</span></div>';
+                }
+                tt.innerHTML = html;
+                _bcPositionTooltip(cv, xCss);
+            }
+        }
+
+        function _bcClearHover() {
+            window._bcHoverCanvases.forEach(function (cv) { if (cv._bcData) _bcRedraw(cv, null); });
+            _bcHideTooltip();
+        }
+
         function _bcAttachHover(cv) {
             if (!cv || cv._bcHoverBound) return;
             cv._bcHoverBound = true;
-            let raf = 0, pendingEvt = null;
-            cv.addEventListener('mousemove', function (e) {
-                pendingEvt = e;
+            window._bcHoverCanvases.add(cv);
+            let raf = 0, pendingX = null;
+            const schedule = function (clientX) {
+                pendingX = clientX;
                 if (raf) return;
                 raf = requestAnimationFrame(function () {
                     raf = 0;
-                    const data = cv._bcData, geom = cv._bcGeom;
-                    if (!data || !geom) return;
-                    const rect = cv.getBoundingClientRect();
-                    const xCss = pendingEvt.clientX - rect.left;
-                    const idx = _bcNearestIdx(data.dates.length, xCss, geom.PAD, geom.pW);
-                    _bcRedraw(cv, idx);
-
-                    const tt = document.getElementById('bc-tooltip');
-                    if (tt) {
-                        let html = '<div class="bc-tt-date">' + _bcFmtDate(data.dates[idx]) + '</div>';
-                        if (data.kind === 'ma') {
-                            const v = data.values[idx];
-                            html += '<div class="bc-tt-row"><span class="bc-tt-key" style="background:' + data.accent + ';"></span><span class="bc-tt-val">' + (isNaN(v) ? '—' : v.toFixed(1) + '%') + '</span></div>';
-                        } else if (data.kind === 'hl') {
-                            const vh = data.pctHigh[idx], vl = data.pctLow[idx];
-                            html += '<div class="bc-tt-row"><span class="bc-tt-key" style="background:#4ade80;"></span><span class="bc-tt-val">' + (isNaN(vh) ? '—' : vh.toFixed(1) + '%') + '</span></div>';
-                            html += '<div class="bc-tt-row"><span class="bc-tt-key" style="background:#f87171;"></span><span class="bc-tt-val">' + (isNaN(vl) ? '—' : vl.toFixed(1) + '%') + '</span></div>';
-                        } else if (data.kind === 'mode') {
-                            const s = data.scores[idx];
-                            const info = _bcModeInfo(s);
-                            html += '<div class="bc-tt-row"><span class="bc-tt-key" style="background:' + info.color + ';"></span><span class="bc-tt-val">' + (isNaN(s) ? '—' : Math.round(s)) + '</span> <span style="color:rgba(255,255,255,0.6);">' + info.label + '</span></div>';
-                        }
-                        tt.innerHTML = html;
-                        _bcPositionTooltip(cv, xCss);
-                    }
+                    _bcHandlePointerMove(cv, pendingX);
                 });
-            });
-            cv.addEventListener('mouseleave', function () {
-                if (cv._bcData) _bcRedraw(cv, null);
-                _bcHideTooltip();
-            });
+            };
+            cv.addEventListener('mousemove', function (e) { schedule(e.clientX); });
+
+            // Touch: tap-and-drag across a chart moves the crosshair — mirrors
+            // mouse hover so mobile gets the same linked-crosshair read. The
+            // canvas opts out of native scroll (touch-action:none in CSS) so a
+            // drag on the chart itself doesn't fight the page's own scrolling.
+            cv.addEventListener('touchstart', function (e) {
+                if (!e.touches || !e.touches.length) return;
+                e.preventDefault();
+                schedule(e.touches[0].clientX);
+            }, { passive: false });
+            cv.addEventListener('touchmove', function (e) {
+                if (!e.touches || !e.touches.length) return;
+                e.preventDefault();
+                schedule(e.touches[0].clientX);
+            }, { passive: false });
+            cv.addEventListener('touchend', _bcClearHover);
+            cv.addEventListener('touchcancel', _bcClearHover);
+        }
+
+        // Clears the crosshair on every panel only when the pointer leaves the
+        // WHOLE section — a per-canvas mouseleave would flicker the crosshair
+        // off and on as the mouse crosses the small gaps between cards.
+        function _bcAttachWrapLeave() {
+            const wrap = document.getElementById('bc-charts-wrap');
+            if (!wrap || wrap._bcLeaveBound) return;
+            wrap._bcLeaveBound = true;
+            wrap.addEventListener('mouseleave', _bcClearHover);
         }
 
         function _bcDrawChart(cv, dates, values, opts) {
@@ -10333,8 +10454,8 @@
             if (opts.reuseSize && cv._bcGeom) {
                 W = cv._bcGeom.W; H = cv._bcGeom.H;
             } else {
-                W = Math.max(120, (cv.parentElement ? cv.parentElement.clientWidth : cv.clientWidth || 320) - 4);
-                H = 190;
+                W = _bcMeasureWidth(cv);
+                H = _bcChartHeight();
                 cv.style.width = W + 'px';
                 cv.style.height = H + 'px';
                 cv.width = Math.round(W * DPR);
@@ -10345,7 +10466,7 @@
             ctx.scale(DPR, DPR);
             ctx.clearRect(0, 0, W, H);
 
-            const PAD = { l: 32, r: 42, t: 26, b: 18 };
+            const PAD = { l: BC_PAD_L, r: BC_PAD_R, t: 26, b: 18 };
             const pW = W - PAD.l - PAD.r, pH = H - PAD.t - PAD.b;
             cv._bcGeom = { PAD: PAD, pW: pW, pH: pH, W: W, H: H };
 
@@ -10474,6 +10595,20 @@
                     ctx.beginPath(); ctx.arc(hx, hy, 5, 0, Math.PI * 2); ctx.fill();
                     ctx.fillStyle = accent;
                     ctx.beginPath(); ctx.arc(hx, hy, 3.2, 0, Math.PI * 2); ctx.fill();
+
+                    // Value label right at the crosshair, flipping side near the edges
+                    const valStr = values[hoverIdx].toFixed(1) + '%';
+                    ctx.font = 'bold 10px "Lexend",sans-serif';
+                    ctx.textBaseline = 'middle';
+                    const placeLeft = hx > PAD.l + pW / 2;
+                    ctx.textAlign = placeLeft ? 'right' : 'left';
+                    const lx = placeLeft ? hx - 8 : hx + 8;
+                    const txtW = ctx.measureText(valStr).width;
+                    const boxX = placeLeft ? lx - txtW - 4 : lx - 4;
+                    ctx.fillStyle = 'rgba(11,11,16,0.88)';
+                    ctx.fillRect(boxX, hy - 8, txtW + 8, 16);
+                    ctx.fillStyle = accent;
+                    ctx.fillText(valStr, lx, hy);
                 }
                 ctx.restore();
             }
@@ -10493,8 +10628,8 @@
             if (opts.reuseSize && cv._bcGeom) {
                 W = cv._bcGeom.W; H = cv._bcGeom.H;
             } else {
-                W = Math.max(120, (cv.parentElement ? cv.parentElement.clientWidth : cv.clientWidth || 320) - 4);
-                H = 190;
+                W = _bcMeasureWidth(cv);
+                H = _bcChartHeight();
                 cv.style.width = W + 'px';
                 cv.style.height = H + 'px';
                 cv.width = Math.round(W * DPR);
@@ -10505,7 +10640,7 @@
             ctx.scale(DPR, DPR);
             ctx.clearRect(0, 0, W, H);
 
-            const PAD = { l: 28, r: 44, t: 14, b: 18 };
+            const PAD = { l: BC_PAD_L, r: BC_PAD_R, t: 14, b: 18 };
             const pW = W - PAD.l - PAD.r, pH = H - PAD.t - PAD.b;
             cv._bcGeom = { PAD: PAD, pW: pW, pH: pH, W: W, H: H };
 
@@ -10599,6 +10734,7 @@
                 ctx.setLineDash([3, 3]);
                 ctx.beginPath(); ctx.moveTo(hx, PAD.t); ctx.lineTo(hx, PAD.t + pH); ctx.stroke();
                 ctx.setLineDash([]);
+                const placeLeft = hx > PAD.l + pW / 2;
                 [[pctHigh, '#4ade80'], [pctLow, '#f87171']].forEach(function (pair) {
                     const vals = pair[0], color = pair[1];
                     if (!isNaN(vals[hoverIdx])) {
@@ -10607,6 +10743,18 @@
                         ctx.beginPath(); ctx.arc(hx, hy, 5, 0, Math.PI * 2); ctx.fill();
                         ctx.fillStyle = color;
                         ctx.beginPath(); ctx.arc(hx, hy, 3.2, 0, Math.PI * 2); ctx.fill();
+
+                        const valStr = vals[hoverIdx].toFixed(1) + '%';
+                        ctx.font = 'bold 10px "Lexend",sans-serif';
+                        ctx.textBaseline = 'middle';
+                        ctx.textAlign = placeLeft ? 'right' : 'left';
+                        const lx = placeLeft ? hx - 8 : hx + 8;
+                        const txtW = ctx.measureText(valStr).width;
+                        const boxX = placeLeft ? lx - txtW - 4 : lx - 4;
+                        ctx.fillStyle = 'rgba(11,11,16,0.88)';
+                        ctx.fillRect(boxX, hy - 8, txtW + 8, 16);
+                        ctx.fillStyle = color;
+                        ctx.fillText(valStr, lx, hy);
                     }
                 });
                 ctx.restore();
@@ -10661,8 +10809,8 @@
             if (opts.reuseSize && cv._bcGeom) {
                 W = cv._bcGeom.W; H = cv._bcGeom.H;
             } else {
-                W = Math.max(120, (cv.parentElement ? cv.parentElement.clientWidth : cv.clientWidth || 320) - 4);
-                H = 30;
+                W = _bcMeasureWidth(cv);
+                H = _bcStripHeight();
                 cv.style.width = W + 'px';
                 cv.style.height = H + 'px';
                 cv.width = Math.round(W * DPR);
@@ -10673,7 +10821,9 @@
             ctx.scale(DPR, DPR);
             ctx.clearRect(0, 0, W, H);
 
-            const PAD = { l: 1, r: 1, t: 1, b: 1 };
+            // Same left/right gutters as the value charts (not a tight 1px inset) —
+            // this is what keeps the strip's date columns aligned with every other panel.
+            const PAD = { l: BC_PAD_L, r: BC_PAD_R, t: 1, b: 1 };
             const pW = W - PAD.l - PAD.r, pH = H - PAD.t - PAD.b;
             cv._bcGeom = { PAD: PAD, pW: pW, pH: pH, W: W, H: H };
 
@@ -10692,6 +10842,23 @@
                 ctx.strokeStyle = '#fff';
                 ctx.lineWidth = 1.5;
                 ctx.beginPath(); ctx.moveTo(hx, PAD.t); ctx.lineTo(hx, PAD.t + pH); ctx.stroke();
+
+                const s = scores[hoverIdx];
+                if (!isNaN(s)) {
+                    const valStr = Math.round(s).toString();
+                    ctx.font = 'bold 9px "Lexend",sans-serif';
+                    ctx.textBaseline = 'middle';
+                    const placeLeft = hx > PAD.l + pW / 2;
+                    ctx.textAlign = placeLeft ? 'right' : 'left';
+                    const lx = placeLeft ? hx - 6 : hx + 6;
+                    const txtW = ctx.measureText(valStr).width;
+                    const boxX = placeLeft ? lx - txtW - 4 : lx - 4;
+                    const cy = PAD.t + pH / 2;
+                    ctx.fillStyle = 'rgba(11,11,16,0.9)';
+                    ctx.fillRect(boxX, cy - 7, txtW + 8, 14);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillText(valStr, lx, cy);
+                }
             }
         }
 
@@ -10780,11 +10947,10 @@
             const weeks = _BC_DUR_WEEKS[window._bcDuration] || 52;
             const series = _bcComputeSeries(weeks);
             const c200 = document.getElementById('bc-canvas-200');
-            const c100 = document.getElementById('bc-canvas-100');
             const c50 = document.getElementById('bc-canvas-50');
             const cHL = document.getElementById('bc-canvas-hl');
             if (!series) {
-                [c200, c100, c50, cHL].forEach(function (cv) {
+                [c200, c50, cHL].forEach(function (cv) {
                     if (!cv) return;
                     const ctx = cv.getContext('2d');
                     ctx.clearRect(0, 0, cv.width, cv.height);
@@ -10794,21 +10960,37 @@
                 return;
             }
             _bcDrawChart(c200, series.dates, series.pct40, { accent: '#818cf8' });
-            _bcDrawChart(c100, series.dates, series.pct20, { accent: '#60a5fa' });
             _bcDrawChart(c50, series.dates, series.pct10, { accent: '#5eead4' });
             _bcDrawHighLowChart(cHL, series.dates, series.pctNewHigh, series.pctNewLow);
-            [c200, c100, c50, cHL].forEach(function (cv) { _bcAttachHover(cv); });
+            [c200, c50, cHL].forEach(function (cv) { _bcAttachHover(cv); });
+            _bcAttachWrapLeave();
 
             _bcRenderModeCard(series, _bcComputeMarketMode(series));
         };
 
         (function () {
             let t = null;
-            window.addEventListener('resize', function () {
+            const scheduleRedraw = function () {
                 if (window._breadthMode !== 'charts') return;
                 clearTimeout(t);
                 t = setTimeout(function () { window.renderBreadthCharts(); }, 150);
-            });
+            };
+
+            // Window resize (orientation change, browser resize)
+            window.addEventListener('resize', scheduleRedraw);
+
+            // The sidebar drag-resizer (#sidebar-resizer) sets width via inline
+            // style on drag — that never fires a window "resize" event, so
+            // without this the charts stayed pinned at whatever width they were
+            // drawn at until the browser window itself was resized. ResizeObserver
+            // catches any box-size change on the section regardless of cause
+            // (drag-resize, fullscreen toggle, sidebar collapse, etc.).
+            if (typeof ResizeObserver !== 'undefined') {
+                const target = document.getElementById('breadth-section');
+                if (target) {
+                    new ResizeObserver(scheduleRedraw).observe(target);
+                }
+            }
         })();
 
         // ══════════════════════════════════════════════════════
@@ -11266,11 +11448,14 @@
                         el.style.borderColor = c.bd;
                         el.style.color = c.fg;
                         el.style.boxShadow = c.sh;
+                        el.style.opacity = '1';
                     } else {
+                        // Dimmed when not selected — reads as "off" without competing with active buttons
                         el.style.background = 'rgba(15,23,42,0.8)';
                         el.style.borderColor = 'rgba(255,255,255,0.15)';
                         el.style.color = '#cbd5e1';
                         el.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+                        el.style.opacity = '0.4';
                     }
                 }
             };
@@ -13076,6 +13261,28 @@
                iPad/mobile instead of a single fixed desktop size. Returns true if at least
                one marker was drawn (so callers know whether to keep the light, throttled
                redraw loop alive). ─── */
+            // Draws a horizontally-centered line built from {text,color} segments —
+            // canvas fillText has no native multi-color spans, so segments are laid
+            // out left-to-right starting from (cx - totalWidth/2). Used to highlight
+            // just the "(2.4x avg)" / "(28.5%)" chips inside the volume tooltip
+            // while the rest of the line stays plain white.
+            function _fsDrawTextSegments(ctx, cx, cy, segments) {
+                if (!segments || !segments.length) return;
+                const widths = segments.map(s => ctx.measureText(s.text).width);
+                const total = widths.reduce((a, b) => a + b, 0);
+                const prevAlign = ctx.textAlign, prevBaseline = ctx.textBaseline;
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'middle';
+                let x = cx - total / 2;
+                segments.forEach((s, i) => {
+                    ctx.fillStyle = s.color;
+                    ctx.fillText(s.text, x, cy);
+                    x += widths[i];
+                });
+                ctx.textAlign = prevAlign;
+                ctx.textBaseline = prevBaseline;
+            }
+
             function _fsDrawVolMilestones(ctx, opts) {
                 const { getVal, rawArr, currentDataArr, actualStart, xFn, barTopYFn, minY, ticker, isFs } = opts;
                 if (!currentDataArr || !currentDataArr.length || !rawArr || !rawArr.length) return false;
@@ -14549,10 +14756,25 @@
 
                                     // 2. Institutional Volume & Delivery Tooltip (+ Milestone markers, if any)
                                     const hr = ohlcCandle;
-                                    const delTxt = (hr.delivPer !== undefined && hr.delivPer > 0)
-                                        ? `Vol: ${fmtV(hr.vol)} | Deliv: ${fmtV(hr.vol * hr.delivPer / 100)} (${hr.delivPer.toFixed(1)}%)`
-                                        : `Vol: ${fmtV(hr.vol)} | Deliv: N/A`;
-                                    const baseLine = hr._vDesc ? `${hr._vDesc} | ${delTxt}` : delTxt;
+                                    const VOL_HILITE = '#fbbf24';
+                                    // Fold-vs-average: how many multiples of the 50-week average volume this bar is
+                                    const volFold = (hr.volSma50 && hr.volSma50 > 0) ? hr.vol / hr.volSma50 : null;
+                                    const foldChip = volFold !== null ? '(' + volFold.toFixed(1).replace(/\.0$/, '') + 'x avg)' : '';
+                                    const hasDeliv = hr.delivPer !== undefined && hr.delivPer > 0;
+                                    const delivChip = hasDeliv ? '(' + hr.delivPer.toFixed(1) + '%)' : '';
+
+                                    const baseSegs = [];
+                                    if (hr._vDesc) baseSegs.push({ text: hr._vDesc + ' | ', color: '#ffffff' });
+                                    baseSegs.push({ text: 'Vol: ' + fmtV(hr.vol) + ' ', color: '#ffffff' });
+                                    if (foldChip) baseSegs.push({ text: foldChip, color: VOL_HILITE });
+                                    baseSegs.push({ text: ' | Deliv: ', color: '#ffffff' });
+                                    if (hasDeliv) {
+                                        baseSegs.push({ text: fmtV(hr.vol * hr.delivPer / 100) + ' ', color: '#ffffff' });
+                                        baseSegs.push({ text: delivChip, color: VOL_HILITE });
+                                    } else {
+                                        baseSegs.push({ text: 'N/A', color: '#ffffff' });
+                                    }
+                                    const baseLine = baseSegs.map(s => s.text).join('');
 
                                     const MS_DESC = {
                                         Q: ['Q - Highest Volume in Last Quarter', '#0FFF50'],
@@ -14595,8 +14817,7 @@
                                         pc.textBaseline = 'middle';
                                         let ly = by + lineH / 2 + 3;
                                         if (baseLine) {
-                                            pc.fillStyle = '#ffffff';
-                                            pc.fillText(baseLine, bx + dtW / 2, ly);
+                                            _fsDrawTextSegments(pc, bx + dtW / 2, ly, baseSegs);
                                             ly += lineH;
                                         }
                                         msLines.forEach(([txt, color]) => {
@@ -14773,11 +14994,27 @@
                                 const hr = raw[pCv._hoverIdx];
                                 if (hr) {
                                     let descTxt = hr._vDesc || '';
+                                    let descSegs = hr._vDesc ? [{ text: hr._vDesc, color: '#ffffff' }] : [];
                                     if (isFs) {
-                                        const delTxt = (hr.delivPer !== undefined && hr.delivPer > 0)
-                                            ? `Vol: ${fmtV(hr.vol)} | Deliv: ${fmtV(hr.vol * hr.delivPer / 100)} (${hr.delivPer.toFixed(1)}%)`
-                                            : `Vol: ${fmtV(hr.vol)} | Deliv: N/A`;
-                                        descTxt = hr._vDesc ? `${hr._vDesc} | ${delTxt}` : delTxt;
+                                        const VOL_HILITE = '#fbbf24';
+                                        const volFold = (hr.volSma50 && hr.volSma50 > 0) ? hr.vol / hr.volSma50 : null;
+                                        const foldChip = volFold !== null ? '(' + volFold.toFixed(1).replace(/\.0$/, '') + 'x avg)' : '';
+                                        const hasDeliv = hr.delivPer !== undefined && hr.delivPer > 0;
+                                        const delivChip = hasDeliv ? '(' + hr.delivPer.toFixed(1) + '%)' : '';
+
+                                        const segs = [];
+                                        if (hr._vDesc) segs.push({ text: hr._vDesc + ' | ', color: '#ffffff' });
+                                        segs.push({ text: 'Vol: ' + fmtV(hr.vol) + ' ', color: '#ffffff' });
+                                        if (foldChip) segs.push({ text: foldChip, color: VOL_HILITE });
+                                        segs.push({ text: ' | Deliv: ', color: '#ffffff' });
+                                        if (hasDeliv) {
+                                            segs.push({ text: fmtV(hr.vol * hr.delivPer / 100) + ' ', color: '#ffffff' });
+                                            segs.push({ text: delivChip, color: VOL_HILITE });
+                                        } else {
+                                            segs.push({ text: 'N/A', color: '#ffffff' });
+                                        }
+                                        descSegs = segs;
+                                        descTxt = segs.map(s => s.text).join('');
                                     }
 
                                     if (descTxt) {
@@ -14792,9 +15029,7 @@
                                         vc.strokeStyle = hr._vColor || 'rgba(255,255,255,0.2)';
                                         vc.lineWidth = 1; vc.stroke();
 
-                                        vc.fillStyle = '#ffffff';
-                                        vc.textAlign = 'center';
-                                        vc.fillText(descTxt, bx + dtW / 2, by + 9);
+                                        _fsDrawTextSegments(vc, bx + dtW / 2, by + 9, descSegs);
                                     }
                                 }
                             }
@@ -15145,6 +15380,7 @@
 
                         const hoverIdx = pCv._hoverIdx;
                         const lastR = raw[raw.length - 1];
+                        const displayIdx = (hoverIdx !== undefined && hoverIdx !== null) ? hoverIdx : raw.length - 1;
                         const displayR = (hoverIdx !== undefined && hoverIdx !== null) ? raw[hoverIdx] : lastR;
                         const rsVal = displayR && displayR.rsMansfield !== null ? displayR.rsMansfield : null;
                         if (rsVal !== null) {
@@ -15153,6 +15389,37 @@
                             rsc.textAlign = 'right'; rsc.textBaseline = 'middle';
                             rsc.fillStyle = rsVal >= 0 ? '#00e676' : '#ff4d4f';
                             rsc.fillText(rsStr, W - 4, toYRS(rsVal));
+                        }
+
+                        // MRS moving average (rsSma10, the yellow line) — its value pinned
+                        // right at the crosshair's location (not a fixed right-axis badge),
+                        // colored green/red by sign, tracking the hovered candle (or the
+                        // latest candle when not hovering).
+                        const maVal = displayR && displayR.rsSma10 !== null && displayR.rsSma10 !== undefined ? displayR.rsSma10 : null;
+                        if (maVal !== null) {
+                            const maStr = (maVal >= 0 ? '+' : '') + maVal.toFixed(2);
+                            const maY = toYRS(maVal);
+                            const maX = toX(displayIdx);
+                            const maColor = maVal >= 0 ? '#00e676' : '#ff4d4f';
+
+                            // Anchor dot right on the MA line at that candle
+                            rsc.fillStyle = '#0b0b10';
+                            rsc.beginPath(); rsc.arc(maX, maY, 3.5, 0, Math.PI * 2); rsc.fill();
+                            rsc.fillStyle = maColor;
+                            rsc.beginPath(); rsc.arc(maX, maY, 2.2, 0, Math.PI * 2); rsc.fill();
+
+                            // Label floats beside the dot, flipping side so it never runs off-pane
+                            rsc.font = 'bold 9px "Lexend",monospace';
+                            rsc.textBaseline = 'middle';
+                            const placeLeft = maX > W / 2;
+                            rsc.textAlign = placeLeft ? 'right' : 'left';
+                            const lx = placeLeft ? maX - 8 : maX + 8;
+                            const txtW = rsc.measureText(maStr).width;
+                            const boxX = placeLeft ? lx - txtW - 4 : lx - 4;
+                            rsc.fillStyle = 'rgba(11,11,16,0.85)';
+                            rsc.fillRect(boxX, maY - 7, txtW + 8, 14);
+                            rsc.fillStyle = maColor;
+                            rsc.fillText(maStr, lx, maY);
                         }
                     }
 
@@ -18075,6 +18342,7 @@
             height: 190px;
             display: block;
             cursor: crosshair;
+            touch-action: none;
         }
 
         /* Shared floating tooltip for all breadth charts */
@@ -18125,13 +18393,16 @@
         }
 
         /* Market Mode — hero card summarizing the breadth charts into one regime read */
+        /* Left/right padding here MUST match .bc-chart-card's at every breakpoint —
+           the shared crosshair relies on every canvas landing on the same width,
+           which only holds if every card's horizontal padding is identical. */
         .bc-mode-card {
             --bc-mode-color: #94a3b8;
             position: relative;
             background: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
             border: 1px solid rgba(255, 255, 255, 0.09);
             border-radius: 14px;
-            padding: 12px 14px 10px;
+            padding: 12px 10px 10px;
             margin-bottom: 12px;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04);
             overflow: hidden;
@@ -18286,6 +18557,153 @@
             display: block;
             border-radius: 5px;
             cursor: crosshair;
+            touch-action: none;
+        }
+
+        /* ── Breadth Charts responsive — iPad / tablet ── */
+        @media (max-width: 900px) {
+            .bc-chart-card {
+                padding: 8px 8px 4px;
+                border-radius: 10px;
+            }
+
+            .bc-mode-card {
+                padding: 10px 8px 8px;
+                border-radius: 12px;
+            }
+
+            .bc-mode-score-val {
+                font-size: 23px;
+            }
+
+            .bc-mode-icon {
+                font-size: 20px;
+            }
+
+            .bc-mode-label {
+                font-size: 13px;
+            }
+        }
+
+        /* ── Breadth Charts responsive — mobile ── */
+        @media (max-width: 600px) {
+            #bc-charts-wrap {
+                padding: 4px 5px 10px !important;
+            }
+
+            #bc-toolbar {
+                padding: 6px 5px 3px !important;
+                gap: 6px !important;
+            }
+
+            #bc-toolbar #bc-group-sel {
+                flex: 1 1 100%;
+                min-width: 0;
+                max-width: 100%;
+            }
+
+            #bc-toolbar .breadth-subtabs {
+                flex: 1 1 100%;
+                justify-content: space-between;
+            }
+
+            #bc-toolbar .breadth-subtab {
+                flex: 1;
+                padding: 4px 0;
+                text-align: center;
+            }
+
+            .bc-chart-card {
+                padding: 7px 7px 3px;
+                margin-bottom: 7px;
+            }
+
+            .bc-mode-card {
+                padding: 9px 7px 8px;
+                margin-bottom: 8px;
+            }
+
+            .bc-mode-head {
+                flex-wrap: wrap;
+                row-gap: 4px;
+            }
+
+            .bc-mode-title {
+                gap: 6px;
+            }
+
+            .bc-mode-icon {
+                font-size: 18px;
+            }
+
+            .bc-mode-label {
+                font-size: 12.5px;
+            }
+
+            .bc-mode-sub {
+                font-size: 8px;
+            }
+
+            .bc-mode-score-val {
+                font-size: 20px;
+            }
+
+            .bc-mode-score-delta {
+                font-size: 9px;
+            }
+
+            .bc-mode-gauge-track {
+                margin: 9px 1px 4px;
+            }
+
+            .bc-mode-gauge-labels {
+                font-size: 7.5px;
+            }
+
+            .bc-mode-chips {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 5px;
+                margin-top: 9px;
+            }
+
+            .bc-mode-chip {
+                min-width: 0;
+                padding: 5px 6px;
+            }
+
+            .bc-mode-chip-val {
+                font-size: 11.5px;
+            }
+
+            .bc-mode-history-label {
+                font-size: 8px;
+                margin: 9px 0 3px;
+            }
+
+            .bc-chart-title {
+                font-size: 10px;
+            }
+
+            .bc-chart-head {
+                flex-wrap: wrap;
+                row-gap: 3px;
+            }
+
+            .bc-legend-item {
+                font-size: 8.5px;
+            }
+
+            .bc-tooltip {
+                font-size: 9px;
+                padding: 5px 7px;
+            }
+        }
+
+        @media (max-width: 380px) {
+            .bc-mode-chips {
+                grid-template-columns: 1fr;
+            }
         }
 
         #rd-fund-head {
@@ -22916,12 +23334,12 @@
                     <div id="fs-fh-actions-left"
                         style="display: flex; flex-direction: column; gap: 6px; pointer-events: auto;">
                         <button id="fs-btn-fav" class="fav-toggle-btn"
-                            style="padding: 2px 8px; font-size: 11px; font-weight: 800; border-radius: 6px; min-width: 28px; height: 26px; justify-content: center; align-items: center; border: 1px solid rgba(255,255,255,0.15); background: rgba(15,23,42,0.8); color: #cbd5e1; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.3);"
+                            style="padding: 2px 8px; font-size: 11px; font-weight: 800; border-radius: 6px; min-width: 28px; height: 26px; justify-content: center; align-items: center; border: 1px solid rgba(255,255,255,0.15); background: rgba(15,23,42,0.8); color: #cbd5e1; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.3); opacity: 0.4;"
                             onclick="window.fsToggleActiveFH('F')" title="Toggle Favorite">
                             F
                         </button>
                         <button id="fs-btn-hold" class="fav-toggle-btn"
-                            style="padding: 2px 8px; font-size: 11px; font-weight: 800; border-radius: 6px; min-width: 28px; height: 26px; justify-content: center; align-items: center; border: 1px solid rgba(255,255,255,0.15); background: rgba(15,23,42,0.8); color: #cbd5e1; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.3);"
+                            style="padding: 2px 8px; font-size: 11px; font-weight: 800; border-radius: 6px; min-width: 28px; height: 26px; justify-content: center; align-items: center; border: 1px solid rgba(255,255,255,0.15); background: rgba(15,23,42,0.8); color: #cbd5e1; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.3); opacity: 0.4;"
                             onclick="window.fsToggleActiveFH('H')" title="Toggle Holding">
                             H
                         </button>
