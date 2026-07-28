@@ -4945,6 +4945,288 @@
         }
 
         /* ══════════════════════════════════════════════════════
+   TECH SCREENER (SuperStar sub-category)
+══════════════════════════════════════════════════════ */
+        .ts-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 8px;
+            background: rgba(0, 0, 0, 0.15);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+
+        .ts-reset-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: rgba(255, 255, 255, 0.65);
+            border-radius: 5px;
+            font-size: 10px;
+            font-weight: 600;
+            padding: 4px 9px;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-family: 'Lexend', sans-serif;
+        }
+
+        .ts-reset-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
+
+        .ts-reset-btn.active {
+            background: rgba(96, 165, 250, 0.18);
+            border-color: rgba(96, 165, 250, 0.55);
+            color: #93c5fd;
+        }
+
+        .ts-count {
+            font-size: 10px;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.45);
+            white-space: nowrap;
+            padding: 0 2px;
+        }
+
+        .ts-fontsize-ctrl {
+            display: flex;
+            gap: 2px;
+            flex-shrink: 0;
+        }
+
+        .ts-fontsize-ctrl button {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: rgba(255, 255, 255, 0.65);
+            border-radius: 5px;
+            font-size: 10px;
+            font-weight: 700;
+            font-family: 'Lexend', sans-serif;
+            padding: 4px 7px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .ts-fontsize-ctrl button:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
+
+        .ts-table-wrap {
+            flex: 1;
+            overflow: auto;
+            min-width: 0;
+            cursor: grab;
+        }
+
+        .ts-table-wrap.ts-dragging {
+            cursor: grabbing;
+            user-select: none;
+        }
+
+        .ts-table {
+            --ts-font-scale: 1;
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-family: 'Lexend', sans-serif;
+            font-size: calc(10px * var(--ts-font-scale));
+        }
+
+        .ts-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 3;
+            background: #0a0a0e;
+            color: rgba(255, 255, 255, 0.55);
+            font-size: calc(8.5px * var(--ts-font-scale));
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            padding: 6px 7px;
+            text-align: right;
+            white-space: nowrap;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            cursor: pointer;
+            user-select: none;
+            transition: color 0.12s, background 0.12s;
+        }
+
+        .ts-table thead th:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .ts-table thead th.ts-col-ticker,
+        .ts-table tbody td.ts-col-ticker {
+            text-align: left;
+            position: sticky;
+            left: 0;
+            z-index: 4;
+            background: #0a0a0e;
+            box-shadow: 1px 0 0 rgba(255, 255, 255, 0.08);
+        }
+
+        .ts-table tbody td.ts-col-ticker {
+            z-index: 1;
+            background: #0d0d12;
+        }
+
+        .ts-table tbody tr:hover td.ts-col-ticker {
+            background: #16161d;
+        }
+
+        .ts-sort-ico {
+            display: inline-block;
+            width: 8px;
+            margin-left: 2px;
+            font-size: calc(8px * var(--ts-font-scale));
+            color: #60a5fa;
+        }
+
+        .ts-sort-ico:not(:empty)::before {
+            content: attr(data-dir);
+        }
+
+        .ts-filter-row th {
+            position: sticky;
+            top: 22px;
+            z-index: 3;
+            background: #0a0a0e;
+            padding: 3px 4px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .ts-filter-input {
+            width: 100%;
+            box-sizing: border-box;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            color: #e2e8f0;
+            font-size: calc(8.5px * var(--ts-font-scale));
+            font-family: 'Lexend', sans-serif;
+            padding: 2px 3px;
+            text-align: center;
+            outline: none;
+        }
+
+        .ts-filter-input:focus {
+            border-color: #60a5fa;
+            background: rgba(96, 165, 250, 0.08);
+        }
+
+        .ts-filter-input::placeholder {
+            color: rgba(255, 255, 255, 0.25);
+        }
+
+        .ts-table tbody tr {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+            transition: background 0.12s;
+        }
+
+        .ts-table tbody tr:nth-child(even) {
+            background: rgba(255, 255, 255, 0.015);
+        }
+
+        .ts-table tbody tr:hover {
+            background: rgba(255, 255, 255, 0.045);
+        }
+
+        /* Row/column crosshair — toggled by the "⊞ Highlight" button */
+        .ts-col-active {
+            background: rgba(96, 165, 250, 0.1) !important;
+        }
+
+        .ts-table thead th.ts-col-active {
+            background: rgba(96, 165, 250, 0.18) !important;
+            color: #fff;
+        }
+
+        .ts-table tbody tr.ts-row-active td {
+            background: rgba(96, 165, 250, 0.1);
+        }
+
+        .ts-table tbody tr.ts-row-active td.ts-col-ticker {
+            background: rgba(96, 165, 250, 0.16);
+        }
+
+        /* Selected row — persists across hover, stays until another row/ticker is picked
+           or arrow-key navigation moves it, so the reader always knows which stock is "live". */
+        .ts-table tbody tr.ts-row-selected td {
+            background: rgba(250, 204, 21, 0.12);
+            box-shadow: inset 0 1px 0 rgba(250, 204, 21, 0.4), inset 0 -1px 0 rgba(250, 204, 21, 0.4);
+        }
+
+        .ts-table tbody tr.ts-row-selected td.ts-col-ticker {
+            background: rgba(250, 204, 21, 0.18);
+        }
+
+        .ts-table tbody tr {
+            cursor: pointer;
+        }
+
+        .ts-table tbody td {
+            padding: 5px 7px;
+            text-align: right;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .ts-table .dt-ticker {
+            font-weight: 700;
+            color: #22d3ee;
+            font-size: calc(9.5px * var(--ts-font-scale));
+            background: rgba(34, 211, 238, 0.08);
+            border-radius: 3px;
+            padding: 1px 5px;
+            cursor: pointer;
+        }
+
+        .ts-table .dt-ticker:hover {
+            background: rgba(34, 211, 238, 0.2);
+        }
+
+        .ts-pos {
+            color: #4ade80;
+            font-weight: 700;
+        }
+
+        .ts-neg {
+            color: #f87171;
+            font-weight: 700;
+        }
+
+        .ts-grade-pill {
+            display: inline-block;
+            min-width: 22px;
+            padding: 1px 5px;
+            border-radius: 4px;
+            font-weight: 700;
+            font-size: calc(9.5px * var(--ts-font-scale));
+            text-align: center;
+        }
+
+        @media (max-width: 600px) {
+            .ts-table thead th {
+                font-size: calc(8px * var(--ts-font-scale));
+                padding: 5px 5px;
+            }
+
+            .ts-table tbody td {
+                padding: 4px 5px;
+                font-size: calc(9.5px * var(--ts-font-scale));
+            }
+
+            .ts-toolbar {
+                padding: 4px 5px;
+            }
+        }
+
+        /* ══════════════════════════════════════════════════════
    SUPERSTAR REDESIGN STYLES
 ══════════════════════════════════════════════════════ */
 
@@ -6334,84 +6616,165 @@
                             title="Fullscreen">⛶</button>
                     </div>
 
-                    <!-- FILTER ROW -->
-                    <div
-                        style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:rgba(0,0,0,0.15);border-bottom:1px solid rgba(255,255,255,0.06);flex-shrink:0;flex-wrap:wrap;">
-                        <input class="pane-search" id="superstar-search" placeholder="🔍 Search investor or ticker…"
-                            oninput="filterSuperstarBlock()" style="flex:1;min-width:100px;">
-                        <select id="superstar-inv-filter" class="fi ss-select" onchange="filterSuperstarBlock()">
-                            <option value="all">All Investors</option>
-                        </select>
-                        <select id="superstar-chg-filter" class="fi ss-select" onchange="filterSuperstarBlock()">
-                            <option value="all">All Changes</option>
-                            <option value="new">🆕 New</option>
-                            <option value="pos">📈 Added</option>
-                            <option value="neg">📉 Reduced</option>
-                        </select>
+                    <!-- Sub-category mode: Investors (existing) vs Tech Screener (new) -->
+                    <div class="breadth-mode-bar">
+                        <button class="breadth-mode-btn active" id="ss-mode-inv-btn"
+                            onclick="switchSuperstarMode('inv')" title="SuperStar investor holdings">⭐ Investors</button>
+                        <button class="breadth-mode-btn" id="ss-mode-tech-btn" onclick="switchSuperstarMode('tech')"
+                            title="Technical + fundamental screener">📊 Tech Screener</button>
                     </div>
 
-                    <!-- INLINE ANALYTICS STRIP -->
-                    <div class="ss-analytics-strip" id="ss-analytics">
-                        <div class="ss-stat-chip">
-                            <div class="ss-stat-val" id="ssa-total-holdings">—</div>
-                            <div class="ss-stat-lbl">Holdings</div>
+                    <div id="ss-investors-content">
+                        <!-- FILTER ROW -->
+                        <div
+                            style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:rgba(0,0,0,0.15);border-bottom:1px solid rgba(255,255,255,0.06);flex-shrink:0;flex-wrap:wrap;">
+                            <input class="pane-search" id="superstar-search" placeholder="🔍 Search investor or ticker…"
+                                oninput="filterSuperstarBlock()" style="flex:1;min-width:100px;">
+                            <select id="superstar-inv-filter" class="fi ss-select" onchange="filterSuperstarBlock()">
+                                <option value="all">All Investors</option>
+                            </select>
+                            <select id="superstar-chg-filter" class="fi ss-select" onchange="filterSuperstarBlock()">
+                                <option value="all">All Changes</option>
+                                <option value="new">🆕 New</option>
+                                <option value="pos">📈 Added</option>
+                                <option value="neg">📉 Reduced</option>
+                            </select>
                         </div>
-                        <div class="ss-stat-chip">
-                            <div class="ss-stat-val" id="ssa-investors">—</div>
-                            <div class="ss-stat-lbl">Investors</div>
+
+                        <!-- INLINE ANALYTICS STRIP -->
+                        <div class="ss-analytics-strip" id="ss-analytics">
+                            <div class="ss-stat-chip">
+                                <div class="ss-stat-val" id="ssa-total-holdings">—</div>
+                                <div class="ss-stat-lbl">Holdings</div>
+                            </div>
+                            <div class="ss-stat-chip">
+                                <div class="ss-stat-val" id="ssa-investors">—</div>
+                                <div class="ss-stat-lbl">Investors</div>
+                            </div>
+                            <div class="ss-stat-chip">
+                                <div class="ss-stat-val" style="color:#00e676" id="ssa-new-adds">—</div>
+                                <div class="ss-stat-lbl">🆕 New</div>
+                            </div>
+                            <div class="ss-stat-chip">
+                                <div class="ss-stat-val" style="color:#00e676" id="ssa-increased">—</div>
+                                <div class="ss-stat-lbl">📈 Added</div>
+                            </div>
+                            <div class="ss-stat-chip">
+                                <div class="ss-stat-val" style="color:#ff4d4f" id="ssa-decreased">—</div>
+                                <div class="ss-stat-lbl">📉 Reduced</div>
+                            </div>
                         </div>
-                        <div class="ss-stat-chip">
-                            <div class="ss-stat-val" style="color:#00e676" id="ssa-new-adds">—</div>
-                            <div class="ss-stat-lbl">🆕 New</div>
+
+                        <!-- TOP CONVICTION STRIP -->
+                        <div class="ss-conviction-strip" id="ss-conviction-strip" style="display:none;">
+                            <div class="ss-conv-label">🏆 Top Conviction:</div>
+                            <div class="ss-conv-items" id="ss-conv-items"></div>
                         </div>
-                        <div class="ss-stat-chip">
-                            <div class="ss-stat-val" style="color:#00e676" id="ssa-increased">—</div>
-                            <div class="ss-stat-lbl">📈 Added</div>
-                        </div>
-                        <div class="ss-stat-chip">
-                            <div class="ss-stat-val" style="color:#ff4d4f" id="ssa-decreased">—</div>
-                            <div class="ss-stat-lbl">📉 Reduced</div>
+
+                        <!-- TABLE -->
+                        <div class="deal-sub-pane active-sub-pane" id="superstar-sub-pane">
+                            <div class="deal-table-wrap">
+                                <table class="deal-table ss-table" id="superstar-table">
+                                    <colgroup>
+                                        <col style="width:40%;">
+                                        <col style="width:19%;">
+                                        <col style="width:20%;">
+                                        <col style="width:21%;">
+                                    </colgroup>
+                                    <thead>
+                                        <tr>
+                                            <th onclick="sortSuperstar('Investor')"
+                                                style="cursor:pointer;text-align:left;">
+                                                ⭐ Investor</th>
+                                            <th onclick="sortSuperstar('Ticker')"
+                                                style="cursor:pointer;text-align:left;">
+                                                Ticker</th>
+                                            <th onclick="sortSuperstar('Holding_%')"
+                                                style="cursor:pointer;text-align:right;">Hold%</th>
+                                            <th onclick="sortSuperstar('Change_%')"
+                                                style="cursor:pointer;text-align:right;">Chg%</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="superstar-tbody">
+                                        <tr>
+                                            <td colspan="4" class="deal-loading">⭐ Loading SuperStar data…</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                                <div class="deal-load-more-wrap" id="superstar-load-more-wrap" style="display:none;">
+                                    <button class="deal-load-more-btn" onclick="loadNextSuperstarPage()">Load Next
+                                        100</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- TOP CONVICTION STRIP -->
-                    <div class="ss-conviction-strip" id="ss-conviction-strip" style="display:none;">
-                        <div class="ss-conv-label">🏆 Top Conviction:</div>
-                        <div class="ss-conv-items" id="ss-conv-items"></div>
-                    </div>
-
-                    <!-- TABLE -->
-                    <div class="deal-sub-pane active-sub-pane" id="superstar-sub-pane">
-                        <div class="deal-table-wrap">
-                            <table class="deal-table ss-table" id="superstar-table">
-                                <colgroup>
-                                    <col style="width:40%;">
-                                    <col style="width:19%;">
-                                    <col style="width:20%;">
-                                    <col style="width:21%;">
-                                </colgroup>
+                    <!-- ══ TECH SCREENER (new sub-category) ══ -->
+                    <div id="ss-tech-screener" style="display:none;flex-direction:column;flex:1;min-height:0;">
+                        <div class="ts-toolbar">
+                            <input class="pane-search" id="ts-search" placeholder="🔍 Search ticker or company…"
+                                oninput="tsFilterChange()" style="flex:1;min-width:100px;">
+                            <select id="ts-group-sel" class="breadth-index-select" onchange="tsFilterChange()">
+                                <option value="all">All Stocks</option>
+                            </select>
+                            <button class="deal-refresh-btn" onclick="window.renderTechScreener(true)"
+                                title="Recompute">↻</button>
+                            <button class="ts-reset-btn" onclick="tsResetFilters()" title="Reset all filters">Reset</button>
+                            <div class="ts-fontsize-ctrl" title="Table font size">
+                                <button onclick="tsAdjustFontSize(-1)" title="Decrease font size">A−</button>
+                                <button onclick="tsAdjustFontSize(1)" title="Increase font size">A+</button>
+                            </div>
+                            <button class="ts-reset-btn" id="ts-highlight-btn" onclick="tsToggleHighlight()"
+                                title="Highlight the row & column under your cursor">⊞ Highlight</button>
+                            <button class="ts-reset-btn" onclick="toggleNewsFS('superstar-block-section', this)"
+                                title="Fullscreen">⛶</button>
+                            <span class="ts-count" id="ts-count">—</span>
+                        </div>
+                        <div class="ts-table-wrap" id="ts-table-wrap">
+                            <table class="ts-table" id="ts-table">
                                 <thead>
-                                    <tr>
-                                        <th onclick="sortSuperstar('Investor')" style="cursor:pointer;text-align:left;">
-                                            ⭐ Investor</th>
-                                        <th onclick="sortSuperstar('Ticker')" style="cursor:pointer;text-align:left;">
-                                            Ticker</th>
-                                        <th onclick="sortSuperstar('Holding_%')"
-                                            style="cursor:pointer;text-align:right;">Hold%</th>
-                                        <th onclick="sortSuperstar('Change_%')"
-                                            style="cursor:pointer;text-align:right;">Chg%</th>
+                                    <tr class="ts-head-row">
+                                        <th class="ts-col-ticker" onclick="tsSort('ticker')">Ticker<span
+                                                class="ts-sort-ico" data-col="ticker"></span></th>
+                                        <th onclick="tsSort('chg')">Chg %<span class="ts-sort-ico"
+                                                data-col="chg"></span></th>
+                                        <th onclick="tsSort('vol')">Vol×Avg<span class="ts-sort-ico"
+                                                data-col="vol"></span></th>
+                                        <th onclick="tsSort('pct52w')">%52W Hi<span class="ts-sort-ico"
+                                                data-col="pct52w"></span></th>
+                                        <th onclick="tsSort('rsi')">RSI<span class="ts-sort-ico"
+                                                data-col="rsi"></span></th>
+                                        <th onclick="tsSort('adx')">ADX<span class="ts-sort-ico"
+                                                data-col="adx"></span></th>
+                                        <th onclick="tsSort('tech')">Tech Score<span class="ts-sort-ico"
+                                                data-col="tech"></span></th>
+                                        <th onclick="tsSort('eps')">EPS Rank<span class="ts-sort-ico"
+                                                data-col="eps"></span></th>
+                                        <th onclick="tsSort('revp')">Sale<span class="ts-sort-ico"
+                                                data-col="revp"></span></th>
+                                        <th onclick="tsSort('smr')">SMR<span class="ts-sort-ico"
+                                                data-col="smr"></span></th>
+                                        <th onclick="tsSort('dur')">Durab.<span class="ts-sort-ico"
+                                                data-col="dur"></span></th>
+                                        <th onclick="tsSort('gwth')">Growth<span class="ts-sort-ico"
+                                                data-col="gwth"></span></th>
+                                        <th onclick="tsSort('prof')">Profit.<span class="ts-sort-ico"
+                                                data-col="prof"></span></th>
+                                        <th onclick="tsSort('cons')">Quality<span class="ts-sort-ico"
+                                                data-col="cons"></span></th>
+                                        <th onclick="tsSort('balsht')">BalSht<span class="ts-sort-ico"
+                                                data-col="balsht"></span></th>
+                                        <th onclick="tsSort('val')">Valuat.<span class="ts-sort-ico"
+                                                data-col="val"></span></th>
                                     </tr>
+                                    <tr class="ts-filter-row" id="ts-filter-row"></tr>
                                 </thead>
-                                <tbody id="superstar-tbody">
+                                <tbody id="ts-tbody">
                                     <tr>
-                                        <td colspan="4" class="deal-loading">⭐ Loading SuperStar data…</td>
+                                        <td colspan="16" class="deal-loading">📊 Loading Tech Screener…</td>
                                     </tr>
                                 </tbody>
                             </table>
-                            <div class="deal-load-more-wrap" id="superstar-load-more-wrap" style="display:none;">
-                                <button class="deal-load-more-btn" onclick="loadNextSuperstarPage()">Load Next
-                                    100</button>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -9657,7 +10020,116 @@
             calcPEADFlags();
             calcVCPFlags();
             calcVolMilestoneFlags();
+            calcTechScreenerFields();
         }
+
+        // ══════════════════════════════════════════════════════
+        //   TECH SCREENER — RSI/ADX/volume-multiple/52W-high%/last-candle
+        //   change, computed once per ticker at load time (not per-render)
+        //   so the screener table just reads & sorts precomputed fields.
+        // ══════════════════════════════════════════════════════
+        function _tsRSI(closes, period) {
+            period = period || 14;
+            const n = closes.length;
+            if (n <= period) return NaN;
+            let gain = 0, loss = 0;
+            for (let i = 1; i <= period; i++) {
+                const ch = closes[i] - closes[i - 1];
+                if (ch >= 0) gain += ch; else loss -= ch;
+            }
+            let avgGain = gain / period, avgLoss = loss / period;
+            for (let i = period + 1; i < n; i++) {
+                const ch = closes[i] - closes[i - 1];
+                const g = ch > 0 ? ch : 0, l = ch < 0 ? -ch : 0;
+                avgGain = ((avgGain * (period - 1)) + g) / period;
+                avgLoss = ((avgLoss * (period - 1)) + l) / period;
+            }
+            return avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
+        }
+
+        // Standard Wilder ADX (True Range + smoothed +DM/-DM → DX → smoothed ADX).
+        function _tsADX(raw, period) {
+            period = period || 14;
+            const n = raw.length;
+            if (n <= period * 2) return NaN;
+
+            const tr = [], plusDM = [], minusDM = [];
+            for (let i = 1; i < n; i++) {
+                const h = raw[i].high, l = raw[i].low, ph = raw[i - 1].high, pl = raw[i - 1].low, pc = raw[i - 1].close;
+                tr.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+                const upMove = h - ph, downMove = pl - l;
+                plusDM.push(upMove > downMove && upMove > 0 ? upMove : 0);
+                minusDM.push(downMove > upMove && downMove > 0 ? downMove : 0);
+            }
+
+            function wilderSmooth(arr) {
+                const out = new Array(arr.length).fill(null);
+                let sum = 0;
+                for (let i = 0; i < period; i++) sum += arr[i];
+                out[period - 1] = sum;
+                for (let i = period; i < arr.length; i++) out[i] = out[i - 1] - (out[i - 1] / period) + arr[i];
+                return out;
+            }
+            const trS = wilderSmooth(tr), plusS = wilderSmooth(plusDM), minusS = wilderSmooth(minusDM);
+
+            const dx = [];
+            for (let i = period - 1; i < tr.length; i++) {
+                if (!trS[i]) { dx.push(null); continue; }
+                const plusDI = (plusS[i] / trS[i]) * 100;
+                const minusDI = (minusS[i] / trS[i]) * 100;
+                const sum = plusDI + minusDI;
+                dx.push(sum === 0 ? 0 : (Math.abs(plusDI - minusDI) / sum) * 100);
+            }
+            const validDx = dx.filter(v => v !== null);
+            if (validDx.length < period) return NaN;
+            let adx = validDx.slice(0, period).reduce((a, b) => a + b, 0) / period;
+            for (let i = period; i < validDx.length; i++) adx = ((adx * (period - 1)) + validDx[i]) / period;
+            return adx;
+        }
+
+        function calcTechScreenerFields() {
+            if (!window._ohlcvTickers || !allData.length) return;
+            allData.forEach(r => {
+                r._tsChg = NaN; r._tsVolMult = NaN; r._ts52wPct = NaN; r._tsRSI = NaN; r._tsADX = NaN;
+
+                // Row-level fields (no OHLCV needed): Tech Score from the external tech-score
+                // feed, and the quarterly-result quality (Best/Good/Moderate/Weak/Very Weak),
+                // reusing the app's existing calcScore()/SI classification unchanged.
+                r._tsTechScoreVal = parseFloat(r._techScore);
+                r._tsResultScore = calcScore(r);
+
+                const arr = window._ohlcvTickers.get(String(r._ticker).toUpperCase());
+                if (!arr || arr.length < 20) return;
+
+                const n = arr.length;
+                const last = arr[n - 1], prev = arr[n - 2];
+                if (prev && prev.close) r._tsChg = ((last.close - prev.close) / prev.close) * 100;
+
+                // "Fold from the 9-week average volume" — last candle's volume vs the trailing
+                // 9-week average. Computed directly from raw .vol here (not a shared volSma9
+                // field — that field only ever exists transiently inside the chart renderer's
+                // own local array, never persisted on window._ohlcvTickers's bars).
+                let volSum9 = 0;
+                const win9 = Math.min(9, n);
+                for (let j = n - win9; j < n; j++) volSum9 += arr[j].vol;
+                const volAvg9 = volSum9 / win9;
+                if (volAvg9 > 0) r._tsVolMult = last.vol / volAvg9;
+
+                // % distance of the current price from the current 52-week high — 0 at a new
+                // high, negative the further below it (e.g. -8.2 = 8.2% off the 52W high).
+                let hi52 = 0;
+                for (let j = Math.max(0, n - 52); j < n; j++) { if (arr[j].high > hi52) hi52 = arr[j].high; }
+                if (hi52 > 0) r._ts52wPct = ((last.close - hi52) / hi52) * 100;
+
+                r._tsRSI = _tsRSI(arr.map(x => x.close), 14);
+                r._tsADX = _tsADX(arr, 14);
+            });
+            if (window._sidebarTab === 'superstar' && document.getElementById('ss-tech-screener').style.display !== 'none'
+                && typeof window.renderTechScreener === 'function') {
+                window.renderTechScreener();
+            }
+        }
+        window.calcTechScreenerFields = calcTechScreenerFields;
 
         // ══════════════════════════════════════════════════════
         //   SECTOR & INDUSTRY BREADTH  (Feature 3)
@@ -21023,6 +21495,408 @@
                 si.value = ticker;
                 if (typeof onSearchInput === 'function') onSearchInput();
             }
+        };
+
+        /* ══════════════════════════════════════════════════════
+           TECH SCREENER — SuperStar sub-category. Reads the technical
+           fields calcTechScreenerFields() already computed on allData
+           rows plus the existing fundamental score fields; adds its own
+           index/watchlist filter, per-column min filters, search and sort.
+        ══════════════════════════════════════════════════════ */
+        const TS_COLUMNS = [
+            { key: 'chg', field: '_tsChg', suffix: '%', decimals: 1, signed: true },
+            { key: 'vol', field: '_tsVolMult', suffix: 'x', decimals: 1, signed: false },
+            { key: 'pct52w', field: '_ts52wPct', suffix: '%', decimals: 1, signed: true },
+            { key: 'rsi', field: '_tsRSI', suffix: '', decimals: 0, signed: false },
+            { key: 'adx', field: '_tsADX', suffix: '', decimals: 0, signed: false },
+            { key: 'tech', field: '_tsTechScoreVal', suffix: '', decimals: 0, signed: false, grade: true },
+            { key: 'eps', field: '_eps', suffix: '', decimals: 0, signed: false, grade: true },
+            { key: 'revp', field: '_revp', suffix: '', decimals: 0, signed: false, grade: true },
+            { key: 'smr', field: '_smr', suffix: '', decimals: 0, signed: false, grade: true },
+            { key: 'dur', field: '_dur', suffix: '', decimals: 0, signed: false, grade: true },
+            { key: 'gwth', field: '_gwth', suffix: '', decimals: 0, signed: false, grade: true },
+            { key: 'prof', field: '_prof', suffix: '', decimals: 0, signed: false, grade: true },
+            { key: 'cons', field: '_cons', suffix: '', decimals: 0, signed: false, grade: true },
+            { key: 'balsht', field: '_balsht', suffix: '', decimals: 0, signed: false, grade: true },
+            { key: 'val', field: '_val', suffix: '', decimals: 0, signed: false, grade: true }
+        ];
+
+        window._tsState = window._tsState || { group: 'all', search: '', sortCol: 'chg', sortDir: -1, filters: {} };
+
+        window.switchSuperstarMode = function (mode) {
+            window._ssMode = mode;
+            const invBtn = document.getElementById('ss-mode-inv-btn');
+            const techBtn = document.getElementById('ss-mode-tech-btn');
+            const invPane = document.getElementById('ss-investors-content');
+            const techPane = document.getElementById('ss-tech-screener');
+            if (invBtn) invBtn.classList.toggle('active', mode === 'inv');
+            if (techBtn) techBtn.classList.toggle('active', mode === 'tech');
+            if (invPane) invPane.style.display = mode === 'inv' ? '' : 'none';
+            if (techPane) techPane.style.display = mode === 'tech' ? 'flex' : 'none';
+            if (mode === 'tech') {
+                _tsPopulateGroupSelect();
+                const filterRow = document.getElementById('ts-filter-row');
+                if (filterRow && !filterRow.childElementCount) _tsBuildFilterRow();
+                _tsApplyFontScale();
+                _tsSetupDragScroll();
+                _tsSetupGridHighlight();
+                _tsSetupRowSelect();
+                _tsSetupKeyboardNav();
+                const hlBtn = document.getElementById('ts-highlight-btn');
+                if (hlBtn) hlBtn.classList.toggle('active', window._tsHighlightOn);
+                // Compute once, lazily, the first time this tab is opened (calcTechScreenerFields
+                // already runs on every data load/refresh after that, via calcOHLCVReturns).
+                if (typeof calcTechScreenerFields === 'function' && window._ohlcvTickers && allData.length
+                    && allData[0]._tsChg === undefined) {
+                    calcTechScreenerFields();
+                }
+                window.renderTechScreener();
+            }
+        };
+
+        function _tsBuildFilterRow() {
+            const row = document.getElementById('ts-filter-row');
+            if (!row) return;
+            let html = '<th></th>';
+            TS_COLUMNS.forEach(function (c) {
+                html += '<th><input class="ts-filter-input" type="number" placeholder="≥" data-col="' + c.key + '" oninput="tsFilterChange()"></th>';
+            });
+            row.innerHTML = html;
+            _tsAlignFilterRowSticky();
+        }
+
+        // Font-size control — persisted across sessions like the sidebar width.
+        window._tsFontScale = (function () {
+            try { return parseFloat(localStorage.getItem('ts_font_scale')) || 1; } catch (e) { return 1; }
+        })();
+
+        function _tsApplyFontScale() {
+            const table = document.getElementById('ts-table');
+            if (table) table.style.setProperty('--ts-font-scale', window._tsFontScale);
+            _tsAlignFilterRowSticky();
+        }
+
+        // The filter row is sticky right below the sort-header row — its "top" offset
+        // has to track the header row's actual (font-scaled) height, or the two rows
+        // would overlap/gap apart whenever the font size changes.
+        function _tsAlignFilterRowSticky() {
+            requestAnimationFrame(function () {
+                const headRow = document.querySelector('#ts-table .ts-head-row');
+                const filterRow = document.getElementById('ts-filter-row');
+                if (!headRow || !filterRow) return;
+                const h = headRow.offsetHeight;
+                Array.prototype.forEach.call(filterRow.children, function (th) { th.style.top = h + 'px'; });
+            });
+        }
+
+        window.tsAdjustFontSize = function (delta) {
+            window._tsFontScale = Math.max(0.75, Math.min(1.6, Math.round((window._tsFontScale + delta * 0.1) * 100) / 100));
+            try { localStorage.setItem('ts_font_scale', window._tsFontScale); } catch (e) { }
+            _tsApplyFontScale();
+        };
+
+        // Click-and-drag to pan the (16-column-wide) table horizontally — the
+        // sidebar is rarely wide enough to show everything, and dragging is
+        // easier to reach than the scrollbar. A small movement threshold keeps
+        // ordinary clicks (sort headers, the ticker link) working normally.
+        function _tsSetupDragScroll() {
+            const wrap = document.getElementById('ts-table-wrap');
+            if (!wrap || wrap._tsDragBound) return;
+            wrap._tsDragBound = true;
+            let isDown = false, startX = 0, startScroll = 0, moved = false;
+
+            wrap.addEventListener('mousedown', function (e) {
+                if (e.button !== 0) return;
+                isDown = true; moved = false;
+                startX = e.pageX; startScroll = wrap.scrollLeft;
+                wrap.classList.add('ts-dragging');
+            });
+            window.addEventListener('mousemove', function (e) {
+                if (!isDown) return;
+                const dx = e.pageX - startX;
+                if (Math.abs(dx) > 4) moved = true;
+                if (moved) wrap.scrollLeft = startScroll - dx;
+            });
+            window.addEventListener('mouseup', function () {
+                if (isDown && moved) {
+                    // Swallow the click that follows a drag-release so it doesn't
+                    // also trigger whatever was under the cursor (sort/ticker link).
+                    wrap._tsSuppressClick = true;
+                    setTimeout(function () { wrap._tsSuppressClick = false; }, 0);
+                }
+                isDown = false;
+                wrap.classList.remove('ts-dragging');
+            });
+            wrap.addEventListener('click', function (e) {
+                if (wrap._tsSuppressClick) { e.stopPropagation(); e.preventDefault(); }
+            }, true);
+        }
+
+        // Row/column crosshair highlight — a toggle, not always-on, since it adds
+        // a per-hover DOM pass across the column's cells.
+        window._tsHighlightOn = (function () {
+            try { return localStorage.getItem('ts_highlight') === '1'; } catch (e) { return false; }
+        })();
+
+        function _tsClearColHighlight(table) {
+            table.querySelectorAll('.ts-col-active').forEach(function (el) { el.classList.remove('ts-col-active'); });
+            table.querySelectorAll('.ts-row-active').forEach(function (el) { el.classList.remove('ts-row-active'); });
+        }
+
+        function _tsSetupGridHighlight() {
+            const wrap = document.getElementById('ts-table-wrap');
+            const table = document.getElementById('ts-table');
+            if (!wrap || !table || wrap._tsGridBound) return;
+            wrap._tsGridBound = true;
+            let lastCol = -1, lastRow = null;
+            wrap.addEventListener('mouseover', function (e) {
+                if (!window._tsHighlightOn) return;
+                const cell = e.target.closest('td,th');
+                if (!cell || !table.contains(cell) || cell.cellIndex == null) return;
+                const row = cell.closest('tr');
+                const idx = cell.cellIndex;
+                if (idx === lastCol && row === lastRow) return;
+                _tsClearColHighlight(table);
+                lastCol = idx; lastRow = row;
+                const rows = table.rows;
+                for (let i = 0; i < rows.length; i++) {
+                    const c = rows[i].cells[idx];
+                    if (c) c.classList.add('ts-col-active');
+                }
+                if (row && row.parentElement && row.parentElement.tagName === 'TBODY') row.classList.add('ts-row-active');
+            });
+            wrap.addEventListener('mouseleave', function () {
+                _tsClearColHighlight(table);
+                lastCol = -1; lastRow = null;
+            });
+        }
+
+        window.tsToggleHighlight = function () {
+            window._tsHighlightOn = !window._tsHighlightOn;
+            try { localStorage.setItem('ts_highlight', window._tsHighlightOn ? '1' : '0'); } catch (e) { }
+            const btn = document.getElementById('ts-highlight-btn');
+            if (btn) btn.classList.toggle('active', window._tsHighlightOn);
+            if (!window._tsHighlightOn) {
+                const table = document.getElementById('ts-table');
+                if (table) _tsClearColHighlight(table);
+            }
+        };
+
+        // Row selection — click any ticker/row to "pin" it (persists across re-renders
+        // and hover), then Up/Down arrow keys walk the currently visible row order,
+        // loading each ticker's chart as you go, like scrubbing through a watchlist.
+        window._tsSelectedTicker = window._tsSelectedTicker || null;
+
+        function _tsSelectRow(ticker) {
+            if (!ticker) return;
+            window._tsSelectedTicker = ticker;
+            const tbody = document.getElementById('ts-tbody');
+            if (tbody) {
+                Array.prototype.forEach.call(tbody.querySelectorAll('tr'), function (tr) {
+                    tr.classList.toggle('ts-row-selected', tr.dataset.ticker === ticker);
+                });
+            }
+            if (typeof window.searchStock === 'function') window.searchStock(ticker);
+        }
+        window._tsSelectRow = _tsSelectRow;
+
+        function _tsSetupRowSelect() {
+            const tbody = document.getElementById('ts-tbody');
+            if (!tbody || tbody._tsSelectBound) return;
+            tbody._tsSelectBound = true;
+            tbody.addEventListener('click', function (e) {
+                const tr = e.target.closest('tr[data-ticker]');
+                if (!tr) return;
+                _tsSelectRow(tr.dataset.ticker);
+            });
+        }
+
+        function _tsSetupKeyboardNav() {
+            if (window._tsKeyNavBound) return;
+            window._tsKeyNavBound = true;
+            document.addEventListener('keydown', function (e) {
+                if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                const wrap = document.getElementById('ts-table-wrap');
+                if (!wrap || wrap.offsetParent === null) return; // Tech Screener not the visible pane
+                const active = document.activeElement;
+                if (active && (active.tagName === 'INPUT' || active.tagName === 'SELECT' || active.tagName === 'TEXTAREA')) return;
+                const trs = Array.prototype.slice.call(document.querySelectorAll('#ts-tbody tr[data-ticker]'));
+                if (!trs.length) return;
+                e.preventDefault();
+                let idx = trs.findIndex(function (tr) { return tr.dataset.ticker === window._tsSelectedTicker; });
+                if (idx === -1) idx = 0;
+                else idx = e.key === 'ArrowDown' ? Math.min(idx + 1, trs.length - 1) : Math.max(idx - 1, 0);
+                _tsSelectRow(trs[idx].dataset.ticker);
+                trs[idx].scrollIntoView({ block: 'nearest' });
+            });
+        }
+
+        // Mirrors the Full Screen Chart's fs-group-select / Breadth Charts'
+        // bc-group-sel convention (all / favorites / holdings / index_main /
+        // idx_<Name>) so indices — with their full constituent lists — are
+        // first-class filters here too, not just a personal watchlist.
+        function _tsPopulateGroupSelect() {
+            const sel = document.getElementById('ts-group-sel');
+            if (!sel) return;
+            const prev = sel.value || window._tsState.group || 'all';
+            let html = '<option value="all">All Stocks</option>' +
+                '<option value="favorites">⭐ Favorites</option>' +
+                '<option value="holdings">💼 Holdings</option>';
+            if (window.indexDataMap) {
+                const names = Object.keys(window.indexDataMap).sort();
+                if (names.some(function (n) { return n.toLowerCase() === 'index_main'; })) {
+                    html += '<option value="index_main">📈 Index_main</option>';
+                }
+                names.forEach(function (n) {
+                    if (n.toLowerCase() === 'index_main') return;
+                    html += '<option value="idx_' + n + '">' + n + '</option>';
+                });
+            }
+            if (sel.innerHTML !== html) sel.innerHTML = html;
+            const hasPrev = Array.prototype.some.call(sel.options, function (o) { return o.value === prev; });
+            sel.value = hasPrev ? prev : 'all';
+            window._tsState.group = sel.value;
+        }
+
+        function _tsGroupSet() {
+            const g = window._tsState.group || 'all';
+            if (g === 'all') return null;
+            if (g === 'favorites' || g === 'holdings') {
+                const key = g === 'favorites' ? 'F' : 'H';
+                const s = new Set();
+                if (window._fhTickers && window._fhTickers[key]) {
+                    window._fhTickers[key].forEach(function (t) { s.add(String(t).replace(/\.NS$/i, '').toUpperCase()); });
+                }
+                return s;
+            }
+            if (g === 'index_main') {
+                const key = Object.keys(window.indexDataMap || {}).find(function (k) { return k.toLowerCase() === 'index_main'; }) || 'Index_main';
+                return (window.indexDataMap && window.indexDataMap[key]) ? window.indexDataMap[key] : new Set();
+            }
+            if (g.indexOf('idx_') === 0) {
+                const name = g.slice(4);
+                return (window.indexDataMap && window.indexDataMap[name]) ? window.indexDataMap[name] : new Set();
+            }
+            return null;
+        }
+
+        let _tsFilterDebounce = null;
+        window.tsFilterChange = function () {
+            clearTimeout(_tsFilterDebounce);
+            _tsFilterDebounce = setTimeout(function () {
+                const searchEl = document.getElementById('ts-search');
+                const groupEl = document.getElementById('ts-group-sel');
+                window._tsState.search = searchEl ? searchEl.value.trim().toLowerCase() : '';
+                window._tsState.group = groupEl ? groupEl.value : 'all';
+                window._tsState.filters = {};
+                document.querySelectorAll('#ts-filter-row .ts-filter-input').forEach(function (inp) {
+                    const v = parseFloat(inp.value);
+                    if (!isNaN(v)) window._tsState.filters[inp.dataset.col] = v;
+                });
+                window.renderTechScreener();
+            }, 200);
+        };
+
+        window.tsSort = function (col) {
+            if (window._tsState.sortCol === col) window._tsState.sortDir *= -1;
+            else { window._tsState.sortCol = col; window._tsState.sortDir = col === 'ticker' ? 1 : -1; }
+            window.renderTechScreener();
+        };
+
+        window.tsResetFilters = function () {
+            const searchEl = document.getElementById('ts-search');
+            const groupEl = document.getElementById('ts-group-sel');
+            if (searchEl) searchEl.value = '';
+            if (groupEl) groupEl.value = 'all';
+            document.querySelectorAll('#ts-filter-row .ts-filter-input').forEach(function (inp) { inp.value = ''; });
+            window._tsState.search = ''; window._tsState.group = 'all'; window._tsState.filters = {};
+            window.renderTechScreener();
+        };
+
+        window.renderTechScreener = function (forceRecalc) {
+            const tbody = document.getElementById('ts-tbody');
+            const countEl = document.getElementById('ts-count');
+            if (!tbody) return;
+            if (forceRecalc && typeof calcTechScreenerFields === 'function') calcTechScreenerFields();
+            if (!allData.length || !window._ohlcvTickers) {
+                tbody.innerHTML = '<tr><td colspan="16" class="deal-loading">📊 Loading Tech Screener…</td></tr>';
+                return;
+            }
+
+            const st = window._tsState;
+            const universe = _tsGroupSet();
+            const q = st.search;
+
+            let rows = allData.filter(function (r) {
+                if (universe && !universe.has(String(r._ticker).toUpperCase())) return false;
+                if (q && String(r._ticker).toLowerCase().indexOf(q) === -1 && String(r._coName || '').toLowerCase().indexOf(q) === -1) return false;
+                for (let i = 0; i < TS_COLUMNS.length; i++) {
+                    const col = TS_COLUMNS[i];
+                    const min = st.filters[col.key];
+                    if (min === undefined) continue;
+                    const v = r[col.field];
+                    if (isNaN(v) || v < min) return false;
+                }
+                return true;
+            });
+
+            rows.sort(function (a, b) {
+                if (st.sortCol === 'ticker') return st.sortDir * String(a._ticker).localeCompare(String(b._ticker));
+                const colDef = TS_COLUMNS.find(function (c) { return c.key === st.sortCol; });
+                const va = colDef ? a[colDef.field] : NaN, vb = colDef ? b[colDef.field] : NaN;
+                const na = isNaN(va), nb = isNaN(vb);
+                if (na && nb) return 0;
+                if (na) return 1; // NaN always sinks to the bottom regardless of sort direction
+                if (nb) return -1;
+                return st.sortDir * (va - vb);
+            });
+
+            if (countEl) countEl.textContent = rows.length.toLocaleString('en-IN') + ' stocks';
+
+            document.querySelectorAll('.ts-sort-ico').forEach(function (el) {
+                if (el.dataset.col === st.sortCol) { el.textContent = st.sortDir > 0 ? '▲' : '▼'; }
+                else { el.textContent = ''; }
+            });
+
+            const MAX_ROWS = 300; // keep the DOM light — narrow with search/filters/index for more focus
+            const shown = rows.slice(0, MAX_ROWS);
+
+            function fmtNum(v, decimals, suffix, signed) {
+                if (isNaN(v)) return '<span style="color:rgba(255,255,255,0.25);">—</span>';
+                return (signed && v >= 0 ? '+' : '') + v.toFixed(decimals) + suffix;
+            }
+            function chgClass(v) { return isNaN(v) ? '' : (v >= 0 ? 'ts-pos' : 'ts-neg'); }
+            function gradeColor(v) {
+                if (isNaN(v)) return 'rgba(255,255,255,0.4)';
+                if (v >= 70) return '#4ade80';
+                if (v >= 40) return '#facc15';
+                return '#f87171';
+            }
+
+            tbody.innerHTML = shown.map(function (r) {
+                const rsiStyle = isNaN(r._tsRSI) ? '' : (r._tsRSI >= 70 ? 'color:#fb923c;font-weight:700;' : r._tsRSI <= 30 ? 'color:#38bdf8;font-weight:700;' : '');
+                const adxStyle = isNaN(r._tsADX) ? '' : (r._tsADX >= 25 ? 'color:#a78bfa;font-weight:700;' : '');
+                const cells = [
+                    '<td class="' + chgClass(r._tsChg) + '">' + fmtNum(r._tsChg, 1, '%', true) + '</td>',
+                    '<td>' + fmtNum(r._tsVolMult, 1, 'x', false) + '</td>',
+                    '<td class="' + chgClass(r._ts52wPct) + '">' + fmtNum(r._ts52wPct, 1, '%', true) + '</td>',
+                    '<td style="' + rsiStyle + '">' + fmtNum(r._tsRSI, 0, '', false) + '</td>',
+                    '<td style="' + adxStyle + '">' + fmtNum(r._tsADX, 0, '', false) + '</td>',
+                    '<td><span class="ts-grade-pill" style="color:' + gradeColor(r._tsTechScoreVal) + ';">' + fmtNum(r._tsTechScoreVal, 0, '', false) + '</span></td>'
+                ];
+                TS_COLUMNS.slice(6).forEach(function (col) {
+                    const v = r[col.field];
+                    cells.push('<td><span class="ts-grade-pill" style="color:' + gradeColor(v) + ';">' + fmtNum(v, 0, '', false) + '</span></td>');
+                });
+                const resInfo = SI[r._tsResultScore] || SI[0];
+                const tickerStyle = 'border-left:3px solid ' + resInfo.dot + ';color:' + resInfo.dot + ';';
+                const tickerTitle = (r._coName || '') + ' — Quarterly Result: ' + resInfo.label;
+                const rowSelClass = (r._ticker === window._tsSelectedTicker) ? ' ts-row-selected' : '';
+                return '<tr class="' + rowSelClass.trim() + '" data-ticker="' + r._ticker + '">' +
+                    '<td class="ts-col-ticker"><span class="dt-ticker" style="' + tickerStyle + '" title="' + tickerTitle + '">' + r._ticker + '</span></td>' +
+                    cells.join('') +
+                    '</tr>';
+            }).join('');
         };
 
         // Patch resetAllAppFilters to also reset superstar section
