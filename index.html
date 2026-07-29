@@ -8792,8 +8792,12 @@
 
         /* ══════════════════════════════════════════════════════
            SWIPE GESTURE — Insights ↔ News
+           Disabled: it hijacked horizontal-scroll drags inside wide tables/
+           charts (Breadth Charts, Tech Screener, Deal tables) as a tab-switch
+           gesture. Tab switching still works via the sidebar-tabs buttons.
         ══════════════════════════════════════════════════════ */
         (function initSidebarSwipe() {
+            return; // disabled — see note above
             function attach() {
                 const sidebar = document.getElementById('news-sidebar');
                 if (!sidebar) { setTimeout(attach, 300); return; }
