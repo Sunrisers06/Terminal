@@ -6738,8 +6738,8 @@
                                                 class="ts-sort-ico" data-col="ticker"></span></th>
                                         <th onclick="tsSort('chg')">Chg %<span class="ts-sort-ico"
                                                 data-col="chg"></span></th>
-                                        <th onclick="tsSort('vol')">Vol×Avg<span class="ts-sort-ico"
-                                                data-col="vol"></span></th>
+                                        <th onclick="tsSort('vol50w')">Vol×50W<span class="ts-sort-ico"
+                                                data-col="vol50w"></span></th>
                                         <th onclick="tsSort('pct52w')">%52W Hi<span class="ts-sort-ico"
                                                 data-col="pct52w"></span></th>
                                         <th onclick="tsSort('rsi')">RSI<span class="ts-sort-ico"
@@ -10098,28 +10098,38 @@
                 r._tsTechScoreVal = parseFloat(r._techScore);
                 r._tsResultScore = calcScore(r);
 
+                // Only Chg% needs a hard floor (2 bars). Vol×Avg and %52W Hi below already
+                // fall back to "however many weeks exist" via Math.min/Math.max windows, so
+                // a newly-listed stock with e.g. 6 weeks of history still gets real numbers
+                // instead of being blanked out by an arbitrary 20-week gate.
                 const arr = window._ohlcvTickers.get(String(r._ticker).toUpperCase());
-                if (!arr || arr.length < 20) return;
+                if (!arr || arr.length < 2) return;
 
                 const n = arr.length;
                 const last = arr[n - 1], prev = arr[n - 2];
-                if (prev && prev.close) r._tsChg = ((last.close - prev.close) / prev.close) * 100;
+                if (prev && !isNaN(prev.close) && prev.close) r._tsChg = ((last.close - prev.close) / prev.close) * 100;
 
-                // "Fold from the 9-week average volume" — last candle's volume vs the trailing
-                // 9-week average. Computed directly from raw .vol here (not a shared volSma9
-                // field — that field only ever exists transiently inside the chart renderer's
-                // own local array, never persisted on window._ohlcvTickers's bars).
-                let volSum9 = 0;
-                const win9 = Math.min(9, n);
-                for (let j = n - win9; j < n; j++) volSum9 += arr[j].vol;
-                const volAvg9 = volSum9 / win9;
-                if (volAvg9 > 0) r._tsVolMult = last.vol / volAvg9;
+                // "Fold from the 50-week average volume" — last candle's volume vs the average
+                // of the 50 weeks BEFORE it (or however many prior weeks exist if fewer than 50).
+                // The current candle must be excluded from its own average — including it would
+                // let a volume spike inflate the very average it's being compared against,
+                // understating the fold (e.g. a real 3x week would read as barely 2x).
+                // Computed directly from raw .vol here (not a shared volSma50 field — that field
+                // only ever exists transiently inside the chart renderer's own local array,
+                // never persisted on window._ohlcvTickers's bars).
+                const histEnd = n - 1; // exclude the last candle itself
+                let volSum50 = 0, volN50 = 0;
+                const win50 = Math.min(50, histEnd);
+                for (let j = histEnd - win50; j < histEnd; j++) { if (!isNaN(arr[j].vol)) { volSum50 += arr[j].vol; volN50++; } }
+                const volAvg50 = volN50 > 0 ? volSum50 / volN50 : 0;
+                if (volAvg50 > 0 && !isNaN(last.vol)) r._tsVolMult = last.vol / volAvg50;
 
-                // % distance of the current price from the current 52-week high — 0 at a new
-                // high, negative the further below it (e.g. -8.2 = 8.2% off the 52W high).
+                // % distance of the current price from the highest high over the trailing 52
+                // weeks — or over however many weeks exist if the stock has under a year of
+                // history. 0 at a new high, negative the further below it (e.g. -8.2 = 8.2% off).
                 let hi52 = 0;
-                for (let j = Math.max(0, n - 52); j < n; j++) { if (arr[j].high > hi52) hi52 = arr[j].high; }
-                if (hi52 > 0) r._ts52wPct = ((last.close - hi52) / hi52) * 100;
+                for (let j = Math.max(0, n - 52); j < n; j++) { if (!isNaN(arr[j].high) && arr[j].high > hi52) hi52 = arr[j].high; }
+                if (hi52 > 0 && !isNaN(last.close)) r._ts52wPct = ((last.close - hi52) / hi52) * 100;
 
                 r._tsRSI = _tsRSI(arr.map(x => x.close), 14);
                 r._tsADX = _tsADX(arr, 14);
@@ -21505,7 +21515,7 @@
         ══════════════════════════════════════════════════════ */
         const TS_COLUMNS = [
             { key: 'chg', field: '_tsChg', suffix: '%', decimals: 1, signed: true },
-            { key: 'vol', field: '_tsVolMult', suffix: 'x', decimals: 1, signed: false },
+            { key: 'vol50w', field: '_tsVolMult', suffix: 'x', decimals: 1, signed: false },
             { key: 'pct52w', field: '_ts52wPct', suffix: '%', decimals: 1, signed: true },
             { key: 'rsi', field: '_tsRSI', suffix: '', decimals: 0, signed: false },
             { key: 'adx', field: '_tsADX', suffix: '', decimals: 0, signed: false },
