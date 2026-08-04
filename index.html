@@ -8124,7 +8124,7 @@
           </div>` : ''}
           ${(r['Base_Stage_Weekly'] || r['Base_Status_Weekly'] || r['Base_Type_Weekly']) ? `<div class="co-base-row">${r['Base_Stage_Weekly'] ? `<span class="base-tag base-stage">Stage ${escHtml(r['Base_Stage_Weekly'])}</span>` : ''} ${r['Base_Status_Weekly'] ? `<span class="base-tag base-status">${escHtml(r['Base_Status_Weekly'])}</span>` : ''} ${r['Base_Type_Weekly'] ? `<span class="base-tag base-type">${escHtml(r['Base_Type_Weekly'])}</span>` : ''}</div>` : ''}
         </div>
-        ${(() => { const _tk2 = String(r._ticker).toUpperCase(); const _sm2 = window._survMap && window._survMap[_tk2]; if (!_sm2) return ''; let _fb = ''; if (_sm2.asm) { const _isLT2 = _sm2.asm.toUpperCase().includes('LTASM'); _fb += `<span class="surv-flag ${_isLT2 ? 'surv-ltasm' : 'surv-stasm'}" title="${_sm2.asm}">⚑</span>`; } if (_sm2.esm) _fb += `<span class="surv-flag surv-esm" title="${_sm2.esm}">⚑</span>`; if (_sm2.gsm) _fb += `<span class="surv-flag surv-gsm" title="${_sm2.gsm}">⚑</span>`; return _fb ? `<div class="surv-flags-col">${_fb}</div>` : ''; })()}
+        ${(() => { const _tk2 = String(r._ticker).toUpperCase(); const _sm2 = window._survMap && window._survMap[_tk2]; if (!_sm2) return ''; let _fb = ''; if (_sm2.asm) { const _isLT2 = _sm2.asm.toUpperCase().includes('LTASM'); _fb += `<span class="surv-flag ${_isLT2 ? 'surv-ltasm' : 'surv-stasm'}" title="${_sm2.asm}">⚑</span>`; } if (_sm2.esm) _fb += `<span class="surv-flag surv-esm" title="${_sm2.esm}">⚑</span>`; if (_sm2.gsm) _fb += `<span class="surv-flag surv-gsm" title="${_sm2.gsm}">⚑</span>`; if (_sm2.sme) _fb += `<span class="surv-flag surv-sme" title="${_sm2.sme}">⚑</span>`; return _fb ? `<div class="surv-flags-col">${_fb}</div>` : ''; })()}
         ${r._techScore ? (() => {
                     const sc = parseFloat(r._techScore);
                     const scCls = isNaN(sc) ? 'gray' : (sc >= 70 ? 'green' : (sc >= 40 ? 'orange' : 'red'));
@@ -21124,6 +21124,15 @@
             filter: drop-shadow(0 0 5px rgba(244, 63, 94, 0.9));
         }
 
+        /* SME — green */
+        .surv-sme {
+            color: #4ade80;
+        }
+
+        .surv-sme:hover {
+            filter: drop-shadow(0 0 5px rgba(34, 197, 94, 0.9));
+        }
+
         /* .dsub-count — small count pill inside deal sub-tab buttons */
         .dsub-count {
             display: inline-block;
@@ -22402,6 +22411,7 @@
                 const iA = hdrs.findIndex(h => h === 'ASM STAGE');
                 const iE = hdrs.findIndex(h => h === 'ESM STAGE');
                 const iG = hdrs.findIndex(h => h === 'GSM STAGE');
+                const iS = hdrs.findIndex(h => h === 'SME');
                 if (iT === -1) return {};
                 const map = {};
                 for (let i = 1; i < lines.length; i++) {
@@ -22411,8 +22421,9 @@
                     const asm = iA >= 0 ? (v[iA] || '').trim() : '';
                     const esm = iE >= 0 ? (v[iE] || '').trim() : '';
                     const gsm = iG >= 0 ? (v[iG] || '').trim() : '';
-                    if (asm || esm || gsm) {
-                        map[tk] = { asm: asm || null, esm: esm || null, gsm: gsm || null };
+                    const sme = iS >= 0 ? (v[iS] || '').trim() : '';
+                    if (asm || esm || gsm || sme) {
+                        map[tk] = { asm: asm || null, esm: esm || null, gsm: gsm || null, sme: sme || null };
                     }
                 }
                 return map;
