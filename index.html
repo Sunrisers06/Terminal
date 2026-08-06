@@ -28523,7 +28523,7 @@
     </script>
 
     <!-- ══════════════════════════════════════════════════════
-         SAFE-TOP MODE — iPad status-bar clearance (touch devices only)
+         SAFE-TOP MODE — iPad status-bar clearance
          The app declares apple-mobile-web-app-status-bar-style:black-translucent,
          so in iPad full screen iOS paints its status bar (date · time · battery)
          OVER the page. That strip swallows taps, which is why the topbar stops
@@ -28532,40 +28532,47 @@
          Full screen stays the DEFAULT and resting state. Tapping the edge chip
          shifts the app down just long enough to use the topbar; tapping it again
          goes straight back to edge-to-edge. Nothing is persisted — every load
-         starts full screen.
+         starts full screen. The chip shows the moment the page loads on an iPad;
+         it does NOT wait for full-screen/standalone mode.
 
-         EVERY rule is gated behind (pointer: coarse) so a desktop browser is
-         never touched. Desktop reports pointer:fine — including touchscreen
-         laptops, whose primary pointer is still the mouse.
+         DEVICE GATE — read this before changing it:
+         An earlier version gated on `@media (pointer: coarse)`. That silently
+         fails on iPad, because Safari there defaults to "Request Desktop
+         Website" and in that mode iPadOS deliberately reports pointer:fine /
+         hover:hover to mimic macOS — so the chip never appeared on the exact
+         device it exists for. Detection is therefore done in JS (userAgent +
+         maxTouchPoints, which iPadOS cannot mask) and published as the
+         `safe-top-avail` body class; every rule below keys off that class, so
+         a desktop browser can never match any of them.
 
          This block lives at the very end on purpose: several of the rules it
          overrides are themselves !important, and a few tie on specificity — so
          source order is what decides them.
     ══════════════════════════════════════════════════════ -->
     <style>
-        /* Chip base — hidden everywhere until the coarse-pointer gate below. */
+        /* Chip base — hidden until JS adds body.safe-top-avail (iPad/iOS only). */
         #safe-top-toggle {
             display: none;
             position: fixed;
             right: 0;
-            top: 42%;
+            top: 40%;
             z-index: 999998;
-            width: 15px;
-            height: 48px;
+            width: 20px;
+            height: 64px;
             padding: 0;
             align-items: center;
             justify-content: center;
-            border: 1px solid rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(96, 165, 250, 0.35);
             border-right: none;
-            border-radius: 8px 0 0 8px;
-            background: rgba(20, 20, 28, 0.35);
+            border-radius: 9px 0 0 9px;
+            background: rgba(20, 20, 28, 0.55);
             backdrop-filter: blur(6px);
             -webkit-backdrop-filter: blur(6px);
-            color: rgba(255, 255, 255, 0.5);
-            font-size: 11px;
+            color: rgba(147, 197, 253, 0.85);
+            font-size: 13px;
             line-height: 1;
             cursor: pointer;
-            opacity: 0.3;
+            opacity: 0.5;
             transition: opacity 0.18s, background-color 0.18s, color 0.18s;
             -webkit-tap-highlight-color: transparent;
         }
@@ -28574,66 +28581,64 @@
             display: none;
         }
 
-        /* ── Touch devices only ───────────────────────────── */
-        @media (pointer: coarse) {
-            #safe-top-toggle {
-                display: flex;
-            }
+        /* ── iPad / iOS only (class is set by the JS gate below) ── */
+        body.safe-top-avail #safe-top-toggle {
+            display: flex;
+        }
 
-            #safe-top-toggle:active {
-                opacity: 1;
-                background: rgba(59, 130, 246, 0.4);
-                color: #fff;
-            }
+        body.safe-top-avail #safe-top-toggle:active {
+            opacity: 1;
+            background: rgba(59, 130, 246, 0.45);
+            color: #fff;
+        }
 
-            body.safe-top-on #safe-top-toggle {
-                opacity: 0.55;
-                color: #60a5fa;
-                border-color: rgba(96, 165, 250, 0.45);
-            }
+        body.safe-top-avail.safe-top-on #safe-top-toggle {
+            opacity: 0.85;
+            color: #60a5fa;
+            border-color: rgba(96, 165, 250, 0.6);
+        }
 
-            body.safe-top-on {
-                /* env() is the real inset when iOS reports one; the 26px floor
-                   covers iPads, which report a small-or-zero inset yet still
-                   overlay a bar. */
-                --app-top-offset: max(env(safe-area-inset-top, 0px), 26px);
-            }
+        body.safe-top-on {
+            /* env() is the real inset when iOS reports one; the 26px floor
+               covers iPads, which report a small-or-zero inset yet still
+               overlay a bar. */
+            --app-top-offset: max(env(safe-area-inset-top, 0px), 26px);
+        }
 
-            body.safe-top-on #app-container {
-                padding-top: var(--app-top-offset) !important;
-            }
+        body.safe-top-on #app-container {
+            padding-top: var(--app-top-offset) !important;
+        }
 
-            /* Opaque strip behind the status bar so scrolled content never bleeds
-               through it. Height collapses to 0 when safe-top is off. */
-            #safe-top-backdrop {
-                display: block;
-                position: fixed;
-                top: 0;
-                left: 0;
-                right: 0;
-                height: var(--app-top-offset);
-                background: var(--bg);
-                z-index: 99998;
-                pointer-events: none;
-            }
+        /* Opaque strip behind the status bar so scrolled content never bleeds
+           through it. Height collapses to 0 when safe-top is off. */
+        body.safe-top-avail #safe-top-backdrop {
+            display: block;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: var(--app-top-offset);
+            background: var(--bg);
+            z-index: 99998;
+            pointer-events: none;
+        }
 
-            /* Pane-level fullscreen (the ⛶ on News / Deals / SuperStar / Breadth)
-               is position:fixed pinned to 0 — it needs the same clearance. */
-            body.safe-top-on .fs-active {
-                top: var(--app-top-offset) !important;
-                height: calc(100dvh - var(--app-top-offset)) !important;
-            }
+        /* Pane-level fullscreen (the ⛶ on News / Deals / SuperStar / Breadth)
+           is position:fixed pinned to 0 — it needs the same clearance. */
+        body.safe-top-on .fs-active {
+            top: var(--app-top-offset) !important;
+            height: calc(100dvh - var(--app-top-offset)) !important;
+        }
 
-            body.safe-top-on #fs-chart-modal {
-                top: var(--app-top-offset);
-                height: calc(100% - var(--app-top-offset));
-            }
+        body.safe-top-on #fs-chart-modal {
+            top: var(--app-top-offset);
+            height: calc(100% - var(--app-top-offset));
         }
 
         /* Sticky headers pin to the VIEWPORT, not to the padded container, so each
            one's own `top` has to gain the same offset or it slides back under the
            bar as soon as the user scrolls. */
-        @media (pointer: coarse) and (max-width: 1400px) {
+        @media (max-width: 1400px) {
             body.safe-top-on .topbar { top: var(--app-top-offset) !important; }
             body.safe-top-on .active-company-chip { top: var(--app-top-offset) !important; }
             body.safe-top-on .sidebar-tabs { top: var(--app-top-offset) !important; }
@@ -28646,7 +28651,7 @@
             }
         }
 
-        @media (pointer: coarse) and (max-width: 1024px) and (orientation: portrait) {
+        @media (max-width: 1024px) and (orientation: portrait) {
             /* Here the chart modal is rotated 90°, so the screen's top edge maps to
                the modal's LEFT edge — the status bar covers the chart sidebar, not
                the chart's top. Pad that side instead and leave top/height alone. */
@@ -28665,18 +28670,40 @@
         (function initSafeTop() {
             'use strict';
 
-            // Hard gate: touch devices only. An earlier version auto-enabled on
-            // "display-mode: fullscreen", which a desktop browser also reports in
-            // F11 — that is what leaked this into the desktop view. Desktop (and
-            // touchscreen laptops, whose primary pointer is the mouse) report
-            // pointer:fine, so this leaves them completely untouched.
-            var isTouch = false;
-            try { isTouch = window.matchMedia('(pointer: coarse)').matches; } catch (e) { }
-            if (!isTouch) {
+            // Hard gate — iPad / iOS only.
+            //
+            // `matchMedia('(pointer: coarse)')` CANNOT be used here: iPad Safari
+            // defaults to "Request Desktop Website", and in that mode iPadOS
+            // reports pointer:fine + hover:hover to impersonate macOS. That made
+            // the previous gate return false on the one device this feature is
+            // built for, so nothing ever rendered.
+            //
+            // maxTouchPoints is the tell iPadOS does not mask: an iPad reports
+            // 5, a real Mac reports 0. Combined with the UA that isolates
+            // "Macintosh that can be touched" = iPad in desktop mode.
+            var ua = navigator.userAgent || '';
+            var plat = navigator.platform || '';
+            var maxTouch = navigator.maxTouchPoints || 0;
+
+            var isIOS = /iPad|iPhone|iPod/i.test(ua);
+            var isIPadDesktopUA = maxTouch > 1 && /Mac/i.test(ua + ' ' + plat);
+            // Generic tablets (Android etc.) still get it — they can't be desktop,
+            // since a desktop's primary pointer is the mouse and reports fine.
+            var isCoarse = false;
+            try { isCoarse = window.matchMedia('(pointer: coarse)').matches; } catch (e) { }
+
+            var isTabletLike = isIOS || isIPadDesktopUA || (isCoarse && maxTouch > 0);
+
+            if (!isTabletLike) {
                 document.body.classList.remove('safe-top-on');
+                document.body.classList.remove('safe-top-avail');
                 window.toggleSafeTop = function () { };
                 return;
             }
+
+            // Publishes the gate to CSS — every safe-top rule keys off this class,
+            // so a desktop browser cannot match any of them even by accident.
+            document.body.classList.add('safe-top-avail');
 
             // Purely manual, never persisted — full screen is the resting state, so
             // every load starts edge-to-edge and the shift is only for as long as
