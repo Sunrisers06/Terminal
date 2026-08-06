@@ -85,6 +85,11 @@
             --vweak-bg: rgba(255, 77, 79, 0.10);
             --vweak-txt: var(--pop-red);
             --vweak-brd: rgba(255, 77, 79, 0.25);
+
+            /* How far the whole app is pushed down to clear the OS status bar.
+               0 = true edge-to-edge; body.safe-top-on raises it (see the
+               "SAFE-TOP MODE" block at the end of this file). */
+            --app-top-offset: 0px;
         }
 
         * {
@@ -28514,6 +28519,189 @@
                 }
             }, true);
 
+        })();
+    </script>
+
+    <!-- ══════════════════════════════════════════════════════
+         SAFE-TOP MODE — iPad status-bar clearance (touch devices only)
+         The app declares apple-mobile-web-app-status-bar-style:black-translucent,
+         so in iPad full screen iOS paints its status bar (date · time · battery)
+         OVER the page. That strip swallows taps, which is why the topbar stops
+         responding there.
+
+         Full screen stays the DEFAULT and resting state. Tapping the edge chip
+         shifts the app down just long enough to use the topbar; tapping it again
+         goes straight back to edge-to-edge. Nothing is persisted — every load
+         starts full screen.
+
+         EVERY rule is gated behind (pointer: coarse) so a desktop browser is
+         never touched. Desktop reports pointer:fine — including touchscreen
+         laptops, whose primary pointer is still the mouse.
+
+         This block lives at the very end on purpose: several of the rules it
+         overrides are themselves !important, and a few tie on specificity — so
+         source order is what decides them.
+    ══════════════════════════════════════════════════════ -->
+    <style>
+        /* Chip base — hidden everywhere until the coarse-pointer gate below. */
+        #safe-top-toggle {
+            display: none;
+            position: fixed;
+            right: 0;
+            top: 42%;
+            z-index: 999998;
+            width: 15px;
+            height: 48px;
+            padding: 0;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-right: none;
+            border-radius: 8px 0 0 8px;
+            background: rgba(20, 20, 28, 0.35);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 11px;
+            line-height: 1;
+            cursor: pointer;
+            opacity: 0.3;
+            transition: opacity 0.18s, background-color 0.18s, color 0.18s;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        #safe-top-backdrop {
+            display: none;
+        }
+
+        /* ── Touch devices only ───────────────────────────── */
+        @media (pointer: coarse) {
+            #safe-top-toggle {
+                display: flex;
+            }
+
+            #safe-top-toggle:active {
+                opacity: 1;
+                background: rgba(59, 130, 246, 0.4);
+                color: #fff;
+            }
+
+            body.safe-top-on #safe-top-toggle {
+                opacity: 0.55;
+                color: #60a5fa;
+                border-color: rgba(96, 165, 250, 0.45);
+            }
+
+            body.safe-top-on {
+                /* env() is the real inset when iOS reports one; the 26px floor
+                   covers iPads, which report a small-or-zero inset yet still
+                   overlay a bar. */
+                --app-top-offset: max(env(safe-area-inset-top, 0px), 26px);
+            }
+
+            body.safe-top-on #app-container {
+                padding-top: var(--app-top-offset) !important;
+            }
+
+            /* Opaque strip behind the status bar so scrolled content never bleeds
+               through it. Height collapses to 0 when safe-top is off. */
+            #safe-top-backdrop {
+                display: block;
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: var(--app-top-offset);
+                background: var(--bg);
+                z-index: 99998;
+                pointer-events: none;
+            }
+
+            /* Pane-level fullscreen (the ⛶ on News / Deals / SuperStar / Breadth)
+               is position:fixed pinned to 0 — it needs the same clearance. */
+            body.safe-top-on .fs-active {
+                top: var(--app-top-offset) !important;
+                height: calc(100dvh - var(--app-top-offset)) !important;
+            }
+
+            body.safe-top-on #fs-chart-modal {
+                top: var(--app-top-offset);
+                height: calc(100% - var(--app-top-offset));
+            }
+        }
+
+        /* Sticky headers pin to the VIEWPORT, not to the padded container, so each
+           one's own `top` has to gain the same offset or it slides back under the
+           bar as soon as the user scrolls. */
+        @media (pointer: coarse) and (max-width: 1400px) {
+            body.safe-top-on .topbar { top: var(--app-top-offset) !important; }
+            body.safe-top-on .active-company-chip { top: var(--app-top-offset) !important; }
+            body.safe-top-on .sidebar-tabs { top: var(--app-top-offset) !important; }
+            body.safe-top-on .pane-toolbar { top: calc(var(--app-top-offset) + 33px) !important; }
+            body.safe-top-on.news-open-mobile .active-company-chip.show ~ .sidebar-tabs {
+                top: calc(var(--app-top-offset) + 31px) !important;
+            }
+            body.safe-top-on.news-open-mobile .active-company-chip.show ~ .news-half .pane-toolbar {
+                top: calc(var(--app-top-offset) + 66px) !important;
+            }
+        }
+
+        @media (pointer: coarse) and (max-width: 1024px) and (orientation: portrait) {
+            /* Here the chart modal is rotated 90°, so the screen's top edge maps to
+               the modal's LEFT edge — the status bar covers the chart sidebar, not
+               the chart's top. Pad that side instead and leave top/height alone. */
+            body.safe-top-on #fs-chart-modal {
+                top: 0 !important;
+                height: 100vw !important;
+                padding-left: var(--app-top-offset);
+            }
+        }
+    </style>
+
+    <div id="safe-top-backdrop"></div>
+    <button id="safe-top-toggle" onclick="toggleSafeTop()" title="Shift the app below the status bar">⤓</button>
+
+    <script>
+        (function initSafeTop() {
+            'use strict';
+
+            // Hard gate: touch devices only. An earlier version auto-enabled on
+            // "display-mode: fullscreen", which a desktop browser also reports in
+            // F11 — that is what leaked this into the desktop view. Desktop (and
+            // touchscreen laptops, whose primary pointer is the mouse) report
+            // pointer:fine, so this leaves them completely untouched.
+            var isTouch = false;
+            try { isTouch = window.matchMedia('(pointer: coarse)').matches; } catch (e) { }
+            if (!isTouch) {
+                document.body.classList.remove('safe-top-on');
+                window.toggleSafeTop = function () { };
+                return;
+            }
+
+            // Purely manual, never persisted — full screen is the resting state, so
+            // every load starts edge-to-edge and the shift is only for as long as
+            // the topbar is actually being used.
+            window.toggleSafeTop = function () {
+                var on = document.body.classList.toggle('safe-top-on');
+
+                var btn = document.getElementById('safe-top-toggle');
+                if (btn) {
+                    btn.textContent = on ? '⤒' : '⤓';
+                    btn.title = on ? 'Back to edge-to-edge full screen' : 'Shift the app below the status bar';
+                }
+
+                // Canvas panes size themselves from clientHeight at draw time, and a
+                // class toggle fires no resize event — redraw the open ones by hand.
+                requestAnimationFrame(function () {
+                    if (window._breadthMode === 'charts' && typeof window.renderBreadthCharts === 'function') {
+                        window.renderBreadthCharts();
+                    }
+                    var fsModal = document.getElementById('fs-chart-modal');
+                    if (fsModal && fsModal.style.display === 'flex' && typeof window.renderFullScreenChart === 'function') {
+                        window.renderFullScreenChart();
+                    }
+                });
+            };
         })();
     </script>
 
