@@ -5606,10 +5606,26 @@
         }
 
         /* ══════════════════════════════════════════════════════
-   4K / HIGH-DPI DISPLAY OPTIMISATION  (≥ 2560 px wide)
+   4K / HIGH-DPI DISPLAY OPTIMISATION  (≥ 2680 px wide)
    All changes are purely visual — no logic is altered.
+
+   BREAKPOINT CHOICE — do not move these back onto a round number:
+   this block scales the whole UI up ~1.45x, so the width it fires at
+   must never sit ON a common screen width. It used to be 2560px, which
+   is exactly QHD@100%, 4K@150% and 5K@200%. At those sizes a maximized
+   window measures ~2545px (the scrollbar eats ~15px) but full screen
+   measures a clean 2560px — so pressing F11 crossed the breakpoint and
+   the entire app visibly jumped bigger, exactly as if the zoom level
+   had changed.
+
+   2680px sits in the gap between 2560 and the next real screen width,
+   so no maximize-to-full-screen transition can straddle it. It also
+   stops QHD and OS-scaled 4K from being scaled up a second time —
+   Windows/macOS display scaling has already enlarged CSS pixels there,
+   and 1.45x on top of that is double-scaling. Genuine 4K at 100% OS
+   scaling reports 3840px and still gets both tiers.
 ══════════════════════════════════════════════════════ */
-        @media (min-width: 2560px) {
+        @media (min-width: 2680px) {
 
             /* ── Root scale tokens ── */
             :root {
@@ -6184,8 +6200,12 @@
             }
         }
 
-        /* ── Fine-tune at true 4K (3840 px) ── */
-        @media (min-width: 3200px) {
+        /* ── Fine-tune at true 4K (3840 px) ──
+           3600px for the same reason as the tier above: 3200 was close
+           enough to the 3440px ultrawide width that an ultrawide caught
+           this tier too, and it left an F11-straddle risk. 3600 clears
+           3440 and stays well under 3840. ── */
+        @media (min-width: 3600px) {
             .topbar {
                 height: 80px;
                 padding: 0 30px;
