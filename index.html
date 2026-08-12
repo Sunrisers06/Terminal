@@ -7571,23 +7571,67 @@
             }
             window._smartFetch = smartFetch;
 
-            // ── DuckDB-wasm singleton ──
+            /* ══ DuckDB-wasm singleton ══
+               DuckDB is the engine that reads every .parquet in this folder, so
+               if it fails to load there is no chart data at all — no charts, no
+               trainers, nothing to log. It used to come from jsdelivr, which
+               made the whole terminal quietly dependent on a CDN: offline, or
+               after a hard refresh that bypasses the HTTP cache, the app came up
+               empty.
+
+               It is now vendored into ./duckdb/ (the ESM graph, the worker, and
+               the exception-handling wasm build) so a normal session touches the
+               network zero times. The CDN is kept only as a fallback for the two
+               cases the local copy cannot serve: the folder is missing, or the
+               browser is old enough to lack wasm exception handling (pre-2021),
+               for which we deliberately do not ship the extra 21 MB mvp binary.
+
+               Bundle choice is made explicitly from getPlatformFeatures rather
+               than via selectBundle, because selectBundle falls through to
+               bundles.mvp — which is undefined here — instead of reporting that
+               it could not match. */
             let _dbPromise = null;
+            window._duckdbSource = null;   // 'local' | 'cdn' — for diagnostics
+
             window._getDuckDB = function () {
                 if (_dbPromise) return _dbPromise;
                 _dbPromise = (async () => {
-                    const duckdb = await import("https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/+esm");
-                    const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
-                    const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
-                    const workerUrl = URL.createObjectURL(
-                        new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' })
-                    );
-                    const worker = new Worker(workerUrl);
-                    URL.revokeObjectURL(workerUrl);
+                    const base = new URL('./duckdb/', location.href).href;
+                    let duckdb = null, bundle = null, worker = null;
+
+                    try {
+                        duckdb = await import(base + 'duckdb.mjs');
+                        const feats = await duckdb.getPlatformFeatures();
+                        if (!feats || !feats.wasmExceptions) {
+                            throw new Error('browser lacks wasm exception handling');
+                        }
+                        bundle = {
+                            mainModule: base + 'duckdb-eh.wasm',
+                            mainWorker: base + 'duckdb-browser-eh.worker.js'
+                        };
+                        // Same-origin, so the worker loads directly. The blob +
+                        // importScripts dance below exists only to get around the
+                        // cross-origin worker restriction on the CDN path.
+                        worker = new Worker(bundle.mainWorker);
+                        window._duckdbSource = 'local';
+                    } catch (localErr) {
+                        console.warn('[SundarX] Local DuckDB unavailable (' + localErr.message +
+                            ') — falling back to the CDN. This will not work offline.');
+                        duckdb = await import("https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/+esm");
+                        bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
+                        const workerUrl = URL.createObjectURL(
+                            new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' })
+                        );
+                        worker = new Worker(workerUrl);
+                        URL.revokeObjectURL(workerUrl);
+                        window._duckdbSource = 'cdn';
+                    }
+
                     const logger = new duckdb.ConsoleLogger();
                     const db = new duckdb.AsyncDuckDB(logger, worker);
                     await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
                     const conn = await db.connect();
+                    console.log('[SundarX] DuckDB ready (' + window._duckdbSource + ')');
                     return { db, conn };
                 })();
                 return _dbPromise;
@@ -9160,7 +9204,14 @@
                 if (idxQ !== 'all') {
                     if (idxQ.startsWith('fh_')) {
                         const fhKey = idxQ.replace('fh_', '');
-                        if (!window._fhTickers || !window._fhTickers[fhKey] || !window._fhTickers[fhKey].includes(String(r._ticker).toUpperCase() + '.NS')) return false;
+                        /* _fhTickers values are Sets of plain uppercase symbols.
+                           This used to call .includes() (an Array method Sets do
+                           not have) against a '.NS'-suffixed symbol the sets
+                           never contained — so every one of the fh_ dropdown
+                           options threw on the first row and matched nothing. */
+                        const fhSet = window._fhTickers && window._fhTickers[fhKey];
+                        if (!fhSet || !fhSet.size) return false;
+                        if (!fhSet.has(String(r._ticker).toUpperCase())) return false;
                     } else {
                         if (!indexDataMap[idxQ] || !indexDataMap[idxQ].has(String(r._ticker).toUpperCase())) return false;
                     }
@@ -11939,9 +11990,76 @@
             window._fhLoaded = false;
             window._fhLoading = false;
 
+            /* ══ LOCAL-FIRST FAVOURITES ══
+               Both sources here are remote — the published CSV and the sync Web
+               App — so offline the F/H filters used to come up empty and every
+               favourite silently disappeared. The resolved ticker sets are now
+               cached after each successful sync, applied immediately on the next
+               load, and only replaced once fresh data actually arrives. */
+            const FH_CACHE_KEY = 'sundarx_fh_cache';
+            window._fhFromCache = false;
+            window._fhCachedAt = null;
+
+            function saveFHCache() {
+                try {
+                    localStorage.setItem(FH_CACHE_KEY, JSON.stringify({
+                        at: Date.now(),
+                        FF: [...window._fhTickers.FF],
+                        TF: [...window._fhTickers.TF],
+                        F: [...window._fhTickers.F],
+                        H: [...window._fhTickers.H]
+                    }));
+                } catch (e) {
+                    console.warn('[SundarX] Could not cache F/H tickers:', e.message);
+                }
+            }
+
+            /* Apply the cache so the filters work before (or without) a network
+               round-trip. Returns true if anything was restored. */
+            function applyFHCache() {
+                let c = null;
+                try { c = JSON.parse(localStorage.getItem(FH_CACHE_KEY)); } catch (e) { }
+                if (!c) return false;
+                const n = (c.FF || []).length + (c.TF || []).length + (c.H || []).length;
+                if (!n) return false;
+                window._fhTickers.FF = new Set(c.FF || []);
+                window._fhTickers.TF = new Set(c.TF || []);
+                window._fhTickers.F = new Set(c.F || []);
+                window._fhTickers.H = new Set(c.H || []);
+                window._fhFromCache = true;
+                window._fhCachedAt = c.at || null;
+                console.log('[SundarX] F/H restored from cache (' + n + ' tickers, ' +
+                    (c.at ? new Date(c.at).toLocaleString() : 'unknown time') + ')');
+                return true;
+            }
+            window._applyFHCache = applyFHCache;
+
             async function loadFHTickers() {
                 if (window._fhLoaded || window._fhLoading) return;
                 window._fhLoading = true;
+
+                // Make the filters usable immediately — and permanently, if the
+                // network never answers. A successful sync overwrites this below.
+                const hadCache = applyFHCache();
+                if (hadCache && typeof window.refreshFHUI === 'function') window.refreshFHUI();
+
+                if (navigator.onLine === false) {
+                    console.warn('[SundarX] Offline — using cached F/H tickers.');
+                    window._fhLoaded = hadCache;
+                    window._fhLoading = false;
+                    return;
+                }
+
+                /* Queued edits go up FIRST. A fetch before them returns sheet
+                   state that predates the edit, and recomputeFHTickers would then
+                   overwrite both the live sets and the cache with it — which is
+                   precisely how offline additions were being erased. */
+                try {
+                    await fhReplayPending();
+                } catch (e) {
+                    console.warn('[SundarX] Pending F/H upload failed:', e.message);
+                }
+
                 console.log('[SundarX] Syncing F/H tickers...');
                 try {
                     // 1. Fetch static CSV — columns: A=FunFav, B=Holding, C=TechFav
@@ -11978,30 +12096,111 @@
                     }
 
                     recomputeFHTickers();
+                    // Anything that could not be uploaded is layered back on so
+                    // the user never sees their own edit vanish.
+                    if (fhApplyPendingOnTop()) saveFHCache();
                     window._fhLoaded = true;
+                    window._fhFromCache = false;
+                    window._fhCachedAt = Date.now();
+                    saveFHCache();
                     console.log(`[SundarX] Ready — F=${window._fhTickers.F.size}, FF=${window._fhTickers.FF.size}, TF=${window._fhTickers.TF.size}, H=${window._fhTickers.H.size}`);
                 } catch (e) {
-                    console.error('[SundarX] F/H load critical failure:', e.message);
-                    recomputeFHTickers();
+                    /* Network failed. Only fall back to recompute (which yields
+                       empty sets) if there was no cache to keep — otherwise the
+                       cached favourites stay exactly as they are. */
+                    console.error('[SundarX] F/H load failed:', e.message);
+                    if (!hadCache) {
+                        recomputeFHTickers();
+                    } else {
+                        console.warn('[SundarX] Keeping cached F/H tickers.');
+                        window._fhLoaded = true;
+                    }
                 }
+                if (typeof window.refreshFHUI === 'function') window.refreshFHUI();
                 window._fhLoading = false;
             }
             window.loadFHTickers = loadFHTickers;
 
+            /* If the first attempt ran offline (or failed), try again the moment
+               the connection is back, so favourites self-heal without a reload. */
+            /* ══ AUTOMATIC UPLOAD ══
+               'online' alone is not enough: it does not fire when the page simply
+               loads with a connection, and it fires on a captive-portal wifi join
+               where nothing is actually routable yet. So the queue is drained
+               from four places, all funnelling through loadFHTickers (which
+               uploads before it fetches):
+
+                 - the online event      (immediate reconnect)
+                 - tab refocus           (came back to a sleeping laptop)
+                 - a 60s poll            (captive portal finally let us through)
+                 - page load             (the app already calls loadFHTickers)
+
+               The poll costs nothing when idle — it only acts when something is
+               queued and the browser believes it is online. */
+            function fhSyncNow(reason) {
+                if (navigator.onLine === false) return;
+                if (window._fhLoading) return;
+                if (!fhPending().length && window._fhLoaded && !window._fhFromCache) return;
+                console.log('[SundarX] F/H sync (' + reason + ')' +
+                    (fhPending().length ? ' — ' + fhPending().length + ' queued edit(s)' : ''));
+                window._fhLoaded = false;
+                loadFHTickers();
+            }
+            window.fhSyncNow = fhSyncNow;
+
+            window.addEventListener('online', () => setTimeout(() => fhSyncNow('back online'), 1500));
+
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') fhSyncNow('tab refocused');
+            });
+
+            setInterval(() => {
+                if (fhPending().length) fhSyncNow('retry');
+            }, 60000);
+
+            /* Rebuild the working ticker sets from whichever source is
+               authoritative, then persist them.
+
+               Two things this must NOT do, both of which it used to:
+
+               1. Wipe. Offline there is no remote data and no CSV, so the old
+                  version rebuilt every set as empty — silently erasing the
+                  favourites restored from cache a moment earlier. Any caller
+                  reaching this while offline made them vanish. Now an empty
+                  rebuild is refused when we already hold data.
+               2. Drift. It is called after every favourite/holding toggle, but
+                  only loadFHTickers saved the cache — so a toggle updated the
+                  live sets and left the cache stale. Saving here means the
+                  cache tracks every change, whatever triggered it. */
             window.recomputeFHTickers = function () {
-                if (window._remoteSyncSuccess) {
-                    // Remote Apps Script is source of truth
-                    window._fhTickers.FF = new Set(window._remoteFF || []);
-                    window._fhTickers.TF = new Set(window._remoteTF || []);
-                    window._fhTickers.F = new Set(window._remoteFavs || []);
-                    window._fhTickers.H = new Set(window._remoteHolds || []);
-                } else {
-                    // CSV fallback — all three columns now populated
-                    window._fhTickers.FF = new Set(window._sheetFF || []);
-                    window._fhTickers.TF = new Set(window._sheetTF || []);
-                    window._fhTickers.F = new Set(window._sheetFavs || []);
-                    window._fhTickers.H = new Set(window._sheetHolds || []);
+                const next = window._remoteSyncSuccess
+                    ? {
+                        FF: new Set(window._remoteFF || []),
+                        TF: new Set(window._remoteTF || []),
+                        F: new Set(window._remoteFavs || []),
+                        H: new Set(window._remoteHolds || [])
+                    }
+                    : {
+                        FF: new Set(window._sheetFF || []),
+                        TF: new Set(window._sheetTF || []),
+                        F: new Set(window._sheetFavs || []),
+                        H: new Set(window._sheetHolds || [])
+                    };
+
+                const incoming = next.FF.size + next.TF.size + next.F.size + next.H.size;
+                const current = (window._fhTickers.FF ? window._fhTickers.FF.size : 0) +
+                    (window._fhTickers.TF ? window._fhTickers.TF.size : 0) +
+                    (window._fhTickers.F ? window._fhTickers.F.size : 0) +
+                    (window._fhTickers.H ? window._fhTickers.H.size : 0);
+
+                if (incoming === 0 && current > 0) {
+                    console.warn('[SundarX] recomputeFHTickers: no source data — keeping the ' +
+                        current + ' cached tickers rather than clearing them.');
+                    return;
                 }
+
+                window._fhTickers = next;
+                if (typeof saveFHCache === 'function') saveFHCache();
             };
 
 
@@ -12069,6 +12268,152 @@
                 }
             };
 
+            /* ══ OFFLINE FAVOURITE / HOLDING EDITS ══
+               The toggles are GET calls to the sync Web App, so offline they
+               used to fail and snap the button straight back — the edit was
+               simply refused. They are now applied locally at once and queued,
+               matching how the training log behaves, then replayed in order on
+               reconnect. */
+            const FH_PENDING_KEY = 'sundarx_fh_pending';
+
+            function fhPending() {
+                /* Only JSON/storage faults are tolerable here. A broad catch
+                   previously hid a ReferenceError thrown from this very line and
+                   made the queue silently read as empty — which is how offline
+                   edits stopped uploading. Anything that is not a parse failure
+                   is a bug and must be loud. */
+                let raw;
+                try {
+                    raw = localStorage.getItem(FH_PENDING_KEY);
+                } catch (e) {
+                    console.warn('[SundarX] Pending F/H queue unreadable:', e.message);
+                    return [];
+                }
+                if (!raw) return [];
+                try {
+                    const v = JSON.parse(raw);
+                    return Array.isArray(v) ? v : [];
+                } catch (e) {
+                    console.warn('[SundarX] Pending F/H queue corrupt, discarding:', e.message);
+                    return [];
+                }
+            }
+
+            function fhQueue(mut) {
+                const q = fhPending();
+                // One pending edit per (ticker, type): the latest wins, since
+                // each mutation states a final desired state rather than a delta.
+                const rest = q.filter(m => !(m.tk === mut.tk && m.type === mut.type));
+                rest.push(Object.assign({ at: Date.now() }, mut));
+                try { localStorage.setItem(FH_PENDING_KEY, JSON.stringify(rest)); } catch (e) { }
+                window._fhPendingCount = rest.length;
+            }
+            window._fhPendingCount = fhPending().length;
+
+            /** Apply an edit to the live sets immediately, and persist it. */
+            function fhApplyLocal(tk, type, opts) {
+                const T = window._fhTickers;
+                if (type === 'H') {
+                    if (opts.on) T.H.add(tk); else T.H.delete(tk);
+                } else {
+                    if (opts.ff) T.FF.add(tk); else T.FF.delete(tk);
+                    if (opts.tf) T.TF.add(tk); else T.TF.delete(tk);
+                    if (opts.ff || opts.tf) T.F.add(tk); else T.F.delete(tk);
+                }
+                // Mirror into the remote-shaped sets so a later recompute agrees.
+                window._remoteFF = new Set(T.FF);
+                window._remoteTF = new Set(T.TF);
+                window._remoteFavs = new Set(T.F);
+                window._remoteHolds = new Set(T.H);
+                if (typeof saveFHCache === 'function') saveFHCache();
+                if (typeof window.refreshFHUI === 'function') window.refreshFHUI();
+            }
+
+            /* Replay queued edits oldest-first, then re-sync so the sheet is the
+               final word. An edit leaves the queue only once its call succeeds. */
+            async function fhReplayPending() {
+                const q = fhPending();
+                if (!q.length || navigator.onLine === false) return 0;
+                console.log('[SundarX] Uploading ' + q.length + ' offline favourite edit(s)…');
+                let done = 0;
+                const rejected = [];
+                for (const m of q) {
+                    try {
+                        const url = m.type === 'H'
+                            ? `${SYNC_URL}?action=${m.on ? 'add' : 'remove'}&ticker=${m.tk}&type=H`
+                            : `${SYNC_URL}?action=update_fav&ticker=${m.tk}&ff=${!!m.ff}&tf=${!!m.tf}`;
+                        const r = await fetch(url);
+                        const after = await r.json();
+
+                        /* The endpoint echoes its new state, so check the edit
+                           actually took rather than trusting a 200. A silent
+                           server-side no-op — a removal the script ignores, say
+                           — would otherwise look like a successful sync and the
+                           entry would be dropped from the queue forever. */
+                        const has = (arr, t) => Array.isArray(arr) &&
+                            arr.map(x => String(x).toUpperCase()).indexOf(t) !== -1;
+                        let applied = true, want = '';
+                        if (after && (after.F || after.H || after.FF)) {
+                            if (m.type === 'H') {
+                                want = m.on ? 'in holdings' : 'out of holdings';
+                                applied = has(after.H, m.tk) === !!m.on;
+                            } else {
+                                const wantFav = !!(m.ff || m.tf);
+                                want = wantFav ? 'in favourites' : 'out of favourites';
+                                applied = has(after.F, m.tk) === wantFav;
+                            }
+                        }
+                        if (!applied) {
+                            console.error('[SundarX] The sheet did NOT apply ' + m.tk +
+                                ' -> ' + want + '. The request was accepted but the ' +
+                                'server state is unchanged, so this is a bug in the ' +
+                                'ticker-sync Apps Script, not in the queue. URL: ' + url);
+                            rejected.push({ tk: m.tk, type: m.type, want: want });
+                        }
+                        done++;
+                    } catch (e) {
+                        // Stop at the first failure; the rest stay queued in order.
+                        console.warn('[SundarX] Upload stopped at ' + m.tk + ': ' + e.message);
+                        break;
+                    }
+                }
+                const left = q.slice(done);
+                try { localStorage.setItem(FH_PENDING_KEY, JSON.stringify(left)); } catch (e) { }
+                window._fhPendingCount = left.length;
+                if (done) console.log('[SundarX] Uploaded ' + done + ' edit(s), ' + left.length + ' left.');
+                if (rejected.length && window._sxToast) {
+                    window._sxToast('The sheet ignored ' + rejected.length + ' edit' +
+                        (rejected.length === 1 ? '' : 's') + ' (' +
+                        rejected.map(r => r.tk).join(', ') + '). See the console — ' +
+                        'the sync script did not apply them.', 'err');
+                }
+                window._fhRejected = rejected;
+                return done;
+            }
+
+            /* Re-assert anything still queued on top of freshly fetched sheet
+               data. Without this a refresh shows the sheet's older state and the
+               user watches their offline edit disappear, even though it is safe
+               on disk and about to upload. */
+            function fhApplyPendingOnTop() {
+                const q = fhPending();
+                if (!q.length) return 0;
+                const T = window._fhTickers;
+                q.forEach(m => {
+                    if (m.type === 'H') {
+                        if (m.on) T.H.add(m.tk); else T.H.delete(m.tk);
+                    } else {
+                        if (m.ff) T.FF.add(m.tk); else T.FF.delete(m.tk);
+                        if (m.tf) T.TF.add(m.tk); else T.TF.delete(m.tk);
+                        if (m.ff || m.tf) T.F.add(m.tk); else T.F.delete(m.tk);
+                    }
+                });
+                console.log('[SundarX] Re-applied ' + q.length + ' pending F/H edit(s) over the sheet data.');
+                return q.length;
+            }
+            window.fhReplayPending = fhReplayPending;
+            window.fhPendingList = fhPending;
+
             window.toggleRemoteFH = async function (ticker, type, event) {
                 if (event) event.stopPropagation();
                 const tk = String(ticker || '').toUpperCase();
@@ -12083,6 +12428,20 @@
                     const isTF = window._fhTickers.TF ? window._fhTickers.TF.has(tk) : false;
                     const result = await window.promptFavType(tk, isFF, isTF);
                     if (!result) { window._syncLocks.delete(lockKey); return; }
+
+                    if (navigator.onLine === false) {
+                        // Take the edit now; the sheet catches up on reconnect.
+                        fhApplyLocal(tk, 'F', { ff: result.ff, tf: result.tf });
+                        fhQueue({ tk: tk, type: 'F', ff: result.ff, tf: result.tf });
+                        const offBtns = document.querySelectorAll(`.fav-toggle-${tk}`);
+                        offBtns.forEach(b => window._setFHGlow(b, 'F', window._fhTickers.F.has(tk)));
+                        if (window._sxToast) {
+                            window._sxToast('Saved on this device — syncs when you reconnect.', 'ok');
+                        }
+                        if (['F', 'FF', 'TF'].indexOf(window._fhState.active) !== -1) doFilter();
+                        window._syncLocks.delete(lockKey);
+                        return;
+                    }
 
                     try {
                         const resp = await fetch(`${SYNC_URL}?action=update_fav&ticker=${tk}&ff=${result.ff}&tf=${result.tf}`);
@@ -12102,7 +12461,17 @@
 
                         if (window._fhState.active === 'F' || window._fhState.active === 'FF' || window._fhState.active === 'TF') doFilter();
                     } catch (e) {
-                        console.error('[SundarX] Sync failed:', e.message);
+                        // Online but unreachable: keep the edit rather than
+                        // silently discarding what the user just did.
+                        console.warn('[SundarX] Fav sync failed, queued instead:', e.message);
+                        fhApplyLocal(tk, 'F', { ff: result.ff, tf: result.tf });
+                        fhQueue({ tk: tk, type: 'F', ff: result.ff, tf: result.tf });
+                        const qBtns = document.querySelectorAll(`.fav-toggle-${tk}`);
+                        qBtns.forEach(b => window._setFHGlow(b, 'F', window._fhTickers.F.has(tk)));
+                        if (window._sxToast) {
+                            window._sxToast("Couldn't reach the sheet — saved here, will sync.", 'err');
+                        }
+                        if (['F', 'FF', 'TF'].indexOf(window._fhState.active) !== -1) doFilter();
                     } finally {
                         window._syncLocks.delete(lockKey);
                     }
@@ -12119,6 +12488,17 @@
                 const btns = document.querySelectorAll(selector);
                 btns.forEach(b => window._setFHGlow(b, 'H', !isSet));
 
+                if (navigator.onLine === false) {
+                    fhApplyLocal(tk, 'H', { on: !isSet });
+                    fhQueue({ tk: tk, type: 'H', on: !isSet });
+                    if (window._sxToast) {
+                        window._sxToast('Saved on this device — syncs when you reconnect.', 'ok');
+                    }
+                    if (window._fhState.active === type) doFilter();
+                    window._syncLocks.delete(lockKey);
+                    return;
+                }
+
                 try {
                     const resp = await fetch(`${SYNC_URL}?action=${action}&ticker=${tk}&type=${type}`);
                     const result = await resp.json();
@@ -12134,8 +12514,15 @@
 
                     if (window._fhState.active === type) doFilter();
                 } catch (e) {
-                    console.error('[SundarX] Sync failed:', e.message);
-                    btns.forEach(b => window._setFHGlow(b, 'H', isSet));
+                    // Keep the edit and queue it, rather than snapping back.
+                    console.warn('[SundarX] Holding sync failed, queued instead:', e.message);
+                    fhApplyLocal(tk, 'H', { on: !isSet });
+                    fhQueue({ tk: tk, type: 'H', on: !isSet });
+                    btns.forEach(b => window._setFHGlow(b, 'H', window._fhTickers.H.has(tk)));
+                    if (window._sxToast) {
+                        window._sxToast("Couldn't reach the sheet — saved here, will sync.", 'err');
+                    }
+                    if (window._fhState.active === type) doFilter();
                 } finally {
                     window._syncLocks.delete(lockKey);
                 }
@@ -12152,6 +12539,20 @@
                 else favBtn.textContent = 'F';
             }
             window._updateFHBtnState = _updateFHBtnState;
+
+            /* Re-apply F/H after the ticker sets change — on a cache restore at
+               startup, and again when a background refresh brings newer data.
+               doFilter() only re-runs when a F/H filter is actually active, so a
+               refresh never disturbs a view the user is looking at. */
+            window.refreshFHUI = function () {
+                try {
+                    _updateFHBtnState();
+                    if (window._fhState && window._fhState.active &&
+                        typeof doFilter === 'function') doFilter();
+                } catch (e) {
+                    console.warn('[SundarX] F/H UI refresh skipped:', e.message);
+                }
+            };
 
             window.toggleFHFilter = async function (type) {
                 if (!window._fhLoaded) await loadFHTickers();
@@ -17235,6 +17636,7 @@
                 }
 
                 let html = '';
+
                 [0.25, 0.5, 0.75, 1.0].forEach(frac => {
                     const rp = ringPoints(frac);
                     const poly = rp.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' ');
@@ -17321,23 +17723,50 @@
         ══════════════════════════════════════════════════════ */
         (function blockEdgePullToRefresh() {
             let touchStartY = 0;
+            let startedInScroller = false;
+
+            /* This guard fires on `document`, so it sees every touch in the app —
+               including ones inside panels that scroll on their own. The page is
+               permanently at scrollY 0 while the fullscreen chart is open, so the
+               old version treated ANY downward drag there as a pull-to-refresh
+               and preventDefault()-ed it. That is what stopped the chart sidebar
+               (trainers, paper trade) from scrolling on mobile.
+
+               Deciding this once per gesture, on touchstart, keeps
+               getComputedStyle out of the touchmove path — that runs many times a
+               second and must stay cheap. */
+            function inScrollableRegion(node) {
+                for (let el = node; el && el !== document.body; el = el.parentElement) {
+                    if (el.nodeType !== 1) continue;
+                    let st;
+                    try { st = getComputedStyle(el); } catch (err) { continue; }
+                    const oy = st.overflowY, ox = st.overflowX;
+                    if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 1) return true;
+                    if ((ox === 'auto' || ox === 'scroll') && el.scrollWidth > el.clientWidth + 1) return true;
+                }
+                return false;
+            }
 
             document.addEventListener('touchstart', function (e) {
                 if (e.touches.length === 1) {
                     touchStartY = e.touches[0].clientY;
+                    startedInScroller = inScrollableRegion(e.target);
                 }
             }, { passive: true });
 
             document.addEventListener('touchmove', function (e) {
-                if (e.touches.length === 1) {
-                    let touchCurrentY = e.touches[0].clientY;
-                    let pullingDown = touchCurrentY > touchStartY;
+                if (e.touches.length !== 1) return;
+                // A gesture that began inside something scrollable belongs to that
+                // element, never to the browser's refresh spinner.
+                if (startedInScroller) return;
 
-                    // If at the absolute top of the page AND pulling down, kill the event
-                    // This stops the browser's native refresh spinner from triggering
-                    if ((window.scrollY === 0 || document.documentElement.scrollTop === 0) && pullingDown) {
-                        e.preventDefault();
-                    }
+                const touchCurrentY = e.touches[0].clientY;
+                const pullingDown = touchCurrentY > touchStartY;
+
+                // At the absolute top of the page AND pulling down → kill it, so
+                // the native refresh spinner never triggers.
+                if ((window.scrollY === 0 || document.documentElement.scrollTop === 0) && pullingDown) {
+                    e.preventDefault();
                 }
             }, { passive: false }); // passive: false is REQUIRED to use e.preventDefault()
         })();
@@ -22679,8 +23108,17 @@
             scrollbar-width: none;
             -webkit-overflow-scrolling: touch;
             /* #fs-chart-modal sets touch-action:none for chart pinch/pan gestures — opt the
-               sidebar back in to native vertical touch-scrolling, same fix as #fs-chart-wrapper. */
-            touch-action: pan-y;
+               sidebar back in to native touch-scrolling, same fix as #fs-chart-wrapper.
+               Both axes are allowed rather than pan-y alone: on portrait mobile the
+               modal is rotated 90deg, which puts this element's vertical axis along
+               the screen's horizontal one. */
+            touch-action: pan-x pan-y;
+            /* Keep a flick at either end inside the sidebar instead of chaining to
+               the page (and, on iOS, instead of rubber-banding the whole modal). */
+            overscroll-behavior: contain;
+            /* A flex item will not shrink below its content unless told to, which
+               would leave nothing to scroll. */
+            min-height: 0;
             transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
@@ -22890,6 +23328,38 @@
             user-select: none;
             transition: background-color 0.18s ease, color 0.18s ease;
             box-sizing: border-box;
+        }
+
+        /* ── Training blackout ──
+           While a trainer is running the chart must not identify the stock.
+           The watermark is masked in JS; this covers the two places the DOM
+           would otherwise give the answer away: the highlighted row in the
+           ticker list, and the list itself (scrolling to the highlight, or
+           just reading which name sits under your cursor, is enough). */
+        #fs-chart-modal.fs-training-masked #fs-ticker-list {
+            filter: blur(5px);
+            opacity: 0.35;
+            pointer-events: none;
+            user-select: none;
+        }
+
+        #fs-chart-modal.fs-training-masked .fs-ticker-block {
+            position: relative;
+        }
+
+        #fs-chart-modal.fs-training-masked .fs-ticker-block::after {
+            content: 'hidden while training';
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: rgba(235, 235, 245, 0.5);
+            pointer-events: none;
         }
 
         .fs-ticker-item:hover {
@@ -23389,6 +23859,30 @@
             color: #22c55e;
         }
 
+        /* Itemised contract-note breakdown under the cost headline */
+        .fs-pt-cost-break {
+            margin-top: 6px;
+            padding-top: 5px;
+            border-top: 1px solid rgba(255, 255, 255, 0.07);
+        }
+
+        .fs-pt-cost-line {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            font-size: 9.5px;
+            line-height: 1.65;
+            color: rgba(235, 235, 245, 0.5);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .fs-pt-cost-line.total {
+            margin-top: 3px;
+            padding-top: 3px;
+            border-top: 1px dashed rgba(255, 255, 255, 0.09);
+            color: rgba(235, 235, 245, 0.35);
+        }
+
         .fs-pt-analysis-card.red .fs-pt-analysis-card-value {
             color: #f43f5e;
         }
@@ -23872,6 +24366,666 @@
             white-space: nowrap;
         }
 
+        /* ── Daily practice checklist (training tracker) ── */
+        .sx-day-badge {
+            margin-left: auto;
+            margin-right: 6px;
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: 0.03em;
+            padding: 2px 6px;
+            border-radius: 999px;
+            background: rgba(118, 118, 128, 0.22);
+            color: rgba(235, 235, 245, 0.6);
+            white-space: nowrap;
+        }
+
+        .sx-day-badge.partial {
+            background: rgba(251, 191, 36, 0.16);
+            color: #fbbf24;
+        }
+
+        .sx-day-badge.done {
+            background: rgba(34, 197, 94, 0.18);
+            color: #4ade80;
+        }
+
+        .sx-checklist {
+            margin-top: 8px;
+            padding: 7px 8px 8px;
+            border-radius: 8px;
+            background: rgba(118, 118, 128, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .sx-cl-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 8.5px;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: rgba(235, 235, 245, 0.45);
+            margin-bottom: 5px;
+        }
+
+        .sx-cl-sync {
+            cursor: pointer;
+            font-size: 11px;
+            line-height: 1;
+            color: rgba(235, 235, 245, 0.4);
+            transition: transform 0.4s, color 0.15s;
+        }
+
+        .sx-cl-sync:hover {
+            color: #0a84ff;
+        }
+
+        .sx-cl-sync.syncing {
+            transform: rotate(360deg);
+            color: #0a84ff;
+        }
+
+        .sx-cl-sync.failed {
+            color: #f43f5e;
+        }
+
+        .sx-cl-row {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 9.5px;
+            line-height: 1.7;
+            color: rgba(235, 235, 245, 0.62);
+        }
+
+        .sx-cl-row .sx-cl-tick {
+            width: 10px;
+            flex: 0 0 10px;
+            text-align: center;
+            font-size: 9px;
+        }
+
+        .sx-cl-row.met {
+            color: rgba(235, 235, 245, 0.9);
+        }
+
+        .sx-cl-row.met .sx-cl-tick {
+            color: #4ade80;
+        }
+
+        .sx-cl-row .sx-cl-name {
+            flex: 1 1 auto;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .sx-cl-row .sx-cl-num {
+            flex: 0 0 auto;
+            font-variant-numeric: tabular-nums;
+            font-weight: 700;
+            opacity: 0.8;
+        }
+
+        .sx-cl-bar {
+            flex: 0 0 34px;
+            height: 3px;
+            border-radius: 2px;
+            background: rgba(255, 255, 255, 0.09);
+            overflow: hidden;
+        }
+
+        .sx-cl-bar i {
+            display: block;
+            height: 100%;
+            background: #0a84ff;
+            border-radius: 2px;
+        }
+
+        .sx-cl-row.met .sx-cl-bar i {
+            background: #22c55e;
+        }
+
+        /* ── Offline / pending-upload warning ── */
+        .sx-offline-warn {
+            margin-top: 7px;
+            padding: 5px 7px;
+            border-radius: 6px;
+            font-size: 8.5px;
+            line-height: 1.5;
+            border: 1px solid transparent;
+        }
+
+        .sx-offline-warn b {
+            font-weight: 800;
+        }
+
+        .sx-offline-warn.offline {
+            background: rgba(251, 191, 36, 0.12);
+            border-color: rgba(251, 191, 36, 0.35);
+            color: #fbbf24;
+        }
+
+        .sx-offline-warn.unreachable {
+            background: rgba(244, 63, 94, 0.12);
+            border-color: rgba(244, 63, 94, 0.35);
+            color: #fda4af;
+        }
+
+        .sx-offline-warn.pending {
+            background: rgba(10, 132, 255, 0.12);
+            border-color: rgba(10, 132, 255, 0.3);
+            color: #7dd3fc;
+        }
+
+        .sx-cl-sync.pending {
+            color: #fbbf24;
+        }
+
+        /* ── Today's paper-trade P&L ── */
+        .sx-pnl-row {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px solid rgba(255, 255, 255, 0.07);
+        }
+
+        .sx-pnl-lbl {
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: rgba(235, 235, 245, 0.45);
+        }
+
+        .sx-pnl-val {
+            font-size: 14px;
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: -0.01em;
+        }
+
+        .sx-pnl-row.up .sx-pnl-val {
+            color: #22c55e;
+        }
+
+        .sx-pnl-row.down .sx-pnl-val {
+            color: #f43f5e;
+        }
+
+        .sx-pnl-pct {
+            font-size: 9.5px;
+            font-weight: 700;
+            opacity: 0.75;
+            margin-left: 5px;
+        }
+
+        .sx-pnl-sub {
+            margin-top: 2px;
+            font-size: 8.5px;
+            line-height: 1.5;
+            color: rgba(235, 235, 245, 0.4);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .sx-pnl-sub .sx-cost {
+            border-bottom: 1px dotted rgba(235, 235, 245, 0.3);
+            cursor: help;
+        }
+
+        /* ═══ TRAINING DASHBOARD ═══
+           Categorical slots are the validated dark-mode order (blue, orange,
+           aqua, yellow, magenta) checked against this modal's own surface —
+           worst adjacent CVD ΔE 8.4, all five ≥3:1 on #0b101d. Activity → slot
+           is FIXED, so filtering a period never repaints a series.
+           Profit/loss keeps the app's green/red because sign is redundantly
+           encoded by the zero baseline (position), not by hue alone. */
+        #sx-dash-modal {
+            --surface-1: #0b101d;
+            --text-primary: #f8fafc;
+            --text-secondary: rgba(235, 235, 245, 0.62);
+            --text-muted: rgba(235, 235, 245, 0.38);
+            --grid: rgba(255, 255, 255, 0.07);
+            --series-1: #3987e5;
+            --series-2: #d95926;
+            --series-3: #199e70;
+            --series-4: #c98500;
+            --series-5: #d55181;
+            --pos: #22c55e;
+            --neg: #f43f5e;
+
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 660px;
+            max-width: 95vw;
+            max-height: 88vh;
+            background: rgba(15, 23, 42, 0.98);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+            z-index: 999999;
+            display: none;
+            flex-direction: column;
+            color: var(--text-primary);
+            font-family: 'Lexend', sans-serif;
+            backdrop-filter: blur(10px);
+            overflow: hidden;
+        }
+
+        #sx-dash-modal.open {
+            display: flex;
+        }
+
+        .sx-dash-header {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            padding: 11px 13px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            flex: 0 0 auto;
+        }
+
+        .sx-dash-title {
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        .sx-dash-sub {
+            font-size: 9.5px;
+            color: var(--text-muted);
+            flex: 1 1 auto;
+        }
+
+        .sx-dash-close {
+            cursor: pointer;
+            font-size: 15px;
+            line-height: 1;
+            color: var(--text-muted);
+        }
+
+        .sx-dash-close:hover {
+            color: #fff;
+        }
+
+        /* Period filters — one row above the charts */
+        .sx-dash-ranges {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 9px 13px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            flex: 0 0 auto;
+        }
+
+        .sx-range {
+            background: rgba(118, 118, 128, 0.18);
+            border: 1px solid transparent;
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            padding: 4px 11px;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s, border-color 0.15s;
+        }
+
+        .sx-range:hover {
+            color: #fff;
+            background: rgba(118, 118, 128, 0.3);
+        }
+
+        .sx-range.active {
+            background: rgba(57, 135, 229, 0.2);
+            border-color: var(--series-1);
+            color: #fff;
+        }
+
+        .sx-dash-refresh {
+            margin-left: auto;
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .sx-dash-refresh:hover {
+            color: var(--series-1);
+        }
+
+        .sx-dash-refresh.spin {
+            color: var(--series-1);
+            opacity: 0.5;
+        }
+
+        .sx-dash-body {
+            padding: 12px 13px 16px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            flex: 1 1 auto;
+        }
+
+        .sx-dash-sub.stale {
+            color: #fbbf24;
+        }
+
+        .sx-dash-note {
+            margin-bottom: 10px;
+            padding: 6px 8px;
+            border-radius: 6px;
+            font-size: 9px;
+            line-height: 1.55;
+            background: rgba(10, 132, 255, 0.12);
+            border: 1px solid rgba(10, 132, 255, 0.28);
+            color: #7dd3fc;
+        }
+
+        .sx-dash-note.stale {
+            background: rgba(251, 191, 36, 0.12);
+            border-color: rgba(251, 191, 36, 0.32);
+            color: #fbbf24;
+        }
+
+        .sx-dash-empty {
+            padding: 34px 10px;
+            text-align: center;
+            font-size: 11px;
+            color: var(--text-muted);
+            line-height: 1.7;
+        }
+
+        .sx-sec-lbl {
+            font-size: 8.5px;
+            font-weight: 800;
+            letter-spacing: 0.09em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin: 14px 0 7px;
+        }
+
+        .sx-sec-lbl:first-child {
+            margin-top: 0;
+        }
+
+        /* Stat tiles — the headline numbers ARE the chart */
+        .sx-tiles {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+            gap: 6px;
+        }
+
+        .sx-tile {
+            background: rgba(0, 0, 0, 0.28);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 7px;
+            padding: 8px 9px;
+            /* Grid children default to min-width:auto, which lets a long value
+               push the track wider than its share and shove the row out of the
+               card. 0 lets the track actually honour minmax(). */
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        .sx-tile-lbl {
+            font-size: 8px;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .sx-tile-val {
+            margin-top: 3px;
+            font-size: 16px;
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: -0.02em;
+            /* Backstop only — values are pre-fitted to VAL_BUDGET characters in
+               JS, falling back to scientific notation. This just guarantees a
+               metric that slips past that can never break the layout. */
+            min-width: 0;
+            overflow-wrap: anywhere;
+        }
+
+        .sx-tile-val.pos {
+            color: var(--pos);
+        }
+
+        .sx-tile-val.neg {
+            color: var(--neg);
+        }
+
+        .sx-tile-sub {
+            margin-top: 1px;
+            font-size: 8.5px;
+            line-height: 1.35;
+            color: var(--text-muted);
+            font-variant-numeric: tabular-nums;
+            overflow-wrap: anywhere;
+        }
+
+        /* Charts */
+        .sx-chart-card {
+            background: rgba(0, 0, 0, 0.28);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 7px;
+            padding: 9px 10px 8px;
+        }
+
+        .sx-chart-hd {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .sx-chart-ttl {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--text-secondary);
+        }
+
+        .sx-chart-note {
+            font-size: 8.5px;
+            color: var(--text-muted);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .sx-canvas-wrap {
+            position: relative;
+        }
+
+        .sx-canvas-wrap canvas {
+            display: block;
+            width: 100%;
+            cursor: crosshair;
+        }
+
+        /* Crosshair tooltip */
+        .sx-tip {
+            position: absolute;
+            pointer-events: none;
+            z-index: 5;
+            background: rgba(10, 14, 24, 0.97);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 6px;
+            padding: 5px 8px;
+            font-size: 9.5px;
+            line-height: 1.55;
+            color: var(--text-primary);
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+            opacity: 0;
+            transition: opacity 0.1s;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+        }
+
+        .sx-tip.show {
+            opacity: 1;
+        }
+
+        .sx-tip b {
+            font-weight: 800;
+        }
+
+        /* Small multiples — one panel per activity, single series each */
+        .sx-sparks {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+            gap: 6px;
+        }
+
+        .sx-spark {
+            background: rgba(0, 0, 0, 0.28);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 7px;
+            padding: 7px 9px 6px;
+        }
+
+        .sx-spark-hd {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 9.5px;
+            margin-bottom: 4px;
+        }
+
+        .sx-swatch {
+            width: 7px;
+            height: 7px;
+            border-radius: 2px;
+            flex: 0 0 7px;
+        }
+
+        .sx-spark-name {
+            flex: 1 1 auto;
+            font-weight: 700;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .sx-spark-val {
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+            color: var(--text-primary);
+        }
+
+        .sx-spark-sub {
+            margin-top: 3px;
+            font-size: 8px;
+            color: var(--text-muted);
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Table view — identity is never color-alone */
+        .sx-table-toggle {
+            margin-top: 10px;
+            font-size: 9px;
+            font-weight: 700;
+            color: var(--text-muted);
+            cursor: pointer;
+            user-select: none;
+            background: none;
+            border: none;
+            font-family: inherit;
+            padding: 0;
+        }
+
+        .sx-table-toggle:hover {
+            color: var(--series-1);
+        }
+
+        .sx-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 7px;
+            font-size: 9px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .sx-table th,
+        .sx-table td {
+            padding: 3px 6px;
+            text-align: right;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            white-space: nowrap;
+        }
+
+        .sx-table th {
+            color: var(--text-muted);
+            font-weight: 700;
+            text-align: right;
+        }
+
+        .sx-table th:first-child,
+        .sx-table td:first-child {
+            text-align: left;
+        }
+
+        .sx-table td {
+            color: var(--text-secondary);
+        }
+
+        .sx-table-scroll {
+            max-height: 210px;
+            overflow-y: auto;
+            overflow-x: auto;
+        }
+
+        /* ── Tracker toast ── */
+        #sx-toast-wrap {
+            position: fixed;
+            bottom: 18px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100000;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            align-items: center;
+            pointer-events: none;
+        }
+
+        .sx-toast {
+            padding: 8px 14px;
+            border-radius: 9px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #f8fafc;
+            background: rgba(28, 28, 30, 0.96);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45);
+            opacity: 0;
+            transform: translateY(8px);
+            transition: opacity 0.22s, transform 0.22s;
+            max-width: 82vw;
+        }
+
+        .sx-toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .sx-toast.ok {
+            border-color: rgba(34, 197, 94, 0.5);
+        }
+
+        .sx-toast.err {
+            border-color: rgba(244, 63, 94, 0.55);
+        }
+
         /* Replay transport buttons — cleaner trio */
         .fs-replay-btns button {
             border-radius: 7px;
@@ -24002,6 +25156,17 @@
                 top: 0 !important;
                 left: 100vw !important;
                 overflow: hidden;
+            }
+
+            /* Once the modal is rotated, the sidebar's own vertical axis points
+               along the SCREEN's horizontal one. `touch-action: pan-y` names an
+               axis, and browsers disagree about whether that is the element's or
+               the screen's — so under rotation it can reject the very gesture
+               that should scroll. Allowing both axes sidesteps the ambiguity:
+               the sidebar only overflows one way, so the browser still scrolls
+               it correctly. */
+            #fs-sidebar {
+                touch-action: auto !important;
             }
         }
 
@@ -24179,6 +25344,7 @@
             <div class="fs-section" id="fs-sec-train">
                 <div class="fs-section-header" onclick="window.toggleFsSection('fs-sec-train')">
                     <span class="fs-section-label"><span class="fs-section-ico">🎓</span>Trainers</span>
+                    <span class="sx-day-badge" id="sx-day-badge" title="Today's practice targets">—</span>
                     <span class="fs-section-chevron">▼</span>
                 </div>
                 <div class="fs-section-content">
@@ -24208,6 +25374,18 @@
                             <span class="tb-ico">🚪</span><span class="tb-lbl">Exit</span>
                         </button>
                     </div>
+                    <!-- Daily practice checklist — filled by the TRAINING TRACKER block -->
+                    <div class="sx-checklist" id="sx-checklist">
+                        <div class="sx-cl-head">
+                            <span id="sx-cl-title">Today's targets</span>
+                            <span class="sx-cl-sync" id="sx-cl-sync" onclick="window.sxTrackFlush(true)"
+                                title="Sync now">⟳</span>
+                        </div>
+                        <div id="sx-cl-rows"></div>
+                        <div class="sx-offline-warn" id="sx-offline-warn" style="display:none"></div>
+                    </div>
+                    <button class="fs-pt-btn fs-pt-analyze" onclick="window.sxOpenDashboard()">📈 Training
+                        Dashboard</button>
                     <div id="fs-flashcard-ui"
                         style="display:none; margin-top: 4px; padding: 10px; border-radius: 8px; text-align: center;">
                         <div style="font-size: 12px; font-weight: bold; margin-bottom: 6px; color: #f8fafc;">🃏 Breakout
@@ -24548,6 +25726,78 @@
                         transform: scale(0.94);
                         background: rgba(148, 163, 184, 0.28);
                     }
+
+                    /* ── Quantity + balance row ── */
+                    .fs-tp-qty-row {
+                        gap: calc(4px * var(--fs-tp-scale));
+                    }
+
+                    .fs-tp-qty-btn {
+                        min-width: calc(30px * var(--fs-tp-scale));
+                        height: calc(30px * var(--fs-tp-scale));
+                        border: none;
+                        border-radius: calc(8px * var(--fs-tp-scale));
+                        background: rgba(148, 163, 184, 0.18);
+                        color: #e2e8f0;
+                        font-family: inherit;
+                        font-size: calc(14px * var(--fs-tp-scale));
+                        font-weight: 800;
+                        line-height: 1;
+                        cursor: pointer;
+                        -webkit-tap-highlight-color: transparent;
+                        transition: transform 0.1s ease, background-color 0.1s ease;
+                    }
+
+                    .fs-tp-qty-btn:active {
+                        transform: scale(0.92);
+                        background: rgba(148, 163, 184, 0.3);
+                    }
+
+                    .fs-tp-qty-max {
+                        font-size: calc(9px * var(--fs-tp-scale));
+                        letter-spacing: 0.04em;
+                        padding: 0 calc(6px * var(--fs-tp-scale));
+                        color: #7dd3fc;
+                    }
+
+                    .fs-tp-qty-input {
+                        width: calc(46px * var(--fs-tp-scale));
+                        height: calc(30px * var(--fs-tp-scale));
+                        border: 1px solid rgba(255, 255, 255, 0.12);
+                        border-radius: calc(8px * var(--fs-tp-scale));
+                        background: rgba(15, 23, 42, 0.85);
+                        color: #f8fafc;
+                        font-family: inherit;
+                        font-size: calc(12px * var(--fs-tp-scale));
+                        font-weight: 800;
+                        text-align: center;
+                        -moz-appearance: textfield;
+                    }
+
+                    .fs-tp-qty-input::-webkit-outer-spin-button,
+                    .fs-tp-qty-input::-webkit-inner-spin-button {
+                        -webkit-appearance: none;
+                        margin: 0;
+                    }
+
+                    .fs-tp-bal {
+                        margin-left: auto;
+                        padding-right: calc(4px * var(--fs-tp-scale));
+                        font-size: calc(10px * var(--fs-tp-scale));
+                        font-weight: 800;
+                        color: #94a3b8;
+                        white-space: nowrap;
+                        font-variant-numeric: tabular-nums;
+                    }
+
+                    .fs-tp-bal.low {
+                        color: #fbbf24;
+                    }
+
+                    .fs-tp-bal-max {
+                        font-weight: 600;
+                        opacity: 0.65;
+                    }
                 </style>
                 <div id="fs-replay-trade-controls">
                     <div class="fs-tp-row">
@@ -24571,6 +25821,17 @@
                         <div id="fs-replay-trade-status">
                             <span style="color:#94a3b8; font-weight:700; font-size:calc(11px * var(--fs-tp-scale));">FLAT</span>
                         </div>
+                    </div>
+
+                    <!-- Quantity + remaining balance -->
+                    <div class="fs-tp-row fs-tp-qty-row">
+                        <button class="fs-tp-qty-btn" onclick="window.fsTpQtyStep(-1)" title="Fewer">−</button>
+                        <input id="fs-tp-qty" class="fs-tp-qty-input" type="number" min="1" step="1" value="1"
+                            inputmode="numeric" onchange="window._fsWriteQty(this.value)" title="Quantity">
+                        <button class="fs-tp-qty-btn" onclick="window.fsTpQtyStep(1)" title="More">+</button>
+                        <button class="fs-tp-qty-btn fs-tp-qty-max" onclick="window.fsTpQtyMax()"
+                            title="Maximum the remaining balance allows">MAX</button>
+                        <span id="fs-tp-balance" class="fs-tp-bal">—</span>
                     </div>
 
                     <!-- Replay Transport Row -->
@@ -24654,6 +25915,27 @@
         </div>
     </div>
     <!-- Paper Trade Analysis Modal -->
+    <!-- ═══ TRAINING DASHBOARD — full-history analysis ═══ -->
+    <div id="sx-dash-modal" class="viz-root">
+        <div class="sx-dash-header">
+            <span class="sx-dash-title">📈 Training Dashboard</span>
+            <span class="sx-dash-sub" id="sx-dash-window"></span>
+            <span class="sx-dash-close" onclick="window.sxCloseDashboard()">✕</span>
+        </div>
+        <div class="sx-dash-ranges" id="sx-dash-ranges" role="tablist" aria-label="Analysis period">
+            <button class="sx-range" data-range="1m" role="tab">1M</button>
+            <button class="sx-range" data-range="3m" role="tab">3M</button>
+            <button class="sx-range" data-range="6m" role="tab">6M</button>
+            <button class="sx-range" data-range="1y" role="tab">1Y</button>
+            <button class="sx-range active" data-range="all" role="tab">All</button>
+            <span class="sx-dash-refresh" id="sx-dash-refresh" onclick="window.sxRefreshDashboard()"
+                title="Re-fetch from the sheet">⟳</span>
+        </div>
+        <div class="sx-dash-body" id="sx-dash-body">
+            <div class="sx-dash-empty">Loading…</div>
+        </div>
+    </div>
+
     <div id="fs-pt-analysis-modal">
         <div class="fs-pt-analysis-header">
             <span>Professional Trade Analysis</span>
@@ -24675,8 +25957,10 @@
                     <div class="fs-pt-analysis-card-value" id="pt-stat-netpnl">—</div>
                 </div>
                 <div class="fs-pt-analysis-card">
-                    <div class="fs-pt-analysis-card-title">Est. Trading Costs</div>
+                    <div class="fs-pt-analysis-card-title">Est. Trading Costs <span class="fs-pt-hint">(Zerodha
+                            equity)</span></div>
                     <div class="fs-pt-analysis-card-value red" id="pt-stat-costs">—</div>
+                    <div class="fs-pt-cost-break" id="pt-stat-costs-break"></div>
                 </div>
                 <div class="fs-pt-analysis-card wide">
                     <div class="fs-pt-analysis-card-title">Net P&amp;L <span class="fs-pt-hint">(after est. STT / charges)</span></div>
@@ -25437,11 +26721,23 @@
 
                 const bgTickerEl = document.getElementById('fs-bg-ticker-name');
                 if (bgTickerEl && !skipChrome) {
-                    const tkUpper = tk.toUpperCase();
-                    const r = (window.allData || []).find(d => String(d._ticker || '').toUpperCase() === tkUpper);
-                    const fullCoName = (window.tickerToName && (window.tickerToName[tkUpper] || window.tickerToName[tk])) || (r ? r._coName : '');
-                    bgTickerEl.textContent = fullCoName ? `${tkUpper} - ${fullCoName}` : tkUpper;
+                    if (window._fsTrainingMode) {
+                        // Never paint the real symbol or company name while a
+                        // trainer is running — see _fsEnterTrainingReplay.
+                        bgTickerEl.textContent = (window._fsTrainingMask || 'HIDDEN').replace(/_/g, ' ');
+                    } else {
+                        const tkUpper = tk.toUpperCase();
+                        const r = (window.allData || []).find(d => String(d._ticker || '').toUpperCase() === tkUpper);
+                        const fullCoName = (window.tickerToName && (window.tickerToName[tkUpper] || window.tickerToName[tk])) || (r ? r._coName : '');
+                        bgTickerEl.textContent = fullCoName ? `${tkUpper} - ${fullCoName}` : tkUpper;
+                    }
                 }
+
+                // The sidebar ticker list highlights the selected row, which
+                // leaks the same answer the watermark just hid. Mask the whole
+                // modal with one class so both stay in step.
+                const fsModalEl = document.getElementById('fs-chart-modal');
+                if (fsModalEl) fsModalEl.classList.toggle('fs-training-masked', !!window._fsTrainingMode);
 
                 const wrap = document.getElementById('fs-chart-wrapper');
                 const loadEl = document.getElementById('fs-chart-loading');
@@ -25647,6 +26943,19 @@
                 }
 
                 tradeBox.style.display = 'flex';
+
+                // Free balance + what the current price would let you buy.
+                const balEl = document.getElementById('fs-tp-balance');
+                if (balEl) {
+                    const bal = window._fsPaperBalance();
+                    const cur = _fsCurrentClose();
+                    const max = cur ? window._fsMaxQty(cur.close) : 0;
+                    const short = n => n >= 100000 ? (n / 100000).toFixed(2) + 'L'
+                        : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : Math.round(n);
+                    balEl.innerHTML = '₹' + short(bal.available) +
+                        '<span class="fs-tp-bal-max"> · max ' + max + '</span>';
+                    balEl.classList.toggle('low', bal.available < bal.start * 0.1);
+                }
 
                 const statusEl = document.getElementById('fs-replay-trade-status');
                 if (!statusEl) return;
@@ -25952,6 +27261,12 @@
                 else st.s = 0;
                 if (extra && typeof extra.pnl === 'number') st.pnl += extra.pnl;
                 try { localStorage.setItem(_FS_TRAINSTATS_KEY, JSON.stringify(window._fsTrainStats)); } catch (e) { }
+                // Per-day training-log hook (see TRAINING TRACKER block below).
+                // _fsTrainStats is lifetime-cumulative and lives only in this
+                // browser, so the tracker keeps its own per-day tally rather
+                // than diffing these totals. Guarded so the trainers keep
+                // working unchanged if the tracker is absent or errors.
+                try { if (window._sxTrackRep) window._sxTrackRep(mode, correct); } catch (e) { }
                 return st;
             }
 
@@ -25980,6 +27295,10 @@
             // Put the chart into a masked, paused replay at raw[idx]
             function _fsEnterTrainingReplay(ticker, raw, idx, statusTxt, mask) {
                 window._fsTrainingMode = true;
+                // Label shown wherever the real ticker would otherwise appear.
+                // Reading price action blind is the whole point of these
+                // trainers — recognising the company defeats the exercise.
+                window._fsTrainingMask = mask || 'HIDDEN';
                 window._fsReplay.active = true;
                 window._fsReplay.currentMaxDate = raw[idx].date.getTime();
                 window._fsReplay.endDate = Infinity;
@@ -27110,12 +28429,114 @@
                 }
             }
 
+            /* ═══ VIRTUAL BALANCE ═══
+               Paper trading runs on a fixed ₹1,00,000 (matching the training
+               log's fixed-capital scoring). Without a cap you could "buy"
+               ₹40 lakh of stock and the P&L would be meaningless, so every
+               order is checked against what is actually left:
+
+                 equity    = start capital + realised P&L
+                 deployed  = whatever the open position already ties up
+                 available = equity − deployed
+
+               Shorts are checked on notional too. Real broking would post
+               margin instead (roughly 20–25% intraday), which would let you
+               short ~4x this size — treating it as fully funded is the
+               conservative choice and keeps long and short comparable. */
+            const FS_PT_START_CAPITAL = 100000;
+
+            window._fsPaperBalance = function () {
+                const pt = window._fsPaperTrade;
+                const equity = FS_PT_START_CAPITAL + (pt.totalPnl || 0);
+                const deployed = pt.position ? pt.position.qty * pt.position.entryPrice : 0;
+                return {
+                    start: FS_PT_START_CAPITAL,
+                    equity: equity,
+                    deployed: deployed,
+                    available: Math.max(0, equity - deployed)
+                };
+            };
+
+            /** Largest whole quantity affordable at `price`. */
+            /* Quantity lives in two places — the sidebar Paper Trade box and
+               the floating panel — so reads and writes go through here and the
+               two can never disagree. */
+            window._fsReadQty = function () {
+                const fl = document.getElementById('fs-tp-qty');
+                const sb = document.getElementById('fs-pt-qty');
+                const v = parseInt((fl && fl.value) || (sb && sb.value), 10);
+                return (isFinite(v) && v > 0) ? v : 1;
+            };
+
+            window._fsWriteQty = function (v) {
+                v = Math.max(1, Math.floor(Number(v) || 1));
+                ['fs-tp-qty', 'fs-pt-qty'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.value = v;
+                });
+                if (typeof window._fsUpdateFloatingPaperTradeUI === 'function') {
+                    window._fsUpdateFloatingPaperTradeUI();
+                }
+                return v;
+            };
+
+            window.fsTpQtyStep = function (delta) {
+                window._fsWriteQty(window._fsReadQty() + delta);
+            };
+
+            /** Fill the box with everything the remaining balance can buy. */
+            window.fsTpQtyMax = function () {
+                const curr = _fsCurrentClose();
+                if (!curr) return;
+                const max = window._fsMaxQty(curr.close);
+                if (max <= 0) {
+                    if (window._sxToast) window._sxToast('No balance left to open a new position.', 'err');
+                    return;
+                }
+                window._fsWriteQty(max);
+            };
+
+            window._fsMaxQty = function (price) {
+                if (!price || price <= 0) return 0;
+                return Math.floor(window._fsPaperBalance().available / price);
+            };
+
+            /* Clamp a requested quantity to what the balance allows. Returns 0
+               when nothing is affordable, and reports the clamp rather than
+               silently filling a smaller order than the user asked for. */
+            function _fsClampQty(wantQty, price, verb) {
+                const max = window._fsMaxQty(price);
+                if (wantQty <= max) return wantQty;
+                const bal = window._fsPaperBalance();
+                const fmt = n => '₹' + Math.round(n).toLocaleString('en-IN');
+                if (max <= 0) {
+                    if (window._sxToast) {
+                        window._sxToast('Not enough balance to ' + verb + ' at ' + fmt(price) +
+                            ' — ' + fmt(bal.available) + ' free' +
+                            (bal.deployed ? ' (' + fmt(bal.deployed) + ' in the open position)' : ''), 'err');
+                    }
+                    return 0;
+                }
+                if (window._sxToast) {
+                    window._sxToast('Balance allows ' + max + ' share' + (max === 1 ? '' : 's') +
+                        ', not ' + wantQty + ' — ' + verb + 'ing ' + max + '.', 'err');
+                }
+                return max;
+            }
+
             window.fsPaperBuy = function () {
                 const curr = _fsCurrentClose();
                 if (!curr) return;
-                const qty = parseInt(document.getElementById('fs-pt-qty')?.value) || 1;
+                let qty = window._fsReadQty();
                 const tk = document.getElementById('fs-ticker-select')?.value?.toUpperCase() || 'UNKNOWN';
                 const pt = window._fsPaperTrade;
+                // Closing a short frees capital rather than spending it, so the
+                // affordability check only applies when we are actually opening
+                // or adding to a long.
+                if (!(pt.position && pt.position.side === 'short')) {
+                    qty = _fsClampQty(qty, curr.close, 'buy');
+                    if (qty <= 0) return;
+                }
                 if (pt.position && pt.position.side === 'long') {
                     // Add to position
                     const totalQty = pt.position.qty + qty;
@@ -27133,9 +28554,15 @@
             window.fsPaperSell = function () {
                 const curr = _fsCurrentClose();
                 if (!curr) return;
-                const qty = parseInt(document.getElementById('fs-pt-qty')?.value) || 1;
+                let qty = window._fsReadQty();
                 const tk = document.getElementById('fs-ticker-select')?.value?.toUpperCase() || 'UNKNOWN';
                 const pt = window._fsPaperTrade;
+                // Selling out of a long releases capital; only a new//added
+                // short consumes it.
+                if (!(pt.position && pt.position.side === 'long')) {
+                    qty = _fsClampQty(qty, curr.close, 'short');
+                    if (qty <= 0) return;
+                }
                 if (pt.position && pt.position.side === 'short') {
                     const totalQty = pt.position.qty + qty;
                     pt.position.entryPrice = (pt.position.entryPrice * pt.position.qty + curr.close * qty) / totalQty;
@@ -27206,23 +28633,113 @@
                 URL.revokeObjectURL(url);
             };
 
-            // Approximate real-world Indian equity delivery round-trip cost: STT (0.1%
-            // each leg), NSE transaction charges, SEBI turnover fee, GST on those, and
-            // buy-side stamp duty, plus a flat DP (depository) charge on the sell leg.
-            // Brokerage is assumed ₹0 (standard for delivery on most discount brokers).
-            // This is an estimate, not tax advice — it exists so "paper" results don't
-            // read as unrealistically clean versus what a live account would actually see.
-            function _fsEstimateTradeCost(t) {
-                const buyVal = t.entryPrice * t.qty;
-                const sellVal = t.exitPrice * t.qty;
-                const stt = (buyVal + sellVal) * 0.001;
-                const exch = (buyVal + sellVal) * 0.0000297;
-                const sebi = (buyVal + sellVal) * 0.000001;
-                const stamp = buyVal * 0.00015;
-                const gst = (exch + sebi) * 0.18;
-                const dp = 15.34;
-                return stt + exch + sebi + stamp + gst + dp;
+            /* ═══════════════════════════════════════════════════════════════
+               ZERODHA CHARGE MODEL — full statutory + broker breakdown
+               ═══════════════════════════════════════════════════════════════
+               Every line a Zerodha equity contract note carries, so "paper"
+               results don't read as unrealistically clean next to a live
+               account. Rates are constants, not magic numbers, because they
+               DO change with budgets and exchange circulars — check them
+               against zerodha.com/charges before trusting the rupee figures.
+
+               Which side each charge lands on matters as much as the rate:
+                 STT          delivery: both legs · intraday: SELL only
+                 Stamp duty   BUY leg only, both segments
+                 DP charge    SELL leg only, and only when shares actually
+                              leave the demat account (i.e. delivery)
+                 GST          on brokerage + transaction + SEBI + IPFT only —
+                              never on STT or stamp duty (a tax on a tax)
+
+               SEGMENT: a short position cannot be held on delivery in Indian
+               equity — you must square off the same day — so shorts are priced
+               as intraday and longs as delivery. That is the honest mapping
+               even though this simulator lets a short run for weeks; the
+               position itself, not the holding period, decides the segment.
+            ═══════════════════════════════════════════════════════════════ */
+            const _FS_CHARGES = {
+                delivery: {
+                    label: 'Equity delivery',
+                    brokeragePct: 0,          // Zerodha: free on delivery
+                    brokerageCap: 0,
+                    sttBuyPct: 0.001,         // 0.1% buy
+                    sttSellPct: 0.001,        // 0.1% sell
+                    stampBuyPct: 0.00015,     // 0.015% (₹1500/cr), buy only
+                    dpPerSell: 15.34          // per scrip per debit day, GST included
+                },
+                intraday: {
+                    label: 'Equity intraday',
+                    brokeragePct: 0.0003,     // 0.03% …
+                    brokerageCap: 20,         // … or ₹20 per executed order, lower wins
+                    sttBuyPct: 0,
+                    sttSellPct: 0.00025,      // 0.025% sell only
+                    stampBuyPct: 0.00003,     // 0.003% (₹300/cr), buy only
+                    dpPerSell: 0              // nothing leaves the demat account
+                },
+                // Common to both segments (NSE equity)
+                exchTxnPct: 0.0000297,        // NSE transaction charge, ₹297/cr
+                sebiPct: 0.000001,            // SEBI turnover fee, ₹10/cr
+                ipftPct: 0.000001,            // NSE Investor Protection Fund Trust, ₹10/cr
+                gstPct: 0.18
+            };
+
+            /** Full per-trade charge breakdown. Every field is in rupees. */
+            function _fsTradeCostBreakdown(t) {
+                const qty = Number(t.qty) || 0;
+                const entry = Number(t.entryPrice) || 0;
+                const exit = Number(t.exitPrice) || 0;
+                const seg = t.side === 'short' ? 'intraday' : 'delivery';
+                const R = _FS_CHARGES[seg];
+                const C = _FS_CHARGES;
+
+                // A short opens on the sell leg and closes on the buy leg, but
+                // the buy/sell *values* are the same two numbers either way —
+                // what changes is which price is the buy and which is the sell.
+                const buyVal = (t.side === 'short' ? exit : entry) * qty;
+                const sellVal = (t.side === 'short' ? entry : exit) * qty;
+                const turnover = buyVal + sellVal;
+
+                // Brokerage is per executed order — two orders per round trip.
+                const perOrder = v => R.brokeragePct
+                    ? Math.min(v * R.brokeragePct, R.brokerageCap)
+                    : 0;
+                const brokerage = perOrder(buyVal) + perOrder(sellVal);
+
+                const stt = buyVal * R.sttBuyPct + sellVal * R.sttSellPct;
+                const exch = turnover * C.exchTxnPct;
+                const sebi = turnover * C.sebiPct;
+                const ipft = turnover * C.ipftPct;
+                const stamp = buyVal * R.stampBuyPct;
+                const gst = (brokerage + exch + sebi + ipft) * C.gstPct;
+                const dp = R.dpPerSell;
+
+                const total = brokerage + stt + exch + sebi + ipft + stamp + gst + dp;
+                return {
+                    segment: seg, segmentLabel: R.label,
+                    turnover: turnover, buyVal: buyVal, sellVal: sellVal,
+                    brokerage: brokerage,
+                    stt: stt,
+                    exchange: exch,
+                    sebi: sebi,
+                    ipft: ipft,
+                    stamp: stamp,
+                    gst: gst,
+                    dp: dp,
+                    total: total
+                };
             }
+
+            // Kept returning a plain number: fsPaperAnalyze and the training
+            // tracker both sum it, and a breakdown object would break them.
+            function _fsEstimateTradeCost(t) {
+                return _fsTradeCostBreakdown(t).total;
+            }
+
+            // Exposed so the training tracker nets off costs with this exact
+            // model rather than keeping a second copy that could drift out of
+            // step with the Analyze panel.
+            window._fsEstimateTradeCost = _fsEstimateTradeCost;
+            window._fsTradeCostBreakdown = _fsTradeCostBreakdown;
+            window._FS_CHARGES = _FS_CHARGES;
 
             function _fsDrawEquityCurve(points) {
                 const cv = document.getElementById('pt-equity-canvas');
@@ -27294,6 +28811,10 @@
                 let maxDrawdown = 0;
                 let maxDrawdownPct = 0;
                 let totalCosts = 0;
+                const costParts = {
+                    brokerage: 0, stt: 0, exchange: 0, sebi: 0,
+                    ipft: 0, stamp: 0, gst: 0, dp: 0, turnover: 0
+                };
 
                 let currentWinStreak = 0;
                 let maxWinStreak = 0;
@@ -27319,7 +28840,17 @@
                     const ddPct = peakEquity > 0 ? ((peakEquity - equity) / peakEquity) * 100 : 0;
                     if (ddPct > maxDrawdownPct) maxDrawdownPct = ddPct;
 
-                    totalCosts += _fsEstimateTradeCost(t);
+                    const cb = _fsTradeCostBreakdown(t);
+                    totalCosts += cb.total;
+                    costParts.brokerage += cb.brokerage;
+                    costParts.stt += cb.stt;
+                    costParts.exchange += cb.exchange;
+                    costParts.sebi += cb.sebi;
+                    costParts.ipft += cb.ipft;
+                    costParts.stamp += cb.stamp;
+                    costParts.gst += cb.gst;
+                    costParts.dp += cb.dp;
+                    costParts.turnover += cb.turnover;
 
                     if (t.side === 'long') longTrades.push(t); else if (t.side === 'short') shortTrades.push(t);
 
@@ -27447,6 +28978,29 @@
 
                 setTxt('pt-stat-netpnl', (runningPnl >= 0 ? '+' : '') + runningPnl.toFixed(2), posColor(runningPnl));
                 setTxt('pt-stat-costs', '-' + totalCosts.toFixed(2));
+                // Itemise the contract note under the headline figure, so the
+                // number is auditable instead of a black box.
+                (function () {
+                    const el = document.getElementById('pt-stat-costs-break');
+                    if (!el) return;
+                    const rows = [
+                        ['Brokerage', costParts.brokerage],
+                        ['STT', costParts.stt],
+                        ['Exchange txn', costParts.exchange],
+                        ['SEBI', costParts.sebi],
+                        ['IPFT', costParts.ipft],
+                        ['Stamp duty', costParts.stamp],
+                        ['GST (18%)', costParts.gst],
+                        ['DP charges', costParts.dp]
+                    ];
+                    el.innerHTML = rows.map(function (r) {
+                        const dim = r[1] <= 0 ? ' style="opacity:.35"' : '';
+                        return '<div class="fs-pt-cost-line"' + dim + '><span>' + r[0] +
+                            '</span><span>₹' + r[1].toFixed(2) + '</span></div>';
+                    }).join('') +
+                        '<div class="fs-pt-cost-line total"><span>Turnover</span><span>₹' +
+                        costParts.turnover.toFixed(0) + '</span></div>';
+                })();
                 setTxt('pt-stat-netafter', (netAfterCosts >= 0 ? '+' : '') + netAfterCosts.toFixed(2), posColor(netAfterCosts));
                 setTxt('pt-stat-cagr', (cagr >= 0 ? '+' : '') + cagr.toFixed(2) + '%', posColor(cagr));
                 setTxt('pt-stat-freq', tradesPerMonth.toFixed(1));
@@ -28919,6 +30473,1780 @@
             applyGate();
             window.addEventListener('resize', applyGate);
             window.addEventListener('orientationchange', applyGate);
+        })();
+    </script>
+
+    <script>
+        /* ══════════════════════════════════════════════════════════════════
+           TRAINING TRACKER — cross-device practice log (Google Sheets)
+           ══════════════════════════════════════════════════════════════════
+
+           Persists Trainer reps and paper-trade results to the standalone
+           SundarX_Training_Log Apps Script (see SundarX_Training_Log.gs), so
+           practice history survives reloads and follows you across devices,
+           and renders a daily target checklist in the Trainers panel.
+
+           WRITE MODEL — absolute totals, not deltas.
+           The day-buffer below holds the running total for today and the
+           flush overwrites the sheet row. That makes a retry idempotent: a
+           request that timed out after the server committed it re-states the
+           same numbers instead of double-counting. On load we hydrate the
+           buffer from doGet first, so reps logged earlier on another device
+           are folded in rather than clobbered.
+
+           Reps are buffered and flushed on a debounce (and on modal close /
+           page hide) — never one request per rep.
+        ══════════════════════════════════════════════════════════════════ */
+        (function () {
+            'use strict';
+
+            /* ─────────────── CONFIG — edit these ─────────────── */
+            const SX_TRACK = {
+                // The Apps Script Web App /exec URL. This URL IS the secret —
+                // it is ~57 characters of random and appears nowhere public — so
+                // there is no separate password to keep in sync. Empty = tracker
+                // stays dormant: the checklist counts reps locally and no network
+                // call is ever attempted.
+                ENDPOINT: 'https://script.google.com/macros/s/AKfycbwD2mgwthHjmv3MMA1wwOXlOXKckkPk0Y0QWVz8TR0iSQLElME5aMn3_jcfcKHd0Rq4xg/exec',
+
+                // Fixed virtual capital. Every paper-trading day is scored from
+                // the same 1L baseline — balance is NOT carried forward, so days
+                // stay comparable on win-rate / PnL% instead of compounding.
+                START_CAPITAL: 100000,
+
+                // ── Minimum daily targets ──
+                // BlindSim is a free-play trainer with no correct answer, so its
+                // target counts charts played, not answers scored.
+                TARGET_REPS: {
+                    BlindSim: 5,
+                    Breakout: 20,
+                    PatternID: 20,
+                    Decision: 20,
+                    CandlePattern: 20,
+                    Exit: 20
+                },
+                TARGET_TRADES: 5,
+
+                // Responses slower than this are treated as "walked away" and
+                // excluded from the average, so idle time can't poison the stat.
+                MAX_RT_SEC: 120,
+
+                FLUSH_DEBOUNCE_MS: 20000,
+                RETRIES: 3
+            };
+
+            /* Trainer stat-key → sheet Activity name.
+               These five are the graded trainers (each calls _fsRecordStat).
+               BlindSim has no entry here because it is never scored — it is
+               counted separately when its chart is dealt. */
+            const MODE_TO_ACTIVITY = {
+                flash: 'Breakout',
+                quiz: 'PatternID',
+                decide: 'Decision',
+                candle: 'CandlePattern',
+                exit: 'Exit'
+            };
+
+            const ACTIVITIES = ['BlindSim', 'Breakout', 'PatternID', 'Decision', 'CandlePattern', 'Exit'];
+            const UNGRADED = ['BlindSim'];
+            const LABELS = {
+                BlindSim: '🎲 Blind Sim',
+                Breakout: '🃏 Breakout',
+                PatternID: '🧠 Pattern ID',
+                Decision: '🎯 Decision',
+                CandlePattern: '🕯️ Candle',
+                Exit: '🚪 Exit'
+            };
+
+            const BUF_KEY = 'sundarx_track_day';
+            const OUTBOX_KEY = 'sundarx_track_outbox';
+            // Days that finished while there was no connection. Capped so a very
+            // long offline stretch cannot grow localStorage without bound; the
+            // oldest entries are dropped first, and only after ~4 months.
+            const OUTBOX_MAX_DAYS = 120;
+
+            /* ── Number fitting ──
+               Tiles are a fixed width, and some of these metrics have no upper
+               bound (a Sharpe on near-zero variance, a P&L run over months).
+               Rather than clip or ellipsis — which hides the magnitude, the one
+               thing you actually need — anything too long to fit is re-rendered
+               in scientific notation: 5487714100.7 becomes 5.5×10⁹.
+               VAL_BUDGET is how many characters .sx-tile-val fits at 16px. */
+            const VAL_BUDGET = 10;
+            const SUP_DIGITS = { '-': '⁻', '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
+
+            function supNum(n) {
+                return String(n).split('').map(c => SUP_DIGITS[c] || c).join('');
+            }
+
+            /** 5487714100.7 -> "5.5×10⁹" */
+            function toSci(n, dp) {
+                if (!isFinite(n)) return n > 0 ? '∞' : (n < 0 ? '-∞' : '—');
+                if (n === 0) return '0';
+                const exp = Math.floor(Math.log10(Math.abs(n)));
+                const mant = n / Math.pow(10, exp);
+                // A mantissa that rounds to 10 belongs in the next decade.
+                let m = Number(mant.toFixed(dp == null ? 1 : dp));
+                let e = exp;
+                if (Math.abs(m) >= 10) { m /= 10; e++; }
+                return String(m) + '×10' + supNum(e);
+            }
+
+            /* Render `plain`, unless it will not fit — then fall back to
+               scientific, preserving any prefix/suffix (₹, %, −). */
+            function fitNum(value, plain, prefix, suffix) {
+                prefix = prefix || '';
+                suffix = suffix || '';
+                if ((prefix + plain + suffix).length <= VAL_BUDGET) return prefix + plain + suffix;
+                return prefix + toSci(Math.abs(value)) + suffix;
+            }
+
+            /* Indian digit grouping (1,00,000) to match the rest of the app.
+               Paise are dropped above ₹1000 — at that size they are noise. */
+            function fmtMoney(n) {
+                const v = Math.abs(Number(n) || 0);
+                try {
+                    return v.toLocaleString('en-IN', {
+                        minimumFractionDigits: v >= 1000 ? 0 : 2,
+                        maximumFractionDigits: v >= 1000 ? 0 : 2
+                    });
+                } catch (e) {
+                    return v.toFixed(v >= 1000 ? 0 : 2);
+                }
+            }
+
+            /* Contract-note breakdown as a hover tooltip. Attribute-escaped
+               because it goes into a title="" inside an innerHTML string. */
+            function costTooltip(p) {
+                if (!p) return 'Charge breakdown unavailable';
+                const line = (k, v) => k + ': ₹' + (Number(v) || 0).toFixed(2);
+                return [
+                    line('Brokerage', p.brokerage),
+                    line('STT', p.stt),
+                    line('Exchange txn', p.exchange),
+                    line('SEBI', p.sebi),
+                    line('IPFT', p.ipft),
+                    line('Stamp duty', p.stamp),
+                    line('GST 18%', p.gst),
+                    line('DP charges', p.dp),
+                    line('Turnover', p.turnover)
+                ].join('\n').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+            }
+
+            /* ─────────────── toast ─────────────── */
+            function toast(msg, kind) {
+                let wrap = document.getElementById('sx-toast-wrap');
+                if (!wrap) {
+                    wrap = document.createElement('div');
+                    wrap.id = 'sx-toast-wrap';
+                    document.body.appendChild(wrap);
+                }
+                const el = document.createElement('div');
+                el.className = 'sx-toast ' + (kind || '');
+                el.textContent = msg;
+                wrap.appendChild(el);
+                requestAnimationFrame(() => el.classList.add('show'));
+                setTimeout(() => {
+                    el.classList.remove('show');
+                    setTimeout(() => el.remove(), 300);
+                }, kind === 'err' ? 5200 : 2600);
+            }
+            // The paper-trade engine lives in an earlier closure and needs to
+            // report balance rejections; this is the only toast in the app.
+            window._sxToast = toast;
+
+            /* ─────────────── day buffer ─────────────── */
+            function today() {
+                // Local calendar date — matches how the user experiences "a day".
+                const d = new Date();
+                return d.getFullYear() + '-' +
+                    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+                    String(d.getDate()).padStart(2, '0');
+            }
+
+            function blankBuf(date) {
+                const b = { date: date, act: {}, trades: [], synced: false };
+                ACTIVITIES.forEach(a => { b.act[a] = { reps: 0, correct: 0, rtSum: 0, rtN: 0 }; });
+                return b;
+            }
+
+            /* ══ OFFLINE QUEUE ══
+               Reps are always recorded locally first, so going offline never
+               interrupts practice. What changes is only when they reach the
+               sheet.
+
+               navigator.onLine is necessary but not sufficient — it reports
+               "online" for a wifi connection with no route to the internet, and
+               says nothing about the Apps Script deployment being reachable. So
+               a failed request also counts as offline, and NET.reachable is what
+               the warning actually keys off. */
+            const NET = {
+                get online() { return navigator.onLine !== false; },
+                reachable: true,       // last request actually succeeded
+                lastError: null,
+                lastOkAt: null
+            };
+
+            function loadOutbox() {
+                try {
+                    const v = JSON.parse(localStorage.getItem(OUTBOX_KEY));
+                    return Array.isArray(v) ? v : [];
+                } catch (e) { return []; }
+            }
+
+            function saveOutbox(q) {
+                try {
+                    // Newest wins if we ever have to drop.
+                    if (q.length > OUTBOX_MAX_DAYS) q = q.slice(-OUTBOX_MAX_DAYS);
+                    localStorage.setItem(OUTBOX_KEY, JSON.stringify(q));
+                } catch (e) {
+                    console.warn('[SundarX] Could not persist the offline queue:', e.message);
+                }
+                return q;
+            }
+
+            /* Queue a finished day. Same date replaces rather than duplicates —
+               payloads are absolute totals, so the later one supersedes. */
+            function enqueueDay(payload) {
+                if (!payload || (!payload.training.length && !payload.paper)) return;
+                const q = loadOutbox().filter(x => x.date !== payload.date);
+                q.push(Object.assign({ queuedAt: Date.now() }, payload));
+                q.sort((a, b2) => a.date < b2.date ? -1 : 1);
+                saveOutbox(q);
+                updateOfflineUI();
+            }
+
+            function pendingCount() {
+                return loadOutbox().length;
+            }
+
+            let buf;
+            try {
+                buf = JSON.parse(localStorage.getItem(BUF_KEY));
+            } catch (e) { buf = null; }
+            if (!buf || buf.date !== today()) buf = blankBuf(today());
+            // Heal a buffer written by an older build that lacked a newer activity
+            ACTIVITIES.forEach(a => {
+                if (!buf.act[a]) buf.act[a] = { reps: 0, correct: 0, rtSum: 0, rtN: 0 };
+            });
+            if (!Array.isArray(buf.trades)) buf.trades = [];
+
+            function saveBuf() {
+                try { localStorage.setItem(BUF_KEY, JSON.stringify(buf)); } catch (e) { }
+            }
+
+            function rollDayIfNeeded() {
+                const t = today();
+                if (buf.date === t) return false;
+                /* Day rolled over mid-session. The finished day is written to the
+                   outbox BEFORE the buffer is blanked — previously it was only
+                   handed to a fire-and-forget flush, so rolling over while
+                   offline destroyed that day's reps the moment the tab closed. */
+                const stale = buf;
+                if (!stale.synced) enqueueDay(buildPayload(stale));
+                buf = blankBuf(t);
+                saveBuf();
+                flush(false);
+                return true;
+            }
+
+            /* ─────────────── rep capture ─────────────── */
+            let questionShownAt = 0;
+
+            // Called from _fsRecordStat for each graded answer.
+            window._sxTrackRep = function (mode, correct) {
+                const act = MODE_TO_ACTIVITY[mode];
+                if (!act) return;
+                rollDayIfNeeded();
+                const a = buf.act[act];
+                a.reps++;
+                if (correct) a.correct++;
+                if (questionShownAt) {
+                    const rt = (Date.now() - questionShownAt) / 1000;
+                    if (rt > 0 && rt <= SX_TRACK.MAX_RT_SEC) { a.rtSum += rt; a.rtN++; }
+                    questionShownAt = 0;
+                }
+                saveBuf();
+                renderChecklist();
+                scheduleFlush();
+            };
+
+            /* Stamp the clock when a question is dealt. The trainer entry points
+               are on window, so this wraps them without touching their bodies —
+               the same call also serves the "Next" button, which re-invokes the
+               same function. */
+            ['fsFlashcardTraining', 'fsPatternQuizTraining', 'fsDecisionTraining',
+                'fsCandlePatternTraining', 'fsExitTraining'].forEach(fn => {
+                    const orig = window[fn];
+                    if (typeof orig !== 'function') return;
+                    window[fn] = function () {
+                        const r = orig.apply(this, arguments);
+                        questionShownAt = Date.now();
+                        return r;
+                    };
+                });
+
+            /* Blind Sim is ungraded — count each chart dealt as one rep. */
+            (function () {
+                const orig = window.fsRandomTraining;
+                if (typeof orig !== 'function') return;
+                window.fsRandomTraining = function () {
+                    const r = orig.apply(this, arguments);
+                    rollDayIfNeeded();
+                    buf.act.BlindSim.reps++;
+                    saveBuf();
+                    renderChecklist();
+                    scheduleFlush();
+                    return r;
+                };
+            })();
+
+            /* ─────────────── paper trades ─────────────── */
+            /* _fsPaperTrade.trades lives in memory only and empties on reload, so
+               the tracker keeps its own persistent copy of each closed trade and
+               derives the day's stats from that. */
+            (function () {
+                const orig = window.fsPaperClose;
+                if (typeof orig !== 'function') return;
+                window.fsPaperClose = function () {
+                    const before = (window._fsPaperTrade && window._fsPaperTrade.trades.length) || 0;
+                    const r = orig.apply(this, arguments);
+                    const list = (window._fsPaperTrade && window._fsPaperTrade.trades) || [];
+                    if (list.length > before) {
+                        rollDayIfNeeded();
+                        const t = list[list.length - 1];
+                        // Prices and qty are stored too, not just pnl, so the
+                        // day's NET P&L can be computed after costs even on a
+                        // later page load when _fsPaperTrade.trades is empty.
+                        buf.trades.push({
+                            pnl: Number(t.pnl) || 0,
+                            ticker: t.ticker || 'UNKNOWN',
+                            side: t.side,
+                            qty: Number(t.qty) || 0,
+                            entryPrice: Number(t.entryPrice) || 0,
+                            exitPrice: Number(t.exitPrice) || 0
+                        });
+                        saveBuf();
+                        renderChecklist();
+                        scheduleFlush();
+                    }
+                    return r;
+                };
+            })();
+
+            /* Day P&L.
+               Gross is the raw sum of trade P&L. Net subtracts the same
+               round-trip cost estimate the Analyze panel applies, via the
+               shared window._fsEstimateTradeCost, so the sheet and the UI can
+               never disagree. Trades buffered by an older build have no stored
+               prices; those cost 0 rather than being guessed at, so an upgrade
+               understates costs for one day instead of inventing numbers.
+
+               The drawdown walk uses GROSS equity — costs are booked at close,
+               so netting them per trade would distort the intraday peak that
+               drawdown is measured from. */
+            function paperStats() {
+                const trades = buf.trades;
+                if (!trades.length) return null;
+                let wins = 0, losses = 0, gross = 0, costs = 0;
+                // Winners and losers tracked separately: once netted into a
+                // single figure they cannot be pulled apart again, and every
+                // trade-level metric (profit factor, avg win/loss, expectancy,
+                // Kelly) needs both halves.
+                let grossProfit = 0, grossLoss = 0;
+                let running = 0, peak = 0, maxDdPct = 0;
+                let best = null, worst = null;
+                const cap = SX_TRACK.START_CAPITAL;
+                const breakFn = window._fsTradeCostBreakdown;
+                // Same line items as the Zerodha contract note in the Analyze
+                // panel, aggregated across the day.
+                const parts = {
+                    brokerage: 0, stt: 0, exchange: 0, sebi: 0,
+                    ipft: 0, stamp: 0, gst: 0, dp: 0, turnover: 0
+                };
+
+                trades.forEach(t => {
+                    gross += t.pnl;
+                    running += t.pnl;
+                    if (t.pnl > 0) { wins++; grossProfit += t.pnl; }
+                    else if (t.pnl < 0) { losses++; grossLoss += Math.abs(t.pnl); }
+                    if (best === null || t.pnl > best) best = t.pnl;
+                    if (worst === null || t.pnl < worst) worst = t.pnl;
+
+                    if (typeof breakFn === 'function' && t.qty && t.entryPrice && t.exitPrice) {
+                        const cb = breakFn(t);
+                        if (isFinite(cb.total)) {
+                            costs += cb.total;
+                            Object.keys(parts).forEach(k => { parts[k] += cb[k] || 0; });
+                        }
+                    }
+
+                    const equity = cap + running;
+                    if (equity > peak) peak = equity;
+                    if (peak > 0) {
+                        const dd = ((peak - equity) / peak) * 100;
+                        if (dd > maxDdPct) maxDdPct = dd;
+                    }
+                });
+                if (peak < cap) peak = cap;
+
+                const net = gross - costs;
+                return {
+                    startCapital: cap,
+                    trades: trades.length,
+                    wins: wins,
+                    losses: losses,
+                    grossPnl: gross,
+                    grossProfit: grossProfit,
+                    grossLoss: grossLoss,
+                    costs: costs,
+                    costParts: parts,
+                    netPnl: net,
+                    netPnlPct: (net / cap) * 100,
+                    bestTrade: best || 0,
+                    worstTrade: worst || 0,
+                    maxDdPct: maxDdPct,
+                    targetTrades: SX_TRACK.TARGET_TRADES
+                };
+            }
+            // Exposed so the day's P&L can be inspected from the console.
+            window.sxDayPnl = paperStats;
+
+            /* ─────────────── checklist UI ─────────────── */
+            function metCount() {
+                let n = 0;
+                ACTIVITIES.forEach(a => {
+                    const tgt = SX_TRACK.TARGET_REPS[a] || 0;
+                    if (tgt > 0 && buf.act[a].reps >= tgt) n++;
+                });
+                return n;
+            }
+
+            function renderChecklist() {
+                const badge = document.getElementById('sx-day-badge');
+                const rows = document.getElementById('sx-cl-rows');
+                const total = ACTIVITIES.length + 1;   // +1 for paper trading
+                const ps = paperStats();
+                const ptMet = ps && ps.trades >= SX_TRACK.TARGET_TRADES;
+                const done = metCount() + (ptMet ? 1 : 0);
+
+                if (badge) {
+                    badge.textContent = done + '/' + total;
+                    badge.className = 'sx-day-badge' +
+                        (done === total ? ' done' : done > 0 ? ' partial' : '');
+                    badge.title = done === total
+                        ? 'All practice targets met today 🎉'
+                        : done + ' of ' + total + ' targets met today';
+                }
+                if (!rows) return;
+
+                let html = '';
+                ACTIVITIES.forEach(a => {
+                    const tgt = SX_TRACK.TARGET_REPS[a] || 0;
+                    const reps = buf.act[a].reps;
+                    const met = tgt > 0 && reps >= tgt;
+                    const pct = tgt > 0 ? Math.min(100, (reps / tgt) * 100) : 0;
+                    const acc = (UNGRADED.indexOf(a) === -1 && reps)
+                        ? ' · ' + Math.round((buf.act[a].correct / reps) * 100) + '%' : '';
+                    html += '<div class="sx-cl-row' + (met ? ' met' : '') + '">' +
+                        '<span class="sx-cl-tick">' + (met ? '✓' : '○') + '</span>' +
+                        '<span class="sx-cl-name">' + LABELS[a] + acc + '</span>' +
+                        '<span class="sx-cl-bar"><i style="width:' + pct + '%"></i></span>' +
+                        '<span class="sx-cl-num">' + reps + '/' + tgt + '</span>' +
+                        '</div>';
+                });
+
+                const nTrades = ps ? ps.trades : 0;
+                const pPct = Math.min(100, (nTrades / SX_TRACK.TARGET_TRADES) * 100);
+                const wr = ps && ps.trades ? ' · ' + Math.round((ps.wins / ps.trades) * 100) + '%' : '';
+                html += '<div class="sx-cl-row' + (ptMet ? ' met' : '') + '">' +
+                    '<span class="sx-cl-tick">' + (ptMet ? '✓' : '○') + '</span>' +
+                    '<span class="sx-cl-name">📄 Paper trades' + wr + '</span>' +
+                    '<span class="sx-cl-bar"><i style="width:' + pPct + '%"></i></span>' +
+                    '<span class="sx-cl-num">' + nTrades + '/' + SX_TRACK.TARGET_TRADES + '</span>' +
+                    '</div>';
+
+                // Today's realised P&L — the headline number for the day.
+                if (ps) {
+                    const up = ps.netPnl >= 0;
+                    const sign = up ? '+' : '−';
+                    const abs = Math.abs(ps.netPnl);
+                    html += '<div class="sx-pnl-row ' + (up ? 'up' : 'down') + '">' +
+                        '<span class="sx-pnl-lbl">Today’s P&amp;L</span>' +
+                        '<span class="sx-pnl-val">' + sign + '₹' + fmtMoney(abs) +
+                        '<span class="sx-pnl-pct">' + sign +
+                        Math.abs(ps.netPnlPct).toFixed(2) + '%</span></span>' +
+                        '</div>' +
+                        '<div class="sx-pnl-sub">' +
+                        'gross ' + (ps.grossPnl >= 0 ? '+' : '−') + '₹' + fmtMoney(Math.abs(ps.grossPnl)) +
+                        ' · <span class="sx-cost" title="' + costTooltip(ps.costParts) +
+                        '">costs ₹' + fmtMoney(ps.costs) + '</span>' +
+                        ' · best ' + (ps.bestTrade >= 0 ? '+' : '−') + '₹' + fmtMoney(Math.abs(ps.bestTrade)) +
+                        ' · worst ' + (ps.worstTrade >= 0 ? '+' : '−') + '₹' + fmtMoney(Math.abs(ps.worstTrade)) +
+                        '</div>';
+                }
+
+                rows.innerHTML = html;
+
+                const title = document.getElementById('sx-cl-title');
+                if (title) {
+                    title.textContent = SX_TRACK.ENDPOINT
+                        ? "Today's targets"
+                        : "Today's targets (local only)";
+                }
+            }
+            window.sxRenderChecklist = renderChecklist;
+
+            /* ─────────────── network ─────────────── */
+            const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+            function setSyncState(cls) {
+                const el = document.getElementById('sx-cl-sync');
+                if (!el) return;
+                el.className = 'sx-cl-sync' + (cls ? ' ' + cls : '');
+                if (cls === 'syncing') setTimeout(() => {
+                    if (el.className.indexOf('syncing') !== -1) el.className = 'sx-cl-sync';
+                }, 600);
+            }
+
+            /* Apps Script Web Apps do not answer the CORS preflight, so the body
+               goes out as text/plain — a safelisted content type that skips
+               preflight entirely. doPost still reads it with JSON.parse. */
+            async function postJSON(payload) {
+                let delay = 900;
+                let lastErr = null;
+                for (let i = 0; i < SX_TRACK.RETRIES; i++) {
+                    try {
+                        const ctrl = new AbortController();
+                        const tid = setTimeout(() => ctrl.abort(), 15000);
+                        const resp = await fetch(SX_TRACK.ENDPOINT, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                            body: JSON.stringify(payload),
+                            signal: ctrl.signal,
+                            redirect: 'follow'
+                        });
+                        clearTimeout(tid);
+                        const txt = await resp.text();
+                        let data = null;
+                        try { data = JSON.parse(txt); } catch (e) { }
+                        if (data && data.ok) return data;
+                        lastErr = new Error((data && data.error) || ('HTTP ' + resp.status));
+                        // A payload rejected for a permanent reason (bad JSON,
+                        // bad date) is rejected identically on every retry —
+                        // fail fast instead of burning the whole backoff.
+                        if (data && data.error && /json|date|nothing/i.test(data.error)) break;
+                    } catch (err) {
+                        lastErr = err;
+                    }
+                    if (i < SX_TRACK.RETRIES - 1) {
+                        await sleep(delay + Math.random() * 400);   // jitter
+                        delay *= 2;
+                    }
+                }
+                throw lastErr || new Error('sync failed');
+            }
+
+            let flushTimer = null;
+            let inFlight = false;
+
+            function scheduleFlush() {
+                if (!SX_TRACK.ENDPOINT) return;
+                clearTimeout(flushTimer);
+                flushTimer = setTimeout(() => flush(false), SX_TRACK.FLUSH_DEBOUNCE_MS);
+            }
+
+            /** One day-buffer -> one wire payload. Shared by flush and the outbox. */
+            function buildPayload(b) {
+                const training = ACTIVITIES
+                    .filter(a => b.act[a] && b.act[a].reps > 0)
+                    .map(a => ({
+                        activity: a,
+                        reps: b.act[a].reps,
+                        correct: b.act[a].correct,
+                        avgRt: b.act[a].rtN ? +(b.act[a].rtSum / b.act[a].rtN).toFixed(2) : null,
+                        targetReps: SX_TRACK.TARGET_REPS[a] || 0
+                    }));
+                const savedBuf = buf;
+                buf = b;
+                const paper = paperStats();
+                buf = savedBuf;
+                return { date: b.date, training: training, paper: paper };
+            }
+
+            async function flush(loud) {
+                if (!SX_TRACK.ENDPOINT) {
+                    if (loud) toast('Tracker endpoint not configured — see SX_TRACK.ENDPOINT', 'err');
+                    return;
+                }
+                if (inFlight) {
+                    // A background flush is already running. Silent for the
+                    // automatic path, but a tapped ⟳ that appeared to do
+                    // nothing would read as broken.
+                    if (loud) toast('Already syncing…');
+                    return;
+                }
+
+                const todayPayload = buildPayload(buf);
+                const hasToday = todayPayload.training.length || todayPayload.paper;
+                let queue = loadOutbox();
+
+                if (!hasToday && !queue.length) {
+                    if (loud) toast('Nothing to sync yet — do some reps first.');
+                    return;
+                }
+
+                // Offline: keep everything on disk and say so, rather than
+                // burning the retry backoff against a connection that is down.
+                if (!NET.online) {
+                    NET.reachable = false;
+                    updateOfflineUI();
+                    if (loud) {
+                        toast('Offline — ' + describePending() +
+                            ' saved on this device. It will upload automatically when you reconnect.', 'err');
+                    }
+                    return;
+                }
+
+                inFlight = true;
+                clearTimeout(flushTimer);
+                setSyncState('syncing');
+
+                let sentDays = 0;
+                let failure = null;
+
+                try {
+                    // Oldest first, so the sheet fills in chronological order.
+                    for (let i = 0; i < queue.length; i++) {
+                        await postJSON(queue[i]);
+                        sentDays++;
+                    }
+                    // Every queued day landed — clear them together.
+                    if (sentDays) { queue = []; saveOutbox(queue); }
+
+                    if (hasToday) {
+                        await postJSON(todayPayload);
+                        buf.synced = true;
+                        saveBuf();
+                    }
+
+                    NET.reachable = true;
+                    NET.lastError = null;
+                    NET.lastOkAt = Date.now();
+                    setSyncState('');
+                    if (loud || sentDays) {
+                        toast(sentDays
+                            ? 'Back online — uploaded ' + sentDays + ' saved day' + (sentDays === 1 ? '' : 's') + ' ✓'
+                            : 'Training log synced ✓', 'ok');
+                    }
+                } catch (err) {
+                    failure = err;
+                    NET.reachable = false;
+                    NET.lastError = err.message;
+                    // Drop only what actually landed; the rest stays queued.
+                    if (sentDays) saveOutbox(queue.slice(sentDays));
+                    setSyncState('failed');
+                    console.warn('[SundarX] Training log sync failed:', err.message);
+                    if (loud) {
+                        toast('Could not reach the sheet: ' + err.message + '. ' +
+                            describePending() + ' safe on this device — will retry.', 'err');
+                    }
+                } finally {
+                    inFlight = false;
+                    updateOfflineUI();
+                }
+                return failure ? Promise.resolve() : Promise.resolve();
+            }
+            window.sxTrackFlush = flush;
+
+            /* ── offline warning ── */
+            function describePending() {
+                const n = pendingCount();
+                const parts = [];
+                if (n) parts.push(n + ' earlier day' + (n === 1 ? '' : 's'));
+                const p = buildPayload(buf);
+                if (p.training.length || p.paper) parts.push("today's work");
+                if (!parts.length) return 'Nothing pending';
+                return parts.join(' + ');
+            }
+
+            function updateOfflineUI() {
+                const warnEl = document.getElementById('sx-offline-warn');
+                const n = pendingCount();
+                const offline = !NET.online || !NET.reachable;
+                if (warnEl) {
+                    if (!SX_TRACK.ENDPOINT) {
+                        warnEl.style.display = 'none';
+                    } else if (offline) {
+                        warnEl.style.display = '';
+                        warnEl.className = 'sx-offline-warn ' + (NET.online ? 'unreachable' : 'offline');
+                        warnEl.innerHTML = (NET.online ? "Can't reach the sheet" : 'You are offline') +
+                            ' — <b>' + describePending() + '</b> saved here. ' +
+                            (NET.online ? 'Tap ⟳ to retry.' : 'Go online and it uploads itself.');
+                    } else if (n) {
+                        warnEl.style.display = '';
+                        warnEl.className = 'sx-offline-warn pending';
+                        warnEl.innerHTML = '<b>' + n + ' saved day' + (n === 1 ? '' : 's') + '</b> waiting to upload.';
+                    } else {
+                        warnEl.style.display = 'none';
+                    }
+                }
+                const sync = document.getElementById('sx-cl-sync');
+                if (sync) sync.classList.toggle('pending', !!n || offline);
+            }
+            window.sxUpdateOfflineUI = updateOfflineUI;
+            window.sxPendingDays = pendingCount;
+
+            /* ─────────────── hydrate from sheet ─────────────── */
+            /* Fold in whatever was already logged today (possibly from another
+               device) so the absolute write below doesn't wipe it. Local counts
+               win where they are larger, which is the case after an offline
+               stretch on this device. */
+            let hydrated = false;
+            async function hydrate() {
+                if (hydrated || !SX_TRACK.ENDPOINT) return;
+                hydrated = true;
+                try {
+                    const url = SX_TRACK.ENDPOINT +
+                        '?date=' + encodeURIComponent(buf.date) +
+                        '&_nc=' + Date.now();
+                    const resp = await fetch(url, { redirect: 'follow' });
+                    const data = await resp.json();
+                    if (!data || !data.ok) throw new Error((data && data.error) || 'bad response');
+
+                    (data.training || []).forEach(row => {
+                        const a = buf.act[row.activity];
+                        if (!a) return;
+                        if (row.reps > a.reps) {
+                            a.reps = row.reps;
+                            a.correct = Math.max(a.correct, row.correct || 0);
+                            if (row.avgRt && !a.rtN) { a.rtSum = row.avgRt * row.reps; a.rtN = row.reps; }
+                        }
+                    });
+
+                    // Paper trades are stored as individual trades locally but as
+                    // a summary remotely, so they can only be reconciled by count:
+                    // if the sheet knows about more trades than this device does,
+                    // pad the local list with neutral placeholders so the day's
+                    // trade COUNT stays honest. P&L stays whatever this device saw.
+                    if (data.paper && data.paper.trades > buf.trades.length) {
+                        const missing = data.paper.trades - buf.trades.length;
+                        for (let i = 0; i < missing; i++) {
+                            buf.trades.push({ pnl: 0, ticker: 'REMOTE', side: 'remote' });
+                        }
+                    }
+
+                    saveBuf();
+                    renderChecklist();
+                } catch (err) {
+                    console.warn('[SundarX] Training log hydrate failed:', err.message);
+                    // Non-fatal: the checklist just shows this device's counts.
+                }
+            }
+
+            /* ══════════════════════════════════════════════════════════════
+               TRAINING DASHBOARD — full history, 1M / 3M / 6M / 1Y / All
+               ══════════════════════════════════════════════════════════════
+               SYNC MODEL. The sheet is the archive; the local buffer holds
+               only today. The dashboard fetches the FULL history once, then
+               overlays today's local buffer on top — so unsynced reps from
+               this session appear immediately instead of the dashboard
+               disagreeing with the checklist two feet above it.
+
+               Period pills filter the already-fetched history client-side, so
+               switching 1M↔All is instant and costs no request. ⟳ re-fetches.
+            ══════════════════════════════════════════════════════════════ */
+            const HIST_CACHE_KEY = 'sundarx_track_history';
+
+            const DASH = {
+                history: null,      // { training:[], paper:[], fetchedAt, today }
+                range: 'all',
+                loading: false,
+                error: null,
+                stale: false,       // rendering from cache, not a fresh fetch
+                showTable: false
+            };
+
+            /* ══ LOCAL-FIRST HISTORY ══
+               The sheet is the archive, but the dashboard must not need it to
+               open. Every successful fetch is cached here, so the dashboard
+               renders instantly from disk and then quietly refreshes if a
+               connection is available. Offline it simply shows the cache, with
+               the age stated so a stale number is never mistaken for a live one. */
+            function loadHistCache() {
+                try {
+                    const v = JSON.parse(localStorage.getItem(HIST_CACHE_KEY));
+                    if (v && Array.isArray(v.training) && Array.isArray(v.paper)) return v;
+                } catch (e) { }
+                return null;
+            }
+
+            function saveHistCache(h) {
+                try {
+                    localStorage.setItem(HIST_CACHE_KEY, JSON.stringify({
+                        training: h.training, paper: h.paper,
+                        today: h.today, fetchedAt: h.fetchedAt
+                    }));
+                } catch (e) {
+                    // Quota is the only realistic failure. The dashboard still
+                    // works this session; it just cannot open offline later.
+                    console.warn('[SundarX] Could not cache history:', e.message);
+                }
+            }
+
+            /* A queued (unsynced) day is real practice and must appear in the
+               dashboard. Outbox payloads are wire-shaped, so widen them to the
+               row shape the stats code expects. */
+            function outboxAsRows() {
+                const training = [], paper = [];
+                loadOutbox().forEach(d => {
+                    (d.training || []).forEach(t => {
+                        training.push({
+                            date: d.date, activity: t.activity,
+                            reps: t.reps, correct: t.correct,
+                            accuracy: UNGRADED.indexOf(t.activity) === -1 && t.reps
+                                ? (t.correct / t.reps) * 100 : null,
+                            avgRt: t.avgRt,
+                            targetReps: t.targetReps,
+                            targetMet: t.targetReps > 0 && t.reps >= t.targetReps ? 'Y' : 'N'
+                        });
+                    });
+                    const p = d.paper;
+                    if (p) {
+                        paper.push({
+                            date: d.date, startCapital: p.startCapital, trades: p.trades,
+                            wins: p.wins, losses: p.losses,
+                            winRate: p.trades ? (p.wins / p.trades) * 100 : 0,
+                            grossPnl: p.grossPnl, netPnl: p.netPnl,
+                            grossProfit: p.grossProfit || 0, grossLoss: p.grossLoss || 0,
+                            netPnlPct: (p.netPnl / (p.startCapital || SX_TRACK.START_CAPITAL)) * 100,
+                            maxDdPct: p.maxDdPct,
+                            targetTrades: p.targetTrades,
+                            targetMet: p.targetTrades > 0 && p.trades >= p.targetTrades ? 'Y' : 'N'
+                        });
+                    }
+                });
+                return { training: training, paper: paper };
+            }
+
+            // Activity → categorical slot. FIXED, so changing the period never
+            // repaints a series. Only the five GRADED activities get a slot:
+            // BlindSim has no accuracy, so it never appears in these plots.
+            const ACT_SLOT = {
+                Breakout: '--series-1',
+                PatternID: '--series-2',
+                Decision: '--series-3',
+                CandlePattern: '--series-4',
+                Exit: '--series-5'
+            };
+            const GRADED = ACTIVITIES.filter(a => UNGRADED.indexOf(a) === -1);
+
+            function cssVar(name) {
+                const el = document.getElementById('sx-dash-modal');
+                if (!el) return '#888';
+                return (getComputedStyle(el).getPropertyValue(name) || '#888').trim();
+            }
+
+            function daysBack(range) {
+                return { '1m': 30, '3m': 91, '6m': 183, '1y': 365, 'all': null }[range];
+            }
+
+            function isoDaysAgo(n) {
+                const d = new Date();
+                d.setDate(d.getDate() - n);
+                return d.getFullYear() + '-' +
+                    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+                    String(d.getDate()).padStart(2, '0');
+            }
+
+            /* ── fetch + merge ── */
+            async function fetchHistory() {
+                if (!SX_TRACK.ENDPOINT) throw new Error('endpoint not configured');
+                const url = SX_TRACK.ENDPOINT + '?range=all&_nc=' + Date.now();
+                const resp = await fetch(url, { redirect: 'follow' });
+                const data = await resp.json();
+                if (!data || !data.ok) throw new Error((data && data.error) || 'bad response');
+                const h = {
+                    training: data.training || [],
+                    paper: data.paper || [],
+                    today: data.today || today(),
+                    fetchedAt: Date.now()
+                };
+                saveHistCache(h);
+                return h;
+            }
+
+            /* Overlay today's local buffer so pending reps are visible.
+               Local wins only where it is AHEAD of the sheet — the same rule
+               hydrate() uses, so the two can never fight. */
+            function mergedHistory() {
+                const h = DASH.history;
+                if (!h) return null;
+                const t = today();
+
+                /* Layered newest-wins: the sheet (or its cache) is the base,
+                   days still sitting in the outbox override it, and today's live
+                   buffer overrides everything. So the dashboard shows all local
+                   work whether or not any of it has reached the sheet yet. */
+                const queued = outboxAsRows();
+                const queuedDates = new Set(queued.training.map(r => r.date)
+                    .concat(queued.paper.map(r => r.date)));
+
+                const training = h.training
+                    .filter(r => r.date !== t && !queuedDates.has(r.date))
+                    .concat(queued.training.filter(r => r.date !== t));
+                const paper = h.paper
+                    .filter(r => r.date !== t && !queuedDates.has(r.date))
+                    .concat(queued.paper.filter(r => r.date !== t));
+                const remoteToday = {};
+                h.training.filter(r => r.date === t).forEach(r => { remoteToday[r.activity] = r; });
+
+                ACTIVITIES.forEach(a => {
+                    const local = buf.act[a];
+                    const remote = remoteToday[a];
+                    const reps = Math.max(local ? local.reps : 0, remote ? remote.reps : 0);
+                    if (!reps) return;
+                    const useLocal = local && local.reps >= (remote ? remote.reps : 0);
+                    const correct = useLocal ? local.correct : remote.correct;
+                    training.push({
+                        date: t,
+                        activity: a,
+                        reps: reps,
+                        correct: UNGRADED.indexOf(a) === -1 ? correct : 0,
+                        accuracy: UNGRADED.indexOf(a) === -1 && reps ? (correct / reps) * 100 : null,
+                        avgRt: useLocal && local.rtN ? local.rtSum / local.rtN : (remote ? remote.avgRt : null),
+                        targetReps: SX_TRACK.TARGET_REPS[a] || 0,
+                        targetMet: reps >= (SX_TRACK.TARGET_REPS[a] || 0) ? 'Y' : 'N'
+                    });
+                });
+
+                const ps = paperStats();
+                const remotePaper = h.paper.filter(r => r.date === t)[0];
+                if (ps && (!remotePaper || ps.trades >= remotePaper.trades)) {
+                    paper.push({
+                        date: t, startCapital: ps.startCapital, trades: ps.trades,
+                        wins: ps.wins, losses: ps.losses,
+                        winRate: ps.trades ? (ps.wins / ps.trades) * 100 : 0,
+                        grossPnl: ps.grossPnl, netPnl: ps.netPnl,
+                        grossProfit: ps.grossProfit, grossLoss: ps.grossLoss,
+                        netPnlPct: ps.netPnlPct, maxDdPct: ps.maxDdPct,
+                        targetTrades: ps.targetTrades,
+                        targetMet: ps.trades >= ps.targetTrades ? 'Y' : 'N'
+                    });
+                } else if (remotePaper) {
+                    paper.push(remotePaper);
+                }
+
+                const byDate = (x, y) => x.date < y.date ? -1 : x.date > y.date ? 1 : 0;
+                return { training: training.sort(byDate), paper: paper.sort(byDate) };
+            }
+
+            function inRange(rows) {
+                const n = daysBack(DASH.range);
+                if (n === null) return rows;
+                const from = isoDaysAgo(n - 1);
+                return rows.filter(r => r.date >= from);
+            }
+
+            /* ── statistics ── */
+            function computeStats() {
+                const m = mergedHistory();
+                if (!m) return null;
+                const training = inRange(m.training);
+                const paper = inRange(m.paper);
+
+                let reps = 0, correct = 0, gradedReps = 0;
+                const perAct = {};
+                ACTIVITIES.forEach(a => {
+                    perAct[a] = { reps: 0, correct: 0, days: 0, daysMet: 0, rtSum: 0, rtN: 0, series: [] };
+                });
+                training.forEach(r => {
+                    const p = perAct[r.activity];
+                    if (!p) return;
+                    reps += r.reps;
+                    p.reps += r.reps;
+                    p.days++;
+                    if (r.targetMet === 'Y') p.daysMet++;
+                    if (UNGRADED.indexOf(r.activity) === -1) {
+                        correct += r.correct;
+                        gradedReps += r.reps;
+                        p.correct += r.correct;
+                        p.series.push({ date: r.date, v: r.reps ? (r.correct / r.reps) * 100 : 0, reps: r.reps });
+                    }
+                    if (r.avgRt) { p.rtSum += r.avgRt * r.reps; p.rtN += r.reps; }
+                });
+
+                let trades = 0, wins = 0, losses = 0, gross = 0, net = 0;
+                let grossProfit = 0, grossLoss = 0;
+                let cum = 0, peak = 0, maxDd = 0;
+                const equity = [], daily = [];
+                let bestDay = null, worstDay = null;
+                let upDays = 0, downDays = 0;
+                let dayWinRun = 0, dayLossRun = 0, bestDayRun = 0, worstDayRun = 0;
+                paper.forEach(r => {
+                    trades += r.trades; wins += r.wins; losses += r.losses;
+                    gross += r.grossPnl; net += r.netPnl;
+                    grossProfit += r.grossProfit || 0;
+                    grossLoss += r.grossLoss || 0;
+                    cum += r.netPnlPct;
+                    if (cum > peak) peak = cum;
+                    const dd = peak - cum;
+                    if (dd > maxDd) maxDd = dd;
+                    equity.push({ date: r.date, v: cum });
+                    daily.push({ date: r.date, v: r.netPnl, pct: r.netPnlPct, trades: r.trades, winRate: r.winRate });
+                    if (bestDay === null || r.netPnl > bestDay.v) bestDay = { date: r.date, v: r.netPnl };
+                    if (worstDay === null || r.netPnl < worstDay.v) worstDay = { date: r.date, v: r.netPnl };
+
+                    if (r.netPnl > 0) {
+                        upDays++; dayWinRun++; dayLossRun = 0;
+                        if (dayWinRun > bestDayRun) bestDayRun = dayWinRun;
+                    } else if (r.netPnl < 0) {
+                        downDays++; dayLossRun++; dayWinRun = 0;
+                        if (dayLossRun > worstDayRun) worstDayRun = dayLossRun;
+                    } else { dayWinRun = 0; dayLossRun = 0; }
+                });
+
+                /* ── Trade-level edge ──
+                   Reconstructable only because the log stores the day's winners
+                   and losers separately (GrossProfit / GrossLoss). Rows written
+                   before those columns existed carry 0, so these read as "—"
+                   for older periods rather than silently wrong. */
+                const haveSplit = (grossProfit + grossLoss) > 0;
+                const avgWin = wins ? grossProfit / wins : 0;
+                const avgLoss = losses ? grossLoss / losses : 0;
+                const winFrac = trades ? wins / trades : 0;
+                const profitFactor = grossLoss > 0 ? grossProfit / grossLoss
+                    : (grossProfit > 0 ? Infinity : 0);
+                const rr = avgLoss > 0 ? avgWin / avgLoss : (avgWin > 0 ? Infinity : 0);
+                const expectancy = haveSplit ? (winFrac * avgWin) - ((1 - winFrac) * avgLoss) : null;
+                // Kelly: the fraction of capital this edge justifies risking.
+                // Negative means the measured edge does not justify sizing up.
+                let kelly = null;
+                if (haveSplit && isFinite(rr) && rr > 0) {
+                    kelly = Math.max(-100, Math.min(100, (winFrac - ((1 - winFrac) / rr)) * 100));
+                }
+
+                /* ── Risk-adjusted return ──
+                   Computed on DAILY returns, which is what Sharpe/Sortino/Calmar
+                   are actually defined on. (The per-session Analyze panel uses
+                   per-trade returns, which is why its numbers differ — trades
+                   are not a fixed time unit, so that variant is not annualisable.)
+                   √252 annualises from trading days. */
+                const rets = paper.map(r => r.netPnlPct);
+                let sharpe = null, sortino = null, stdev = 0;
+                if (rets.length > 1) {
+                    const mean = rets.reduce((a, v) => a + v, 0) / rets.length;
+                    stdev = Math.sqrt(rets.reduce((a, v) => a + (v - mean) * (v - mean), 0) / (rets.length - 1));
+                    if (stdev > 0) sharpe = (mean / stdev) * Math.sqrt(252);
+                    const down = rets.filter(v => v < 0);
+                    if (down.length) {
+                        const dd2 = Math.sqrt(down.reduce((a, v) => a + v * v, 0) / rets.length);
+                        if (dd2 > 0) sortino = (mean / dd2) * Math.sqrt(252);
+                    } else if (mean > 0) sortino = Infinity;
+                }
+
+                const spanDays = paper.length > 1
+                    ? Math.max(1, Math.round((new Date(paper[paper.length - 1].date) - new Date(paper[0].date)) / 86400000) + 1)
+                    : (paper.length ? 1 : 0);
+                const totalRetPct = (net / SX_TRACK.START_CAPITAL) * 100;
+                /* Annualising a handful of days is not a forecast, it is an
+                   artefact: one day at +5% compounds to +5,487,714,100%. Below
+                   MIN_CAGR_DAYS the plain period return is reported instead —
+                   the honest number, and the one that fits. */
+                const MIN_CAGR_DAYS = 30;
+                const cagrAnnualised = spanDays >= MIN_CAGR_DAYS;
+                let cagr = null;
+                if (cagrAnnualised && (SX_TRACK.START_CAPITAL + net) > 0) {
+                    const yrs = spanDays / 365.25;
+                    cagr = (Math.pow((SX_TRACK.START_CAPITAL + net) / SX_TRACK.START_CAPITAL, 1 / yrs) - 1) * 100;
+                }
+                const calmar = (cagr !== null && maxDd > 0) ? cagr / maxDd : null;
+                const recovery = maxDd > 0 ? totalRetPct / maxDd : null;
+
+                // Practice days + streak, computed over the selected window.
+                const dayMap = {};
+                training.forEach(r => {
+                    if (!dayMap[r.date]) dayMap[r.date] = { met: 0 };
+                    if (r.targetMet === 'Y') dayMap[r.date].met++;
+                });
+                paper.forEach(r => {
+                    if (!dayMap[r.date]) dayMap[r.date] = { met: 0 };
+                    if (r.targetMet === 'Y') dayMap[r.date].met++;
+                });
+                const need = ACTIVITIES.length + 1;
+                const allMet = d => dayMap[d] && dayMap[d].met >= need;
+
+                let streak = 0;
+                for (let i = 0; i < 400; i++) {
+                    const d = isoDaysAgo(i);
+                    if (allMet(d)) streak++;
+                    else if (i > 0 || !allMet(isoDaysAgo(0))) { if (i === 0) continue; break; }
+                }
+                let bestStreak = 0, run = 0;
+                const sortedDays = Object.keys(dayMap).sort();
+                let prev = null;
+                sortedDays.forEach(d => {
+                    if (!allMet(d)) { run = 0; prev = d; return; }
+                    const gap = prev ? (new Date(d) - new Date(prev)) / 86400000 : 1;
+                    run = (prev && gap === 1) ? run + 1 : 1;
+                    if (run > bestStreak) bestStreak = run;
+                    prev = d;
+                });
+
+                const windowDays = daysBack(DASH.range) ||
+                    (sortedDays.length ? Math.round((new Date(sortedDays[sortedDays.length - 1]) - new Date(sortedDays[0])) / 86400000) + 1 : 0);
+
+                return {
+                    training, paper, perAct,
+                    reps, correct, gradedReps,
+                    accuracy: gradedReps ? (correct / gradedReps) * 100 : null,
+                    trades, wins, losses,
+                    winRate: trades ? (wins / trades) * 100 : null,
+                    grossPnl: gross, netPnl: net,
+                    grossProfit: grossProfit, grossLoss: grossLoss, haveSplit: haveSplit,
+                    costs: gross - net,
+                    avgWin: avgWin, avgLoss: avgLoss, profitFactor: profitFactor,
+                    rr: rr, expectancy: expectancy, kelly: kelly,
+                    sharpe: sharpe, sortino: sortino, calmar: calmar, recovery: recovery,
+                    cagr: cagr, cagrAnnualised: cagrAnnualised,
+                    totalRetPct: totalRetPct, stdev: stdev, spanDays: spanDays,
+                    upDays: upDays, downDays: downDays,
+                    bestDayRun: bestDayRun, worstDayRun: worstDayRun,
+                    netPnlPct: (net / SX_TRACK.START_CAPITAL) * 100,
+                    maxDdPct: maxDd,
+                    equity, daily, bestDay, worstDay,
+                    daysPractised: sortedDays.length,
+                    daysAllMet: sortedDays.filter(allMet).length,
+                    windowDays: windowDays,
+                    streak, bestStreak
+                };
+            }
+
+            /* ─────────────── canvas chart primitives ─────────────── */
+            function prepCanvas(cv, h) {
+                const dpr = Math.min(window.devicePixelRatio || 1, 2);
+                const W = cv.clientWidth || 420;
+                cv.width = W * dpr;
+                cv.height = h * dpr;
+                cv.style.height = h + 'px';
+                const ctx = cv.getContext('2d');
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.scale(dpr, dpr);
+                ctx.clearRect(0, 0, W, h);
+                return { ctx, W, H: h };
+            }
+
+            function niceTicks(min, max, n) {
+                if (min === max) { min -= 1; max += 1; }
+                const raw = (max - min) / n;
+                const mag = Math.pow(10, Math.floor(Math.log10(Math.abs(raw) || 1)));
+                const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw) || mag * 10;
+                const out = [];
+                for (let v = Math.ceil(min / step) * step; v <= max + 1e-9; v += step) out.push(v);
+                return out;
+            }
+
+            /* Line/area with a crosshair + tooltip. One series, one axis. */
+            function drawLineChart(cv, tip, pts, opts) {
+                opts = opts || {};
+                const { ctx, W, H } = prepCanvas(cv, opts.height || 132);
+                if (!pts.length) return;
+                const P = { l: 40, r: 10, t: 10, b: 20 };
+                const vals = pts.map(p => p.v);
+                let lo = Math.min(0, Math.min.apply(null, vals));
+                let hi = Math.max(0, Math.max.apply(null, vals));
+                if (lo === hi) { lo -= 1; hi += 1; }
+                const pad = (hi - lo) * 0.12;
+                lo -= pad; hi += pad;
+
+                const toX = i => P.l + (pts.length === 1 ? (W - P.l - P.r) / 2
+                    : (i / (pts.length - 1)) * (W - P.l - P.r));
+                const toY = v => P.t + (1 - (v - lo) / (hi - lo)) * (H - P.t - P.b);
+
+                // Recessive solid hairline grid + y labels
+                ctx.font = '8px Lexend, sans-serif';
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'middle';
+                niceTicks(lo, hi, 3).forEach(v => {
+                    const y = toY(v);
+                    if (y < P.t - 1 || y > H - P.b + 1) return;
+                    ctx.strokeStyle = Math.abs(v) < 1e-9 ? 'rgba(255,255,255,0.16)' : cssVar('--grid');
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(P.l, Math.round(y) + 0.5);
+                    ctx.lineTo(W - P.r, Math.round(y) + 0.5);
+                    ctx.stroke();
+                    ctx.fillStyle = cssVar('--text-muted');
+                    ctx.fillText(opts.fmtY ? opts.fmtY(v) : v.toFixed(1), P.l - 5, y);
+                });
+
+                const up = pts[pts.length - 1].v >= 0;
+                const color = opts.color || (up ? cssVar('--pos') : cssVar('--neg'));
+
+                if (opts.area !== false) {
+                    const g = ctx.createLinearGradient(0, P.t, 0, H - P.b);
+                    g.addColorStop(0, up ? 'rgba(34,197,94,0.26)' : 'rgba(244,63,94,0.26)');
+                    g.addColorStop(1, 'rgba(0,0,0,0)');
+                    ctx.beginPath();
+                    pts.forEach((p, i) => i ? ctx.lineTo(toX(i), toY(p.v)) : ctx.moveTo(toX(i), toY(p.v)));
+                    ctx.lineTo(toX(pts.length - 1), toY(Math.max(lo, 0)));
+                    ctx.lineTo(toX(0), toY(Math.max(lo, 0)));
+                    ctx.closePath();
+                    ctx.fillStyle = g;
+                    ctx.fill();
+                }
+
+                ctx.beginPath();
+                pts.forEach((p, i) => i ? ctx.lineTo(toX(i), toY(p.v)) : ctx.moveTo(toX(i), toY(p.v)));
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2;              // 2px line per mark spec
+                ctx.lineJoin = 'round';
+                ctx.lineCap = 'round';
+                ctx.stroke();
+
+                // Direct-label the endpoint only — never every point.
+                const last = pts[pts.length - 1];
+                ctx.beginPath();
+                ctx.arc(toX(pts.length - 1), toY(last.v), 3, 0, Math.PI * 2);
+                ctx.fillStyle = color;
+                ctx.fill();
+
+                attachHover(cv, tip, pts, toX, i => toY(pts[i].v), opts.tipHtml, P, W, H, color);
+            }
+
+            /* Diverging bars around a zero baseline. Sign is encoded by
+               position as well as hue, so the green/red pair is safe. */
+            function drawBarChart(cv, tip, pts, opts) {
+                opts = opts || {};
+                const { ctx, W, H } = prepCanvas(cv, opts.height || 108);
+                if (!pts.length) return;
+                const P = { l: 40, r: 10, t: 8, b: 18 };
+                const vals = pts.map(p => p.v);
+                let lo = Math.min(0, Math.min.apply(null, vals));
+                let hi = Math.max(0, Math.max.apply(null, vals));
+                if (lo === hi) { lo -= 1; hi += 1; }
+                const padv = (hi - lo) * 0.12;
+                lo -= padv; hi += padv;
+
+                const innerW = W - P.l - P.r;
+                const slot = innerW / pts.length;
+                const bw = Math.max(1, Math.min(14, slot - 2));   // 2px surface gap
+                const toX = i => P.l + slot * i + (slot - bw) / 2;
+                const toY = v => P.t + (1 - (v - lo) / (hi - lo)) * (H - P.t - P.b);
+                const zeroY = toY(0);
+
+                ctx.font = '8px Lexend, sans-serif';
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'middle';
+                niceTicks(lo, hi, 2).forEach(v => {
+                    const y = toY(v);
+                    if (y < P.t - 1 || y > H - P.b + 1) return;
+                    ctx.strokeStyle = Math.abs(v) < 1e-9 ? 'rgba(255,255,255,0.16)' : cssVar('--grid');
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(P.l, Math.round(y) + 0.5);
+                    ctx.lineTo(W - P.r, Math.round(y) + 0.5);
+                    ctx.stroke();
+                    ctx.fillStyle = cssVar('--text-muted');
+                    ctx.fillText(opts.fmtY ? opts.fmtY(v) : v.toFixed(0), P.l - 5, y);
+                });
+
+                const pos = cssVar('--pos'), neg = cssVar('--neg');
+                pts.forEach((p, i) => {
+                    const y = toY(p.v);
+                    const x = toX(i);
+                    const h = Math.abs(y - zeroY);
+                    ctx.fillStyle = p.v >= 0 ? pos : neg;
+                    const top = p.v >= 0 ? y : zeroY;
+                    const r = Math.min(2, bw / 2, h / 2);   // rounded data-end
+                    ctx.beginPath();
+                    if (ctx.roundRect) ctx.roundRect(x, top, bw, Math.max(h, 1), r);
+                    else ctx.rect(x, top, bw, Math.max(h, 1));
+                    ctx.fill();
+                });
+
+                attachHover(cv, tip, pts,
+                    i => toX(i) + bw / 2,
+                    i => Math.min(toY(pts[i].v), zeroY) - 2,
+                    opts.tipHtml, P, W, H, null, slot);
+            }
+
+            /* Bare sparkline — single series, no axis, for small multiples. */
+            function drawSpark(cv, pts, color) {
+                const { ctx, W, H } = prepCanvas(cv, 26);
+                if (pts.length < 2) {
+                    if (pts.length === 1) {
+                        ctx.fillStyle = color;
+                        ctx.beginPath();
+                        ctx.arc(W / 2, H / 2, 2.5, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                    return;
+                }
+                const vals = pts.map(p => p.v);
+                let lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+                if (lo === hi) { lo -= 5; hi += 5; }
+                const toX = i => 1 + (i / (pts.length - 1)) * (W - 2);
+                const toY = v => 3 + (1 - (v - lo) / (hi - lo)) * (H - 6);
+                ctx.beginPath();
+                pts.forEach((p, i) => i ? ctx.lineTo(toX(i), toY(p.v)) : ctx.moveTo(toX(i), toY(p.v)));
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 1.6;
+                ctx.lineJoin = 'round';
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(toX(pts.length - 1), toY(pts[pts.length - 1].v), 2.2, 0, Math.PI * 2);
+                ctx.fillStyle = color;
+                ctx.fill();
+            }
+
+            /* Shared crosshair/tooltip layer. Hit target is the full column,
+               which is wider than the mark. */
+            function attachHover(cv, tip, pts, toX, toY, tipHtml, P, W, H, lineColor, slot) {
+                if (!tip) return;
+                cv.onmousemove = ev => {
+                    const rect = cv.getBoundingClientRect();
+                    const x = ev.clientX - rect.left;
+                    let idx;
+                    if (slot) idx = Math.floor((x - P.l) / slot);
+                    else idx = Math.round(((x - P.l) / Math.max(1, W - P.l - P.r)) * (pts.length - 1));
+                    idx = Math.max(0, Math.min(pts.length - 1, idx));
+                    const p = pts[idx];
+                    if (!p) return;
+                    tip.innerHTML = tipHtml ? tipHtml(p) : (p.date + ': ' + p.v.toFixed(2));
+                    tip.classList.add('show');
+                    const tw = tip.offsetWidth || 90;
+                    let tx = toX(idx) - tw / 2;
+                    tx = Math.max(2, Math.min(W - tw - 2, tx));
+                    tip.style.left = tx + 'px';
+                    tip.style.top = Math.max(0, toY(idx) - tip.offsetHeight - 6) + 'px';
+                    cv.__hoverIdx = idx;
+                };
+                cv.onmouseleave = () => { tip.classList.remove('show'); cv.__hoverIdx = -1; };
+            }
+
+            /* ─────────────── dashboard render ─────────────── */
+            /* Every unbounded metric goes through one of these three. They
+               render normally when the value fits the tile and fall back to
+               scientific notation when it does not, so a number can shrink but
+               never silently vanish off the edge of its box. */
+            const money = n => {
+                if (n === null || n === undefined || !isFinite(n)) return '—';
+                return fitNum(n, fmtMoney(Math.abs(n)), (n < 0 ? '−' : '') + '₹');
+            };
+            const ratio = v => {
+                if (v === null || v === undefined || Number.isNaN(v)) return '—';
+                if (v === Infinity) return '∞';
+                if (v === -Infinity) return '-∞';
+                return fitNum(v, Math.abs(v).toFixed(2), v < 0 ? '−' : '');
+            };
+            const pct = (v, dp) => {
+                if (v === null || v === undefined || !isFinite(v)) return '—';
+                return fitNum(v, Math.abs(v).toFixed(dp == null ? 2 : dp),
+                    v < 0 ? '−' : '+', '%');
+            };
+            const shortDate = d => {
+                const p = String(d).split('-');
+                return p.length === 3 ? p[2] + '/' + p[1] : d;
+            };
+
+            function tile(lbl, val, cls, sub) {
+                return '<div class="sx-tile"><div class="sx-tile-lbl">' + lbl + '</div>' +
+                    '<div class="sx-tile-val' + (cls ? ' ' + cls : '') + '">' + val + '</div>' +
+                    (sub ? '<div class="sx-tile-sub">' + sub + '</div>' : '') + '</div>';
+            }
+
+            function renderDashboard() {
+                const body = document.getElementById('sx-dash-body');
+                const win = document.getElementById('sx-dash-window');
+                if (!body) return;
+
+                if (DASH.loading) {
+                    body.innerHTML = '<div class="sx-dash-empty">Fetching history…</div>';
+                    return;
+                }
+                if (DASH.error && !DASH.history) {
+                    const n = pendingCount();
+                    const offline = !NET.online || DASH.error === 'offline';
+                    body.innerHTML = '<div class="sx-dash-empty">' +
+                        (offline
+                            ? '<b>You are offline.</b><br>History lives in the sheet, so it cannot be shown ' +
+                              'until you reconnect.'
+                            : 'Could not load history.<br><b>' + DASH.error + '</b>') +
+                        '<br><br>' +
+                        (n ? '<b>' + n + ' day' + (n === 1 ? '' : 's') + '</b> of practice ' +
+                             (n === 1 ? 'is' : 'are') + ' saved on this device and will upload automatically.<br><br>'
+                           : 'Nothing is waiting to upload — today\u2019s reps are still being counted locally.<br><br>') +
+                        (SX_TRACK.ENDPOINT ? 'Reconnect, then hit \u27f3.'
+                            : 'Set SX_TRACK.ENDPOINT in index.html to enable syncing.') +
+                        '</div>';
+                    return;
+                }
+
+                const s = computeStats();
+                if (!s || (!s.training.length && !s.paper.length)) {
+                    body.innerHTML = '<div class="sx-dash-empty">No logged activity in this period.<br>' +
+                        'Do some reps or paper trades and they will appear here.</div>';
+                    if (win) win.textContent = '';
+                    return;
+                }
+
+                if (win) {
+                    const age = DASH.history ? Date.now() - (DASH.history.fetchedAt || 0) : 0;
+                    const ago = age < 90000 ? 'just now'
+                        : age < 5400000 ? Math.round(age / 60000) + ' min ago'
+                        : age < 172800000 ? Math.round(age / 3600000) + ' h ago'
+                        : Math.round(age / 86400000) + ' d ago';
+                    const q = pendingCount();
+                    win.textContent = s.daysPractised + ' active day' + (s.daysPractised === 1 ? '' : 's') +
+                        (DASH.history ? (DASH.stale ? ' · cached ' + ago : ' · live ' + ago) : '') +
+                        (q ? ' · ' + q + ' not yet uploaded' : '');
+                    win.className = 'sx-dash-sub' + (DASH.stale ? ' stale' : '');
+                }
+
+                let html = '';
+
+                // Banner only when the figures could be behind the sheet.
+                if (DASH.stale || pendingCount()) {
+                    const q = pendingCount();
+                    html += '<div class="sx-dash-note' + (DASH.stale ? ' stale' : '') + '">' +
+                        (DASH.stale
+                            ? (NET.online
+                                ? "Showing saved data — couldn't reach the sheet. "
+                                : 'Showing saved data — you are offline. ')
+                            : '') +
+                        (q ? '<b>' + q + ' day' + (q === 1 ? '' : 's') + '</b> of practice ' +
+                             (q === 1 ? 'is' : 'are') + ' counted here but not yet uploaded.'
+                           : 'It will refresh automatically when you reconnect.') +
+                        '</div>';
+                }
+
+                /* ── headline tiles ── */
+                html += '<div class="sx-sec-lbl">Bottom line</div><div class="sx-tiles">';
+                html += tile('Net P&L', money(s.netPnl), s.netPnl >= 0 ? 'pos' : 'neg',
+                    pct(s.netPnlPct) + ' of ₹1L');
+                html += tile('Win rate', s.winRate === null ? '—' : s.winRate.toFixed(0) + '%', '',
+                    s.wins + 'W · ' + s.losses + 'L');
+                html += tile('Trades', s.trades, '', s.paper.length + ' trading days');
+                html += tile('Accuracy', s.accuracy === null ? '—' : s.accuracy.toFixed(1) + '%', '',
+                    s.correct + '/' + s.gradedReps + ' graded');
+                html += tile('Total reps', s.reps, '', s.daysPractised + ' active days');
+                html += tile('Streak', s.streak + 'd', s.streak > 0 ? 'pos' : '',
+                    'best ' + s.bestStreak + 'd');
+                html += tile('Max drawdown', fitNum(s.maxDdPct, s.maxDdPct.toFixed(2), '', '%'),
+                    s.maxDdPct > 0 ? 'neg' : '', 'peak to trough');
+                html += tile('All targets', s.daysAllMet + '/' + s.daysPractised, '',
+                    s.daysPractised ? Math.round((s.daysAllMet / s.daysPractised) * 100) + '% of days' : '—');
+                html += '</div>';
+
+                /* ── equity curve ── */
+                if (s.equity.length) {
+                    html += '<div class="sx-sec-lbl">Paper trading</div>';
+                    html += '<div class="sx-chart-card">' +
+                        '<div class="sx-chart-hd"><span class="sx-chart-ttl">Cumulative P&L</span>' +
+                        '<span class="sx-chart-note">' + shortDate(s.equity[0].date) + ' → ' +
+                        shortDate(s.equity[s.equity.length - 1].date) + '</span></div>' +
+                        '<div class="sx-canvas-wrap"><canvas id="sx-cv-equity"></canvas>' +
+                        '<div class="sx-tip" id="sx-tip-equity"></div></div></div>';
+
+                    html += '<div style="height:6px"></div>';
+                    html += '<div class="sx-chart-card">' +
+                        '<div class="sx-chart-hd"><span class="sx-chart-ttl">Daily P&L</span>' +
+                        '<span class="sx-chart-note">best ' + money(s.bestDay.v) +
+                        ' · worst ' + money(s.worstDay.v) + '</span></div>' +
+                        '<div class="sx-canvas-wrap"><canvas id="sx-cv-daily"></canvas>' +
+                        '<div class="sx-tip" id="sx-tip-daily"></div></div></div>';
+                }
+
+                /* ── full paper-trade analytics ── */
+                if (s.paper.length) {
+                    const pf = s.profitFactor;
+                    const pfCls = pf === Infinity || pf >= 1.5 ? 'pos' : pf >= 1 ? '' : 'neg';
+
+                    html += '<div class="sx-sec-lbl">Edge — per trade</div><div class="sx-tiles">';
+                    if (s.haveSplit) {
+                        html += tile('Profit factor', ratio(pf), pfCls, 'gross win ÷ gross loss');
+                        html += tile('Avg win', money(s.avgWin), 'pos', s.wins + ' winners');
+                        html += tile('Avg loss', money(-s.avgLoss), 'neg', s.losses + ' losers');
+                        html += tile('Reward : risk', s.rr === Infinity ? '∞' : ratio(s.rr) + ':1', '',
+                            'avg win ÷ avg loss');
+                        html += tile('Expectancy', money(s.expectancy),
+                            s.expectancy >= 0 ? 'pos' : 'neg', 'per trade');
+                        html += tile('Kelly', s.kelly === null ? '—' : pct(s.kelly, 1),
+                            s.kelly > 0 ? 'pos' : 'neg', 'suggested risk/trade');
+                        html += tile('Gross profit', money(s.grossProfit), 'pos', 'winners only');
+                        html += tile('Gross loss', money(-s.grossLoss), 'neg', 'losers only');
+                    } else {
+                        html += '<div class="sx-tile" style="grid-column:1/-1">' +
+                            '<div class="sx-tile-lbl">Not available for this period</div>' +
+                            '<div class="sx-tile-sub" style="margin-top:4px">These need the day’s winners and ' +
+                            'losers logged separately. Rows written before that was added carry no split, so ' +
+                            'profit factor, avg win/loss, expectancy and Kelly only appear for days logged ' +
+                            'from now on.</div></div>';
+                    }
+                    html += '</div>';
+
+                    html += '<div class="sx-sec-lbl">Risk-adjusted — per day</div><div class="sx-tiles">';
+                    html += tile('Sharpe', ratio(s.sharpe), s.sharpe >= 1 ? 'pos' : s.sharpe < 0 ? 'neg' : '',
+                        'annualised');
+                    html += tile('Sortino', ratio(s.sortino),
+                        s.sortino === Infinity || s.sortino >= 1 ? 'pos' : s.sortino < 0 ? 'neg' : '',
+                        'downside only');
+                    html += tile('Calmar', ratio(s.calmar), s.calmar >= 1 ? 'pos' : '', 'return ÷ drawdown');
+                    html += tile('Recovery', ratio(s.recovery), s.recovery >= 1 ? 'pos' : '', 'profit ÷ drawdown');
+                    // Under 30 days this is the plain period return, not a CAGR.
+                    // The label says which, so the number can never be misread.
+                    html += tile(s.cagrAnnualised ? 'CAGR' : 'Return',
+                        pct(s.cagrAnnualised ? s.cagr : s.totalRetPct, 1),
+                        (s.cagrAnnualised ? s.cagr : s.totalRetPct) >= 0 ? 'pos' : 'neg',
+                        s.cagrAnnualised ? 'annualised, ' + s.spanDays + 'd'
+                                         : 'over ' + s.spanDays + 'd, not annualised');
+                    html += tile('Daily vol', s.stdev ? fitNum(s.stdev, s.stdev.toFixed(2), '', '%') : '—', '', 'std dev');
+                    html += tile('Costs', money(-s.costs), 'neg',
+                        s.grossPnl ? (Math.abs(s.costs / s.grossPnl) * 100).toFixed(0) + '% of gross' : 'brokerage + tax');
+                    html += tile('Green days', s.upDays + '/' + (s.upDays + s.downDays),
+                        s.upDays > s.downDays ? 'pos' : '',
+                        'best run ' + s.bestDayRun + ' · worst ' + s.worstDayRun);
+                    html += '</div>';
+                }
+
+                /* ── per-activity small multiples ── */
+                const withData = GRADED.filter(a => s.perAct[a].reps > 0);
+                if (withData.length) {
+                    html += '<div class="sx-sec-lbl">Accuracy by activity</div><div class="sx-sparks">';
+                    withData.forEach(a => {
+                        const p = s.perAct[a];
+                        const acc = p.reps ? (p.correct / p.reps) * 100 : 0;
+                        const rt = p.rtN ? (p.rtSum / p.rtN).toFixed(1) + 's' : '—';
+                        html += '<div class="sx-spark">' +
+                            '<div class="sx-spark-hd">' +
+                            '<span class="sx-swatch" style="background:var(' + ACT_SLOT[a] + ')"></span>' +
+                            '<span class="sx-spark-name">' + LABELS[a] + '</span>' +
+                            '<span class="sx-spark-val">' + acc.toFixed(0) + '%</span></div>' +
+                            '<canvas class="sx-spark-cv" data-act="' + a + '"></canvas>' +
+                            '<div class="sx-spark-sub">' + p.reps + ' reps · ' + rt + ' avg · target hit ' +
+                            p.daysMet + '/' + p.days + ' days</div></div>';
+                    });
+                    html += '</div>';
+                }
+
+                /* ── table view: identity never color-alone ── */
+                html += '<button class="sx-table-toggle" onclick="window.sxToggleTable()">' +
+                    (DASH.showTable ? '▾ Hide data table' : '▸ Show data table') + '</button>';
+                if (DASH.showTable) {
+                    html += '<div class="sx-table-scroll"><table class="sx-table"><thead><tr>' +
+                        '<th>Date</th><th>Reps</th><th>Acc</th><th>Trades</th><th>Net P&L</th><th>Targets</th>' +
+                        '</tr></thead><tbody>';
+                    const dates = Array.from(new Set(
+                        s.training.map(r => r.date).concat(s.paper.map(r => r.date)))).sort().reverse();
+                    dates.forEach(d => {
+                        const tr = s.training.filter(r => r.date === d);
+                        const pr = s.paper.filter(r => r.date === d)[0];
+                        const reps = tr.reduce((a, r) => a + r.reps, 0);
+                        const gr = tr.filter(r => UNGRADED.indexOf(r.activity) === -1);
+                        const gReps = gr.reduce((a, r) => a + r.reps, 0);
+                        const gCor = gr.reduce((a, r) => a + r.correct, 0);
+                        const met = tr.filter(r => r.targetMet === 'Y').length + (pr && pr.targetMet === 'Y' ? 1 : 0);
+                        html += '<tr><td>' + d + '</td><td>' + reps + '</td><td>' +
+                            (gReps ? ((gCor / gReps) * 100).toFixed(0) + '%' : '—') + '</td><td>' +
+                            (pr ? pr.trades : '—') + '</td><td style="color:' +
+                            (pr && pr.netPnl < 0 ? 'var(--neg)' : pr ? 'var(--pos)' : 'inherit') + '">' +
+                            (pr ? money(pr.netPnl) : '—') + '</td><td>' + met + '/' + (ACTIVITIES.length + 1) +
+                            '</td></tr>';
+                    });
+                    html += '</tbody></table></div>';
+                }
+
+                body.innerHTML = html;
+
+                /* ── paint canvases after layout so clientWidth is real ── */
+                requestAnimationFrame(() => {
+                    if (s.equity.length) {
+                        drawLineChart(
+                            document.getElementById('sx-cv-equity'),
+                            document.getElementById('sx-tip-equity'),
+                            s.equity,
+                            {
+                                fmtY: v => v.toFixed(1) + '%',
+                                tipHtml: p => p.date + '<br><b>' + (p.v >= 0 ? '+' : '−') +
+                                    Math.abs(p.v).toFixed(2) + '%</b> cumulative'
+                            });
+                        drawBarChart(
+                            document.getElementById('sx-cv-daily'),
+                            document.getElementById('sx-tip-daily'),
+                            s.daily,
+                            {
+                                fmtY: v => Math.abs(v) >= 1000 ? (v / 1000).toFixed(0) + 'k' : v.toFixed(0),
+                                tipHtml: p => p.date + '<br><b>' + money(p.v) + '</b> (' +
+                                    (p.pct >= 0 ? '+' : '−') + Math.abs(p.pct).toFixed(2) + '%)<br>' +
+                                    p.trades + ' trades · ' + p.winRate.toFixed(0) + '% won'
+                            });
+                    }
+                    document.querySelectorAll('#sx-dash-body .sx-spark-cv').forEach(cv => {
+                        const a = cv.getAttribute('data-act');
+                        drawSpark(cv, s.perAct[a].series, cssVar(ACT_SLOT[a]));
+                    });
+                });
+            }
+
+            window.sxToggleTable = function () {
+                DASH.showTable = !DASH.showTable;
+                renderDashboard();
+            };
+
+            async function loadDashboard(force) {
+                // Cache first, always: the dashboard opens instantly and works
+                // with no connection at all. A refresh then happens behind it.
+                if (!DASH.history) {
+                    const cached = loadHistCache();
+                    if (cached) {
+                        DASH.history = cached;
+                        DASH.stale = true;
+                    }
+                }
+
+                if (!SX_TRACK.ENDPOINT) {
+                    if (!DASH.history) DASH.error = 'endpoint not configured';
+                    renderDashboard();
+                    return;
+                }
+                if (DASH.history && !DASH.stale && !force) { renderDashboard(); return; }
+
+                // Only show a spinner when there is nothing to look at yet.
+                DASH.loading = !DASH.history;
+                DASH.error = null;
+                renderDashboard();
+
+                if (!NET.online) {
+                    DASH.loading = false;
+                    if (!DASH.history) DASH.error = 'offline';
+                    renderDashboard();
+                    return;
+                }
+
+                const spin = document.getElementById('sx-dash-refresh');
+                if (spin) spin.classList.add('spin');
+                try {
+                    // Push pending reps, but do NOT await it: on a dead network
+                    // flush() burns its full retry backoff (~3s) before giving
+                    // up, which would stall the dashboard for no gain —
+                    // mergedHistory() already layers in everything local.
+                    flush(false);
+                    DASH.history = await fetchHistory();
+                    DASH.stale = false;
+                    DASH.error = null;
+                } catch (err) {
+                    // A failed refresh must not wipe a perfectly good cache.
+                    if (!DASH.history) DASH.error = err.message;
+                    DASH.stale = true;
+                } finally {
+                    DASH.loading = false;
+                    if (spin) spin.classList.remove('spin');
+                    renderDashboard();
+                }
+            }
+
+            window.sxOpenDashboard = function () {
+                const m = document.getElementById('sx-dash-modal');
+                if (!m) return;
+                m.classList.add('open');
+                loadDashboard(false);
+            };
+            window.sxCloseDashboard = function () {
+                const m = document.getElementById('sx-dash-modal');
+                if (m) m.classList.remove('open');
+            };
+            window.sxRefreshDashboard = function () { loadDashboard(true); };
+
+            (function () {
+                const wrap = document.getElementById('sx-dash-ranges');
+                if (!wrap) return;
+                wrap.addEventListener('click', ev => {
+                    const btn = ev.target.closest('.sx-range');
+                    if (!btn) return;
+                    DASH.range = btn.getAttribute('data-range');
+                    wrap.querySelectorAll('.sx-range').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    renderDashboard();   // client-side filter — no refetch
+                });
+            })();
+
+            // Repaint canvases on resize so charts track the modal width.
+            let _dashRz = null;
+            window.addEventListener('resize', () => {
+                const m = document.getElementById('sx-dash-modal');
+                if (!m || !m.classList.contains('open')) return;
+                clearTimeout(_dashRz);
+                _dashRz = setTimeout(renderDashboard, 160);
+            });
+
+            /* ─────────────── lifecycle ─────────────── */
+            // Hydrate the first time the Trainers section is actually opened,
+            // so a user who never touches the Trainer pays no network cost.
+            (function () {
+                const sec = document.getElementById('fs-sec-train');
+                if (!sec) return;
+                const obs = new MutationObserver(() => {
+                    if (sec.classList.contains('expanded')) { hydrate(); renderChecklist(); }
+                });
+                obs.observe(sec, { attributes: true, attributeFilter: ['class'] });
+            })();
+
+            /* ── Reconnect handling ──
+               The browser fires 'online' the moment the interface comes back,
+               which is usually a beat before routing actually works, so the
+               first attempt is delayed slightly. If it still fails the periodic
+               retry below picks it up — nothing is lost either way, because the
+               queue only clears on a confirmed 200. */
+            window.addEventListener('online', () => {
+                NET.reachable = true;
+                updateOfflineUI();
+                setTimeout(() => flush(false), 1200);
+            });
+            window.addEventListener('offline', () => {
+                NET.reachable = false;
+                updateOfflineUI();
+            });
+
+            /* Retry while anything is waiting. Cheap: it only fires a request
+               when there is something to send AND the browser thinks it is
+               online, so a genuinely offline device does no work at all. */
+            setInterval(() => {
+                if (!SX_TRACK.ENDPOINT) return;
+                const p = buildPayload(buf);
+                const waiting = pendingCount() || p.training.length || p.paper;
+                if (waiting && NET.online && !inFlight) flush(false);
+            }, 60000);
+
+            // Flush pending reps when the chart modal closes or the tab is hidden.
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'hidden') flush(false);
+                else { updateOfflineUI(); if (NET.online && pendingCount()) flush(false); }
+            });
+            window.addEventListener('pagehide', () => flush(false));
+
+            (function () {
+                // The chart modal is shown/hidden by setting style.display to
+                // 'flex'/'none' (not by toggling a class), so watch the style
+                // attribute — a class observer here would never fire.
+                const modal = document.getElementById('fs-chart-modal');
+                if (!modal) return;
+                let wasOpen = modal.style.display === 'flex';
+                const obs = new MutationObserver(() => {
+                    const isOpen = modal.style.display === 'flex';
+                    if (wasOpen && !isOpen) flush(false);
+                    wasOpen = isOpen;
+                });
+                obs.observe(modal, { attributes: true, attributeFilter: ['style'] });
+            })();
+
+            renderChecklist();
+            updateOfflineUI();
+            // Anything left over from a previous offline session goes up as soon
+            // as the page loads, without waiting for the user to do a rep.
+            if (SX_TRACK.ENDPOINT && pendingCount() && NET.online) setTimeout(() => flush(false), 2500);
+            console.log('[SundarX] Training tracker ready' +
+                (SX_TRACK.ENDPOINT ? '' : ' (local only — set SX_TRACK.ENDPOINT to sync)'));
         })();
     </script>
 
