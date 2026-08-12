@@ -28807,41 +28807,44 @@
         (function initSafeTop() {
             'use strict';
 
-            // Hard gate — iPad-sized tablets only. Not phones, not desktop.
+            // Hard gate — iPad (and iPad-sized tablets) only. Not phones, not desktop.
             //
-            // Two independent halves, BOTH required:
+            // A POSITIVELY IDENTIFIED iPad is never size-gated. An iPad is an iPad
+            // at any window size — Split View, Slide Over, Stage Manager and the
+            // wider "Request Desktop Website" viewport all report sizes outside a
+            // tablet-ish range, and gating on size hid the chip on the exact device
+            // this feature exists for. Size is only used for the generic fallback
+            // below, where there is no reliable device signal to trust instead.
             //
-            //   1. Device is a touch tablet. `matchMedia('(pointer: coarse)')`
-            //      cannot carry this alone: iPad Safari defaults to "Request
-            //      Desktop Website" and then reports pointer:fine + hover:hover
-            //      to impersonate macOS, which made an earlier gate return false
-            //      on the one device this feature is built for. maxTouchPoints is
-            //      the tell iPadOS does not mask — an iPad reports 5, a real Mac
-            //      reports 0, so "Macintosh that can be touched" = iPad.
-            //
-            //   2. Viewport is currently iPad-sized. This is the half that keeps
-            //      the chip off phones (too narrow) and desktops (too wide), and
-            //      it is re-checked on resize / orientation change rather than
-            //      being frozen at load — so the chip appears and disappears as
-            //      the window crosses the range.
+            // `matchMedia('(pointer: coarse)')` cannot identify an iPad on its own:
+            // iPad Safari defaults to "Request Desktop Website" and in that mode
+            // iPadOS reports pointer:fine + hover:hover to impersonate macOS.
+            // maxTouchPoints is the tell iPadOS does not mask — an iPad reports 5,
+            // a real Mac reports 0 — so "a Macintosh that can be touched" = iPad.
             var ua = navigator.userAgent || '';
             var plat = navigator.platform || '';
             var maxTouch = navigator.maxTouchPoints || 0;
 
+            // iPhone must be subtracted explicitly: its UA contains the substring
+            // "like Mac OS X" and it reports 5 touch points, so it would otherwise
+            // satisfy the "touchable Macintosh" test and read as an iPad.
             var isIPhoneUA = /iPhone|iPod/i.test(ua);
             var isIPadUA = /iPad/i.test(ua);
-            var isIPadDesktopUA = maxTouch > 1 && /Mac/i.test(ua + ' ' + plat);
-            // Windows is excluded outright: the feature exists to dodge an
-            // iOS/Android status bar, and a touchscreen laptop would otherwise
-            // satisfy both halves at a common 1366x768-class resolution.
+            var isTouchableMac = maxTouch > 1 && /Mac/i.test(ua + ' ' + plat);
+            var isIPad = !isIPhoneUA && (isIPadUA || isTouchableMac);
+
+            // Everything else with a touch screen: Android tablets and unknown
+            // devices. No trustworthy identifier here, so these must clear a
+            // tablet-sized viewport check to keep phones and touch-enabled
+            // desktops out. Windows is excluded outright — the feature exists to
+            // dodge an iOS/Android status bar, and a touchscreen laptop would
+            // otherwise qualify at a common 1366x768-class resolution.
             var isWindows = /Windows/i.test(ua);
             var isCoarse = false;
             try { isCoarse = window.matchMedia('(pointer: coarse)').matches; } catch (e) { }
+            var isGenericTablet = !isIPad && !isIPhoneUA && !isWindows && isCoarse && maxTouch > 0;
 
-            var isTabletDevice = !isIPhoneUA && !isWindows &&
-                (isIPadUA || isIPadDesktopUA || (isCoarse && maxTouch > 0));
-
-            function isIPadViewport() {
+            function isTabletSizedViewport() {
                 var minSide = Math.min(window.innerWidth, window.innerHeight);
                 var maxSide = Math.max(window.innerWidth, window.innerHeight);
                 return minSide >= 600 && maxSide <= 1400;
@@ -28872,7 +28875,7 @@
             // Publishes the gate to CSS — every safe-top rule keys off this class,
             // so a desktop or a phone cannot match any of them even by accident.
             function applyGate() {
-                var avail = isTabletDevice && isIPadViewport();
+                var avail = isIPad || (isGenericTablet && isTabletSizedViewport());
                 document.body.classList.toggle('safe-top-avail', avail);
                 if (!avail && document.body.classList.contains('safe-top-on')) {
                     // Leaving the supported size while the shift is still applied
