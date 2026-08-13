@@ -30588,6 +30588,27 @@
             // oldest entries are dropped first, and only after ~4 months.
             const OUTBOX_MAX_DAYS = 120;
 
+            /* ── device identity ──
+               A stable per-browser id so the server can key every row by
+               (date, activity, DEVICE) instead of just (date, activity).
+               That is what lets two phones — or a phone and a laptop — used
+               on the same day each keep their own row instead of one
+               overwriting the other's totals when both sync. Generated once
+               and kept forever in localStorage; if storage is unavailable
+               (private browsing) it falls back to an in-memory id that is
+               at least stable for the session. */
+            const DEVICE_ID_KEY = 'sundarx_device_id';
+            function _sxGetDeviceId() {
+                let id = null;
+                try { id = localStorage.getItem(DEVICE_ID_KEY); } catch (e) { }
+                if (!id) {
+                    id = 'dev_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+                    try { localStorage.setItem(DEVICE_ID_KEY, id); } catch (e) { }
+                }
+                return id;
+            }
+            const SX_DEVICE_ID = _sxGetDeviceId();
+
             /* ── Number fitting ──
                Tiles are a fixed width, and some of these metrics have no upper
                bound (a Sharpe on near-zero variance, a P&L run over months).
@@ -30932,15 +30953,78 @@
                     targetTrades: SX_TRACK.TARGET_TRADES
                 };
             }
-            // Exposed so the day's P&L can be inspected from the console.
-            window.sxDayPnl = paperStats;
+            /* ── cross-device totals ──
+               What OTHER devices have already synced for today. Kept
+               strictly separate from `buf` (this device's own counters) —
+               the old hydrate() folded the remote total directly into buf,
+               which meant this device's NEXT flush re-sent someone else's
+               numbers as if they were its own, and the server (keyed only by
+               date) then overwrote whatever the truly-other device had
+               written. Now every row is keyed by device, so this device only
+               ever needs to know its own count (buf) plus everyone else's
+               (this) — it never has to guess which slice of a shared total
+               it already owns. Not persisted to localStorage: a stale disk
+               copy could under- or over-state what the sheet holds right
+               now, and a fresh hydrate() is cheap. */
+            let crossDeviceToday = { train: {}, paper: null, fetchedAt: 0 };
+
+            /* This device's own reps/correct plus every other device's —
+               additive, not "whichever is bigger", since crossDeviceToday
+               explicitly excludes this device's own rows already. */
+            function combinedReps(a) {
+                const other = crossDeviceToday.train[a];
+                return (buf.act[a] ? buf.act[a].reps : 0) + (other ? other.reps : 0);
+            }
+            function combinedCorrect(a) {
+                const other = crossDeviceToday.train[a];
+                return (buf.act[a] ? buf.act[a].correct : 0) + (other ? other.correct : 0);
+            }
+
+            /* Today's paper-trading totals across every device: this
+               device's own trades (exact, from buf.trades) plus what every
+               other device has already synced (an aggregate the sheet
+               already summed — the server stores day totals, not individual
+               trades). Best/worst trade stay this-device-only for the same
+               reason: another device's single best trade cannot be recovered
+               from its totals. */
+            function displayPaperStats() {
+                const local = paperStats();
+                const other = crossDeviceToday.paper;
+                if (!local && !other) return null;
+                const trades = (local ? local.trades : 0) + (other ? other.trades : 0);
+                if (!trades) return null;
+                const grossPnl = (local ? local.grossPnl : 0) + (other ? other.grossPnl : 0);
+                const netPnl = (local ? local.netPnl : 0) + (other ? other.netPnl : 0);
+                return {
+                    startCapital: SX_TRACK.START_CAPITAL,
+                    trades: trades,
+                    wins: (local ? local.wins : 0) + (other ? other.wins : 0),
+                    losses: (local ? local.losses : 0) + (other ? other.losses : 0),
+                    grossPnl: grossPnl,
+                    netPnl: netPnl,
+                    grossProfit: (local ? local.grossProfit : 0) + (other ? other.grossProfit : 0),
+                    grossLoss: (local ? local.grossLoss : 0) + (other ? other.grossLoss : 0),
+                    costs: grossPnl - netPnl,
+                    costParts: local ? local.costParts : null,
+                    netPnlPct: (netPnl / SX_TRACK.START_CAPITAL) * 100,
+                    bestTrade: local ? local.bestTrade : 0,
+                    worstTrade: local ? local.worstTrade : 0,
+                    maxDdPct: Math.max(local ? local.maxDdPct : 0, other ? other.maxDdPct : 0),
+                    targetTrades: SX_TRACK.TARGET_TRADES,
+                    hasOther: !!(other && other.trades)
+                };
+            }
+            // Exposed so today's cross-device P&L can be inspected from the
+            // console. sxDayPnlLocal stays this-device-only.
+            window.sxDayPnl = displayPaperStats;
+            window.sxDayPnlLocal = paperStats;
 
             /* ─────────────── checklist UI ─────────────── */
             function metCount() {
                 let n = 0;
                 ACTIVITIES.forEach(a => {
                     const tgt = SX_TRACK.TARGET_REPS[a] || 0;
-                    if (tgt > 0 && buf.act[a].reps >= tgt) n++;
+                    if (tgt > 0 && combinedReps(a) >= tgt) n++;
                 });
                 return n;
             }
@@ -30949,7 +31033,7 @@
                 const badge = document.getElementById('sx-day-badge');
                 const rows = document.getElementById('sx-cl-rows');
                 const total = ACTIVITIES.length + 1;   // +1 for paper trading
-                const ps = paperStats();
+                const ps = displayPaperStats();
                 const ptMet = ps && ps.trades >= SX_TRACK.TARGET_TRADES;
                 const done = metCount() + (ptMet ? 1 : 0);
 
@@ -30957,20 +31041,22 @@
                     badge.textContent = done + '/' + total;
                     badge.className = 'sx-day-badge' +
                         (done === total ? ' done' : done > 0 ? ' partial' : '');
-                    badge.title = done === total
+                    const otherNote = crossDeviceToday.fetchedAt ? ' (includes other devices)' : '';
+                    badge.title = (done === total
                         ? 'All practice targets met today 🎉'
-                        : done + ' of ' + total + ' targets met today';
+                        : done + ' of ' + total + ' targets met today') + otherNote;
                 }
                 if (!rows) return;
 
                 let html = '';
                 ACTIVITIES.forEach(a => {
                     const tgt = SX_TRACK.TARGET_REPS[a] || 0;
-                    const reps = buf.act[a].reps;
+                    const reps = combinedReps(a);
                     const met = tgt > 0 && reps >= tgt;
                     const pct = tgt > 0 ? Math.min(100, (reps / tgt) * 100) : 0;
+                    const correct = combinedCorrect(a);
                     const acc = (UNGRADED.indexOf(a) === -1 && reps)
-                        ? ' · ' + Math.round((buf.act[a].correct / reps) * 100) + '%' : '';
+                        ? ' · ' + Math.round((correct / reps) * 100) + '%' : '';
                     html += '<div class="sx-cl-row' + (met ? ' met' : '') + '">' +
                         '<span class="sx-cl-tick">' + (met ? '✓' : '○') + '</span>' +
                         '<span class="sx-cl-name">' + LABELS[a] + acc + '</span>' +
@@ -31083,7 +31169,9 @@
                 flushTimer = setTimeout(() => flush(false), SX_TRACK.FLUSH_DEBOUNCE_MS);
             }
 
-            /** One day-buffer -> one wire payload. Shared by flush and the outbox. */
+            /** One day-buffer -> one wire payload for THIS device. Shared by
+               flush and the outbox. deviceId lets the server upsert only
+               this device's own row, never another device's. */
             function buildPayload(b) {
                 const training = ACTIVITIES
                     .filter(a => b.act[a] && b.act[a].reps > 0)
@@ -31098,7 +31186,7 @@
                 buf = b;
                 const paper = paperStats();
                 buf = savedBuf;
-                return { date: b.date, training: training, paper: paper };
+                return { date: b.date, deviceId: SX_DEVICE_ID, training: training, paper: paper };
             }
 
             async function flush(loud) {
@@ -31225,14 +31313,26 @@
             window.sxPendingDays = pendingCount;
 
             /* ─────────────── hydrate from sheet ─────────────── */
-            /* Fold in whatever was already logged today (possibly from another
-               device) so the absolute write below doesn't wipe it. Local counts
-               win where they are larger, which is the case after an offline
-               stretch on this device. */
-            let hydrated = false;
-            async function hydrate() {
-                if (hydrated || !SX_TRACK.ENDPOINT) return;
-                hydrated = true;
+            /* Pulls in what OTHER devices have already synced for today,
+               into crossDeviceToday — never into `buf`. Folding the remote
+               total directly into this device's own counters (the old
+               behaviour) was the root cause of paper-trade data vanishing
+               across devices: this device would then re-flush that borrowed
+               total as if it were its own, and since the server used to key
+               writes by date alone, that flush overwrote whatever the
+               genuinely-other device had just written. Now every row is
+               keyed by device (see SundarX_Training_Log.gs), so this
+               function only has to ADD other devices' numbers on top of the
+               local ones for display — it never has to merge or guess. */
+            let hydrating = false;
+            let lastHydrateAt = 0;
+            async function hydrate(force) {
+                if (!SX_TRACK.ENDPOINT || hydrating) return;
+                // Cheap throttle: a burst of triggers (open chart, expand
+                // Trainers, open dashboard, tab refocus) should not fire off
+                // four requests back to back.
+                if (!force && Date.now() - lastHydrateAt < 15000) return;
+                hydrating = true;
                 try {
                     const url = SX_TRACK.ENDPOINT +
                         '?date=' + encodeURIComponent(buf.date) +
@@ -31241,33 +31341,41 @@
                     const data = await resp.json();
                     if (!data || !data.ok) throw new Error((data && data.error) || 'bad response');
 
+                    const train = {};
                     (data.training || []).forEach(row => {
-                        const a = buf.act[row.activity];
-                        if (!a) return;
-                        if (row.reps > a.reps) {
-                            a.reps = row.reps;
-                            a.correct = Math.max(a.correct, row.correct || 0);
-                            if (row.avgRt && !a.rtN) { a.rtSum = row.avgRt * row.reps; a.rtN = row.reps; }
-                        }
+                        // This device's own row is already reflected in `buf`
+                        // — counting it again here would double it.
+                        if (row.deviceId === SX_DEVICE_ID) return;
+                        const cur = train[row.activity] || { reps: 0, correct: 0, avgRt: null };
+                        cur.reps += row.reps;
+                        cur.correct += row.correct || 0;
+                        if (row.avgRt != null) cur.avgRt = row.avgRt;
+                        train[row.activity] = cur;
                     });
 
-                    // Paper trades are stored as individual trades locally but as
-                    // a summary remotely, so they can only be reconciled by count:
-                    // if the sheet knows about more trades than this device does,
-                    // pad the local list with neutral placeholders so the day's
-                    // trade COUNT stays honest. P&L stays whatever this device saw.
-                    if (data.paper && data.paper.trades > buf.trades.length) {
-                        const missing = data.paper.trades - buf.trades.length;
-                        for (let i = 0; i < missing; i++) {
-                            buf.trades.push({ pnl: 0, ticker: 'REMOTE', side: 'remote' });
-                        }
-                    }
+                    let paper = null;
+                    (data.paper || []).forEach(row => {
+                        if (row.deviceId === SX_DEVICE_ID) return;
+                        if (!paper) paper = { trades: 0, wins: 0, losses: 0, grossPnl: 0, netPnl: 0, grossProfit: 0, grossLoss: 0, maxDdPct: 0 };
+                        paper.trades += row.trades;
+                        paper.wins += row.wins;
+                        paper.losses += row.losses;
+                        paper.grossPnl += row.grossPnl;
+                        paper.netPnl += row.netPnl;
+                        paper.grossProfit += row.grossProfit || 0;
+                        paper.grossLoss += row.grossLoss || 0;
+                        if (row.maxDdPct > paper.maxDdPct) paper.maxDdPct = row.maxDdPct;
+                    });
 
-                    saveBuf();
+                    crossDeviceToday = { train: train, paper: paper, fetchedAt: Date.now() };
+                    lastHydrateAt = Date.now();
                     renderChecklist();
+                    const dashModal = document.getElementById('sx-dash-modal');
+                    if (dashModal && dashModal.classList.contains('open')) renderDashboard();
                 } catch (err) {
                     console.warn('[SundarX] Training log hydrate failed:', err.message);
-                    // Non-fatal: the checklist just shows this device's counts.
+                    // Non-fatal: the checklist just shows this device's own counts
+                    // until the next successful hydrate.
                 }
             }
 
@@ -31404,17 +31512,27 @@
             }
 
             /* Overlay today's local buffer so pending reps are visible.
-               Local wins only where it is AHEAD of the sheet — the same rule
-               hydrate() uses, so the two can never fight. */
+               "Today" is reconstructed additively: this device's own buffer
+               plus every OTHER device's row for today — read straight out of
+               `h` (the SAME range=all response already fetched for the rest
+               of the history), not a separate crossDeviceToday/hydrate()
+               fetch. Two reasons: it needs no second network round trip, and
+               it can never show a different "today" than what range=all just
+               returned — depending on a second, independently-timed fetch
+               here previously meant the dashboard would silently drop
+               whatever the sheet already held for today whenever hydrate()
+               hadn't completed yet. Every row is deviceId-tagged the same way
+               in both history and day-mode responses, so "other" simply means
+               "deviceId isn't mine" — never a max-of-two-guesses. */
             function mergedHistory() {
                 const h = DASH.history;
                 if (!h) return null;
                 const t = today();
 
-                /* Layered newest-wins: the sheet (or its cache) is the base,
-                   days still sitting in the outbox override it, and today's live
-                   buffer overrides everything. So the dashboard shows all local
-                   work whether or not any of it has reached the sheet yet. */
+                /* Layered: the sheet (or its cache) is the base for every day
+                   except today, days still sitting in the outbox override
+                   it, and today is rebuilt entirely from local + every other
+                   device's row for today. */
                 const queued = outboxAsRows();
                 const queuedDates = new Set(queued.training.map(r => r.date)
                     .concat(queued.paper.map(r => r.date)));
@@ -31425,43 +31543,65 @@
                 const paper = h.paper
                     .filter(r => r.date !== t && !queuedDates.has(r.date))
                     .concat(queued.paper.filter(r => r.date !== t));
-                const remoteToday = {};
-                h.training.filter(r => r.date === t).forEach(r => { remoteToday[r.activity] = r; });
+
+                const otherTrain = {};
+                h.training.filter(r => r.date === t && r.deviceId !== SX_DEVICE_ID).forEach(r => {
+                    const cur = otherTrain[r.activity] || { reps: 0, correct: 0, avgRt: null };
+                    cur.reps += r.reps;
+                    cur.correct += r.correct || 0;
+                    if (r.avgRt != null) cur.avgRt = r.avgRt;
+                    otherTrain[r.activity] = cur;
+                });
+                let otherPaper = null;
+                h.paper.filter(r => r.date === t && r.deviceId !== SX_DEVICE_ID).forEach(r => {
+                    if (!otherPaper) otherPaper = { trades: 0, wins: 0, losses: 0, grossPnl: 0, netPnl: 0, grossProfit: 0, grossLoss: 0, maxDdPct: 0 };
+                    otherPaper.trades += r.trades;
+                    otherPaper.wins += r.wins;
+                    otherPaper.losses += r.losses;
+                    otherPaper.grossPnl += r.grossPnl;
+                    otherPaper.netPnl += r.netPnl;
+                    otherPaper.grossProfit += r.grossProfit || 0;
+                    otherPaper.grossLoss += r.grossLoss || 0;
+                    if (r.maxDdPct > otherPaper.maxDdPct) otherPaper.maxDdPct = r.maxDdPct;
+                });
 
                 ACTIVITIES.forEach(a => {
                     const local = buf.act[a];
-                    const remote = remoteToday[a];
-                    const reps = Math.max(local ? local.reps : 0, remote ? remote.reps : 0);
+                    const other = otherTrain[a];
+                    const reps = (local ? local.reps : 0) + (other ? other.reps : 0);
                     if (!reps) return;
-                    const useLocal = local && local.reps >= (remote ? remote.reps : 0);
-                    const correct = useLocal ? local.correct : remote.correct;
+                    const correct = (local ? local.correct : 0) + (other ? other.correct : 0);
                     training.push({
                         date: t,
                         activity: a,
                         reps: reps,
                         correct: UNGRADED.indexOf(a) === -1 ? correct : 0,
                         accuracy: UNGRADED.indexOf(a) === -1 && reps ? (correct / reps) * 100 : null,
-                        avgRt: useLocal && local.rtN ? local.rtSum / local.rtN : (remote ? remote.avgRt : null),
+                        avgRt: local && local.rtN ? local.rtSum / local.rtN : (other ? other.avgRt : null),
                         targetReps: SX_TRACK.TARGET_REPS[a] || 0,
                         targetMet: reps >= (SX_TRACK.TARGET_REPS[a] || 0) ? 'Y' : 'N'
                     });
                 });
 
-                const ps = paperStats();
-                const remotePaper = h.paper.filter(r => r.date === t)[0];
-                if (ps && (!remotePaper || ps.trades >= remotePaper.trades)) {
+                const localPs = paperStats();
+                const trades = (localPs ? localPs.trades : 0) + (otherPaper ? otherPaper.trades : 0);
+                if (trades) {
+                    const grossPnl = (localPs ? localPs.grossPnl : 0) + (otherPaper ? otherPaper.grossPnl : 0);
+                    const netPnl = (localPs ? localPs.netPnl : 0) + (otherPaper ? otherPaper.netPnl : 0);
+                    const wins = (localPs ? localPs.wins : 0) + (otherPaper ? otherPaper.wins : 0);
                     paper.push({
-                        date: t, startCapital: ps.startCapital, trades: ps.trades,
-                        wins: ps.wins, losses: ps.losses,
-                        winRate: ps.trades ? (ps.wins / ps.trades) * 100 : 0,
-                        grossPnl: ps.grossPnl, netPnl: ps.netPnl,
-                        grossProfit: ps.grossProfit, grossLoss: ps.grossLoss,
-                        netPnlPct: ps.netPnlPct, maxDdPct: ps.maxDdPct,
-                        targetTrades: ps.targetTrades,
-                        targetMet: ps.trades >= ps.targetTrades ? 'Y' : 'N'
+                        date: t, startCapital: SX_TRACK.START_CAPITAL, trades: trades,
+                        wins: wins,
+                        losses: (localPs ? localPs.losses : 0) + (otherPaper ? otherPaper.losses : 0),
+                        winRate: trades ? (wins / trades) * 100 : 0,
+                        grossPnl: grossPnl, netPnl: netPnl,
+                        grossProfit: (localPs ? localPs.grossProfit : 0) + (otherPaper ? otherPaper.grossProfit : 0),
+                        grossLoss: (localPs ? localPs.grossLoss : 0) + (otherPaper ? otherPaper.grossLoss : 0),
+                        netPnlPct: (netPnl / SX_TRACK.START_CAPITAL) * 100,
+                        maxDdPct: Math.max(localPs ? localPs.maxDdPct : 0, otherPaper ? otherPaper.maxDdPct : 0),
+                        targetTrades: SX_TRACK.TARGET_TRADES,
+                        targetMet: trades >= SX_TRACK.TARGET_TRADES ? 'Y' : 'N'
                     });
-                } else if (remotePaper) {
-                    paper.push(remotePaper);
                 }
 
                 const byDate = (x, y) => x.date < y.date ? -1 : x.date > y.date ? 1 : 0;
@@ -32171,6 +32311,11 @@
                 const m = document.getElementById('sx-dash-modal');
                 if (!m) return;
                 m.classList.add('open');
+                // No separate hydrate() call here: mergedHistory() already
+                // derives "today, other devices" straight from the range=all
+                // response loadDashboard is about to fetch (every row is
+                // deviceId-tagged), so a second request would just be an
+                // extra network round trip for data already on its way.
                 loadDashboard(false);
             };
             window.sxCloseDashboard = function () {
@@ -32208,7 +32353,7 @@
                 const sec = document.getElementById('fs-sec-train');
                 if (!sec) return;
                 const obs = new MutationObserver(() => {
-                    if (sec.classList.contains('expanded')) { hydrate(); renderChecklist(); }
+                    if (sec.classList.contains('expanded')) { hydrate(true); renderChecklist(); }
                 });
                 obs.observe(sec, { attributes: true, attributeFilter: ['class'] });
             })();
@@ -32235,6 +32380,7 @@
                A truly offline device just fails one cheap request per minute. */
             setInterval(() => {
                 if (!SX_TRACK.ENDPOINT) return;
+                hydrate();   // pick up other devices' progress during a long session
                 const p = buildPayload(buf);
                 const waiting = pendingCount() || p.training.length || p.paper;
                 if (waiting && !inFlight) flush(false);
@@ -32243,7 +32389,7 @@
             // Flush pending reps when the chart modal closes or the tab is hidden.
             document.addEventListener('visibilitychange', () => {
                 if (document.visibilityState === 'hidden') flush(false);
-                else { updateOfflineUI(); if (pendingCount()) flush(false); }
+                else { updateOfflineUI(); hydrate(); if (pendingCount()) flush(false); }
             });
             window.addEventListener('pagehide', () => flush(false));
 
@@ -32256,7 +32402,8 @@
                 let wasOpen = modal.style.display === 'flex';
                 const obs = new MutationObserver(() => {
                     const isOpen = modal.style.display === 'flex';
-                    if (wasOpen && !isOpen) flush(false);
+                    if (!wasOpen && isOpen) hydrate(true);   // opening: pull in other devices' progress
+                    if (wasOpen && !isOpen) flush(false);    // closing: push this device's own
                     wasOpen = isOpen;
                 });
                 obs.observe(modal, { attributes: true, attributeFilter: ['style'] });
@@ -32267,6 +32414,10 @@
             // Anything left over from a previous offline session goes up as soon
             // as the page loads, without waiting for the user to do a rep.
             if (SX_TRACK.ENDPOINT && pendingCount() && NET.online) setTimeout(() => flush(false), 2500);
+            // Pull in other devices' today-so-far shortly after load, so the
+            // checklist scans across devices even if the user never expands
+            // the Trainers accordion or opens the dashboard first.
+            if (SX_TRACK.ENDPOINT) setTimeout(() => hydrate(), 1800);
             console.log('[SundarX] Training tracker ready' +
                 (SX_TRACK.ENDPOINT ? '' : ' (local only — set SX_TRACK.ENDPOINT to sync)'));
         })();
