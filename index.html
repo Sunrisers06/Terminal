@@ -30588,27 +30588,6 @@
             // oldest entries are dropped first, and only after ~4 months.
             const OUTBOX_MAX_DAYS = 120;
 
-            /* ── device identity ──
-               A stable per-browser id so the server can key every row by
-               (date, activity, DEVICE) instead of just (date, activity).
-               That is what lets two phones — or a phone and a laptop — used
-               on the same day each keep their own row instead of one
-               overwriting the other's totals when both sync. Generated once
-               and kept forever in localStorage; if storage is unavailable
-               (private browsing) it falls back to an in-memory id that is
-               at least stable for the session. */
-            const DEVICE_ID_KEY = 'sundarx_device_id';
-            function _sxGetDeviceId() {
-                let id = null;
-                try { id = localStorage.getItem(DEVICE_ID_KEY); } catch (e) { }
-                if (!id) {
-                    id = 'dev_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
-                    try { localStorage.setItem(DEVICE_ID_KEY, id); } catch (e) { }
-                }
-                return id;
-            }
-            const SX_DEVICE_ID = _sxGetDeviceId();
-
             /* ── Number fitting ──
                Tiles are a fixed width, and some of these metrics have no upper
                bound (a Sharpe on near-zero variance, a P&L run over months).
@@ -30708,10 +30687,24 @@
                     String(d.getDate()).padStart(2, '0');
             }
 
+            /* `buf` holds ONLY this device's UNSYNCED delta for `date` — reps and
+               trades done since the last successful sync, never a running total
+               since midnight. It is reset to empty every time a sync succeeds
+               (see flush()), because that work has then been folded into the
+               sheet's own single row for the day. This is what "import, then
+               add" means on the client: the sheet (fetched fresh before every
+               write) is always the base; `buf` is always just what is not on
+               it yet. */
             function blankBuf(date) {
-                const b = { date: date, act: {}, trades: [], synced: false };
+                const b = { date: date, act: {}, trades: [] };
                 ACTIVITIES.forEach(a => { b.act[a] = { reps: 0, correct: 0, rtSum: 0, rtN: 0 }; });
                 return b;
+            }
+
+            /** True if this buffer has any local work not yet folded into the sheet. */
+            function hasPendingLocalWork(b) {
+                if ((b.trades || []).length) return true;
+                return ACTIVITIES.some(a => b.act[a] && b.act[a].reps > 0);
             }
 
             /* ══ OFFLINE QUEUE ══
@@ -30731,6 +30724,16 @@
                 lastOkAt: null
             };
 
+            /* ── sheet baseline ──
+               What the sheet's single row for `date` held as of the last
+               import. This is the OTHER half of "import, then add": every
+               sync starts by re-fetching this, so the combined total it
+               writes back always builds on whatever is already there —
+               including work any other device already synced — instead of
+               guessing from stale local state. Populated by importBaseline()
+               / hydrate(); never written to directly anywhere else. */
+            let sheetBaseline = { date: null, train: {}, paper: null, fetchedAt: 0 };
+
             function loadOutbox() {
                 try {
                     const v = JSON.parse(localStorage.getItem(OUTBOX_KEY));
@@ -30749,8 +30752,9 @@
                 return q;
             }
 
-            /* Queue a finished day. Same date replaces rather than duplicates —
-               payloads are absolute totals, so the later one supersedes. */
+            /* Queue a finished day's leftover (unsynced) delta. Same date
+               replaces rather than duplicates — a date only ever rolls over
+               into the outbox once. */
             function enqueueDay(payload) {
                 if (!payload || (!payload.training.length && !payload.paper)) return;
                 const q = loadOutbox().filter(x => x.date !== payload.date);
@@ -30782,13 +30786,17 @@
             function rollDayIfNeeded() {
                 const t = today();
                 if (buf.date === t) return false;
-                /* Day rolled over mid-session. The finished day is written to the
-                   outbox BEFORE the buffer is blanked — previously it was only
-                   handed to a fire-and-forget flush, so rolling over while
-                   offline destroyed that day's reps the moment the tab closed. */
+                /* Day rolled over mid-session. Whatever local work never made
+                   it into the sheet is written to the outbox BEFORE the
+                   buffer is blanked — previously this was only handed to a
+                   fire-and-forget flush, so rolling over while offline
+                   destroyed that day's reps the moment the tab closed. Its
+                   own "import that day, add this delta, write" happens later
+                   when flush() actually sends it (see _flushOutboxDay). */
                 const stale = buf;
-                if (!stale.synced) enqueueDay(buildPayload(stale));
+                if (hasPendingLocalWork(stale)) enqueueDay(rawDeltaPayload(stale));
                 buf = blankBuf(t);
+                sheetBaseline = { date: null, train: {}, paper: null, fetchedAt: 0 };
                 saveBuf();
                 flush(false);
                 return true;
@@ -30953,65 +30961,52 @@
                     targetTrades: SX_TRACK.TARGET_TRADES
                 };
             }
-            /* ── cross-device totals ──
-               What OTHER devices have already synced for today. Kept
-               strictly separate from `buf` (this device's own counters) —
-               the old hydrate() folded the remote total directly into buf,
-               which meant this device's NEXT flush re-sent someone else's
-               numbers as if they were its own, and the server (keyed only by
-               date) then overwrote whatever the truly-other device had
-               written. Now every row is keyed by device, so this device only
-               ever needs to know its own count (buf) plus everyone else's
-               (this) — it never has to guess which slice of a shared total
-               it already owns. Not persisted to localStorage: a stale disk
-               copy could under- or over-state what the sheet holds right
-               now, and a fresh hydrate() is cheap. */
-            let crossDeviceToday = { train: {}, paper: null, fetchedAt: 0 };
-
-            /* This device's own reps/correct plus every other device's —
-               additive, not "whichever is bigger", since crossDeviceToday
-               explicitly excludes this device's own rows already. */
+            /* This device's own reps/correct (buf, unsynced) plus whatever the
+               sheet's single row already holds (sheetBaseline, imported —
+               may include work this device synced earlier today, or work
+               any other device synced). Plain addition: sheetBaseline is
+               the whole day's baseline, buf is only what hasn't been folded
+               into it yet. */
             function combinedReps(a) {
-                const other = crossDeviceToday.train[a];
-                return (buf.act[a] ? buf.act[a].reps : 0) + (other ? other.reps : 0);
+                const base = sheetBaseline.train[a];
+                return (buf.act[a] ? buf.act[a].reps : 0) + (base ? base.reps : 0);
             }
             function combinedCorrect(a) {
-                const other = crossDeviceToday.train[a];
-                return (buf.act[a] ? buf.act[a].correct : 0) + (other ? other.correct : 0);
+                const base = sheetBaseline.train[a];
+                return (buf.act[a] ? buf.act[a].correct : 0) + (base ? base.correct : 0);
             }
 
-            /* Today's paper-trading totals across every device: this
-               device's own trades (exact, from buf.trades) plus what every
-               other device has already synced (an aggregate the sheet
-               already summed — the server stores day totals, not individual
+            /* Today's paper-trading totals: this device's own unsynced trades
+               (exact, from buf.trades) plus the sheet's single row for today
+               (an aggregate — the server stores day totals, not individual
                trades). Best/worst trade stay this-device-only for the same
-               reason: another device's single best trade cannot be recovered
+               reason: a prior sync's single best trade cannot be recovered
                from its totals. */
             function displayPaperStats() {
                 const local = paperStats();
-                const other = crossDeviceToday.paper;
-                if (!local && !other) return null;
-                const trades = (local ? local.trades : 0) + (other ? other.trades : 0);
+                const base = sheetBaseline.paper;
+                if (!local && !base) return null;
+                const trades = (local ? local.trades : 0) + (base ? base.trades : 0);
                 if (!trades) return null;
-                const grossPnl = (local ? local.grossPnl : 0) + (other ? other.grossPnl : 0);
-                const netPnl = (local ? local.netPnl : 0) + (other ? other.netPnl : 0);
+                const grossPnl = (local ? local.grossPnl : 0) + (base ? base.grossPnl : 0);
+                const netPnl = (local ? local.netPnl : 0) + (base ? base.netPnl : 0);
                 return {
                     startCapital: SX_TRACK.START_CAPITAL,
                     trades: trades,
-                    wins: (local ? local.wins : 0) + (other ? other.wins : 0),
-                    losses: (local ? local.losses : 0) + (other ? other.losses : 0),
+                    wins: (local ? local.wins : 0) + (base ? base.wins : 0),
+                    losses: (local ? local.losses : 0) + (base ? base.losses : 0),
                     grossPnl: grossPnl,
                     netPnl: netPnl,
-                    grossProfit: (local ? local.grossProfit : 0) + (other ? other.grossProfit : 0),
-                    grossLoss: (local ? local.grossLoss : 0) + (other ? other.grossLoss : 0),
+                    grossProfit: (local ? local.grossProfit : 0) + (base ? base.grossProfit : 0),
+                    grossLoss: (local ? local.grossLoss : 0) + (base ? base.grossLoss : 0),
                     costs: grossPnl - netPnl,
                     costParts: local ? local.costParts : null,
                     netPnlPct: (netPnl / SX_TRACK.START_CAPITAL) * 100,
                     bestTrade: local ? local.bestTrade : 0,
                     worstTrade: local ? local.worstTrade : 0,
-                    maxDdPct: Math.max(local ? local.maxDdPct : 0, other ? other.maxDdPct : 0),
+                    maxDdPct: Math.max(local ? local.maxDdPct : 0, base ? base.maxDdPct : 0),
                     targetTrades: SX_TRACK.TARGET_TRADES,
-                    hasOther: !!(other && other.trades)
+                    hasOther: !!(base && base.trades)
                 };
             }
             // Exposed so today's cross-device P&L can be inspected from the
@@ -31041,7 +31036,7 @@
                     badge.textContent = done + '/' + total;
                     badge.className = 'sx-day-badge' +
                         (done === total ? ' done' : done > 0 ? ' partial' : '');
-                    const otherNote = crossDeviceToday.fetchedAt ? ' (includes other devices)' : '';
+                    const otherNote = sheetBaseline.fetchedAt ? ' (includes synced total)' : '';
                     badge.title = (done === total
                         ? 'All practice targets met today 🎉'
                         : done + ' of ' + total + ' targets met today') + otherNote;
@@ -31169,10 +31164,10 @@
                 flushTimer = setTimeout(() => flush(false), SX_TRACK.FLUSH_DEBOUNCE_MS);
             }
 
-            /** One day-buffer -> one wire payload for THIS device. Shared by
-               flush and the outbox. deviceId lets the server upsert only
-               this device's own row, never another device's. */
-            function buildPayload(b) {
+            /** This device's own pending work (buf `b`), as a wire payload —
+               NOT combined with any sheet baseline yet. Shared by flush()
+               (for today) and rollDayIfNeeded() (to queue a stale day). */
+            function rawDeltaPayload(b) {
                 const training = ACTIVITIES
                     .filter(a => b.act[a] && b.act[a].reps > 0)
                     .map(a => ({
@@ -31186,7 +31181,91 @@
                 buf = b;
                 const paper = paperStats();
                 buf = savedBuf;
-                return { date: b.date, deviceId: SX_DEVICE_ID, training: training, paper: paper };
+                return {
+                    date: b.date, training: training,
+                    paper: paper ? {
+                        trades: paper.trades, wins: paper.wins, losses: paper.losses,
+                        grossPnl: paper.grossPnl, netPnl: paper.netPnl,
+                        grossProfit: paper.grossProfit, grossLoss: paper.grossLoss,
+                        maxDdPct: paper.maxDdPct, targetTrades: paper.targetTrades
+                    } : null
+                };
+            }
+
+            /** "Import, then add": fold an imported sheet baseline and a
+               local delta (either today's buf via rawDeltaPayload, or a
+               queued day already in this same wire shape) into the
+               absolute total the server should write. An activity the
+               delta didn't touch, but the baseline already has, is carried
+               forward unchanged — the server overwrites absolutely, so
+               omitting it here would erase what was already on the sheet. */
+            function combineWithBaseline(delta, baseline) {
+                const baseTrain = (baseline && baseline.train) || {};
+                const basePaper = (baseline && baseline.paper) || null;
+
+                const training = [];
+                const seen = {};
+                delta.training.forEach(t => {
+                    const base = baseTrain[t.activity];
+                    const baseRtN = (base && base.avgRt != null) ? base.reps : 0;
+                    const baseRtSum = baseRtN ? base.avgRt * baseRtN : 0;
+                    const deltaRtN = t.avgRt != null ? t.reps : 0;
+                    const deltaRtSum = deltaRtN ? t.avgRt * deltaRtN : 0;
+                    const rtN = baseRtN + deltaRtN;
+                    training.push({
+                        activity: t.activity,
+                        reps: (base ? base.reps : 0) + t.reps,
+                        correct: (base ? base.correct : 0) + t.correct,
+                        avgRt: rtN ? +((baseRtSum + deltaRtSum) / rtN).toFixed(2) : null,
+                        targetReps: t.targetReps
+                    });
+                    seen[t.activity] = true;
+                });
+                Object.keys(baseTrain).forEach(a => {
+                    if (seen[a]) return;
+                    const base = baseTrain[a];
+                    training.push({
+                        activity: a, reps: base.reps, correct: base.correct,
+                        avgRt: base.avgRt, targetReps: base.targetReps
+                    });
+                });
+
+                let paper = null;
+                if (delta.paper || basePaper) {
+                    const lp = delta.paper, bp = basePaper;
+                    paper = {
+                        startCapital: SX_TRACK.START_CAPITAL,
+                        trades: (bp ? bp.trades : 0) + (lp ? lp.trades : 0),
+                        wins: (bp ? bp.wins : 0) + (lp ? lp.wins : 0),
+                        losses: (bp ? bp.losses : 0) + (lp ? lp.losses : 0),
+                        grossPnl: (bp ? bp.grossPnl : 0) + (lp ? lp.grossPnl : 0),
+                        netPnl: (bp ? bp.netPnl : 0) + (lp ? lp.netPnl : 0),
+                        grossProfit: (bp ? bp.grossProfit : 0) + (lp ? lp.grossProfit : 0),
+                        grossLoss: (bp ? bp.grossLoss : 0) + (lp ? lp.grossLoss : 0),
+                        maxDdPct: Math.max(bp ? bp.maxDdPct : 0, lp ? lp.maxDdPct : 0),
+                        targetTrades: SX_TRACK.TARGET_TRADES
+                    };
+                }
+
+                return { date: delta.date, training: training, paper: paper };
+            }
+
+            /** GET the sheet's current row for `dateStr` — the "import"
+               half of "import, then add". Thrown errors propagate so
+               flush() can fall back to its normal retry/outbox handling. */
+            async function importBaseline(dateStr) {
+                const url = SX_TRACK.ENDPOINT + '?date=' + encodeURIComponent(dateStr) +
+                    '&_nc=' + Date.now();
+                const resp = await fetch(url, { redirect: 'follow' });
+                const data = await resp.json();
+                if (!data || !data.ok) throw new Error((data && data.error) || 'bad response');
+                return data;
+            }
+
+            function applyBaseline(dateStr, data) {
+                const train = {};
+                (data.training || []).forEach(row => { train[row.activity] = row; });
+                sheetBaseline = { date: dateStr, train: train, paper: data.paper || null, fetchedAt: Date.now() };
             }
 
             async function flush(loud) {
@@ -31202,8 +31281,7 @@
                     return;
                 }
 
-                const todayPayload = buildPayload(buf);
-                const hasToday = todayPayload.training.length || todayPayload.paper;
+                const hasToday = hasPendingLocalWork(buf);
                 let queue = loadOutbox();
 
                 if (!hasToday && !queue.length) {
@@ -31228,16 +31306,33 @@
 
                 try {
                     // Oldest first, so the sheet fills in chronological order.
+                    // Each queued day gets its OWN import-then-add: its
+                    // baseline is whatever that date holds now, never today's.
                     for (let i = 0; i < queue.length; i++) {
-                        await postJSON(queue[i], fastFail);
+                        const day = queue[i];
+                        const baseData = await importBaseline(day.date);
+                        const train = {};
+                        (baseData.training || []).forEach(row => { train[row.activity] = row; });
+                        const combined = combineWithBaseline(day, { train: train, paper: baseData.paper || null });
+                        await postJSON(combined, fastFail);
                         sentDays++;
                     }
                     // Every queued day landed — clear them together.
                     if (sentDays) { queue = []; saveOutbox(queue); }
 
                     if (hasToday) {
-                        await postJSON(todayPayload, fastFail);
-                        buf.synced = true;
+                        const baseData = await importBaseline(buf.date);
+                        applyBaseline(buf.date, baseData);
+                        const combined = combineWithBaseline(rawDeltaPayload(buf), sheetBaseline);
+                        await postJSON(combined, fastFail);
+                        // That work is now on the sheet — fold the combined
+                        // total straight into the baseline (no second GET)
+                        // and clear the local delta, since it has all been
+                        // folded into the sheet's single row for the day.
+                        const train = {};
+                        combined.training.forEach(t => { train[t.activity] = t; });
+                        sheetBaseline = { date: buf.date, train: train, paper: combined.paper, fetchedAt: Date.now() };
+                        buf = blankBuf(buf.date);
                         saveBuf();
                     }
 
@@ -31250,6 +31345,9 @@
                             ? 'Back online — uploaded ' + sentDays + ' saved day' + (sentDays === 1 ? '' : 's') + ' ✓'
                             : 'Training log synced ✓', 'ok');
                     }
+                    renderChecklist();
+                    const dashModal = document.getElementById('sx-dash-modal');
+                    if (dashModal && dashModal.classList.contains('open')) renderDashboard();
                 } catch (err) {
                     failure = err;
                     NET.reachable = false;
@@ -31279,8 +31377,7 @@
                 const n = pendingCount();
                 const parts = [];
                 if (n) parts.push(n + ' earlier day' + (n === 1 ? '' : 's'));
-                const p = buildPayload(buf);
-                if (p.training.length || p.paper) parts.push("today's work");
+                if (hasPendingLocalWork(buf)) parts.push("today's work");
                 if (!parts.length) return 'Nothing pending';
                 return parts.join(' + ');
             }
@@ -31313,17 +31410,10 @@
             window.sxPendingDays = pendingCount;
 
             /* ─────────────── hydrate from sheet ─────────────── */
-            /* Pulls in what OTHER devices have already synced for today,
-               into crossDeviceToday — never into `buf`. Folding the remote
-               total directly into this device's own counters (the old
-               behaviour) was the root cause of paper-trade data vanishing
-               across devices: this device would then re-flush that borrowed
-               total as if it were its own, and since the server used to key
-               writes by date alone, that flush overwrote whatever the
-               genuinely-other device had just written. Now every row is
-               keyed by device (see SundarX_Training_Log.gs), so this
-               function only has to ADD other devices' numbers on top of the
-               local ones for display — it never has to merge or guess. */
+            /* Refreshes sheetBaseline — the sheet's single row for today —
+               so the checklist/dashboard show the true day-so-far total
+               (baseline + this device's own local delta), not just what
+               this device has typed since its last sync. */
             let hydrating = false;
             let lastHydrateAt = 0;
             async function hydrate(force) {
@@ -31334,48 +31424,18 @@
                 if (!force && Date.now() - lastHydrateAt < 15000) return;
                 hydrating = true;
                 try {
-                    const url = SX_TRACK.ENDPOINT +
-                        '?date=' + encodeURIComponent(buf.date) +
-                        '&_nc=' + Date.now();
-                    const resp = await fetch(url, { redirect: 'follow' });
-                    const data = await resp.json();
-                    if (!data || !data.ok) throw new Error((data && data.error) || 'bad response');
-
-                    const train = {};
-                    (data.training || []).forEach(row => {
-                        // This device's own row is already reflected in `buf`
-                        // — counting it again here would double it.
-                        if (row.deviceId === SX_DEVICE_ID) return;
-                        const cur = train[row.activity] || { reps: 0, correct: 0, avgRt: null };
-                        cur.reps += row.reps;
-                        cur.correct += row.correct || 0;
-                        if (row.avgRt != null) cur.avgRt = row.avgRt;
-                        train[row.activity] = cur;
-                    });
-
-                    let paper = null;
-                    (data.paper || []).forEach(row => {
-                        if (row.deviceId === SX_DEVICE_ID) return;
-                        if (!paper) paper = { trades: 0, wins: 0, losses: 0, grossPnl: 0, netPnl: 0, grossProfit: 0, grossLoss: 0, maxDdPct: 0 };
-                        paper.trades += row.trades;
-                        paper.wins += row.wins;
-                        paper.losses += row.losses;
-                        paper.grossPnl += row.grossPnl;
-                        paper.netPnl += row.netPnl;
-                        paper.grossProfit += row.grossProfit || 0;
-                        paper.grossLoss += row.grossLoss || 0;
-                        if (row.maxDdPct > paper.maxDdPct) paper.maxDdPct = row.maxDdPct;
-                    });
-
-                    crossDeviceToday = { train: train, paper: paper, fetchedAt: Date.now() };
+                    const data = await importBaseline(buf.date);
+                    applyBaseline(buf.date, data);
                     lastHydrateAt = Date.now();
                     renderChecklist();
                     const dashModal = document.getElementById('sx-dash-modal');
                     if (dashModal && dashModal.classList.contains('open')) renderDashboard();
                 } catch (err) {
                     console.warn('[SundarX] Training log hydrate failed:', err.message);
-                    // Non-fatal: the checklist just shows this device's own counts
+                    // Non-fatal: the checklist just shows this device's own delta
                     // until the next successful hydrate.
+                } finally {
+                    hydrating = false;
                 }
             }
 
@@ -31512,18 +31572,16 @@
             }
 
             /* Overlay today's local buffer so pending reps are visible.
-               "Today" is reconstructed additively: this device's own buffer
-               plus every OTHER device's row for today — read straight out of
-               `h` (the SAME range=all response already fetched for the rest
-               of the history), not a separate crossDeviceToday/hydrate()
-               fetch. Two reasons: it needs no second network round trip, and
-               it can never show a different "today" than what range=all just
-               returned — depending on a second, independently-timed fetch
-               here previously meant the dashboard would silently drop
-               whatever the sheet already held for today whenever hydrate()
-               hadn't completed yet. Every row is deviceId-tagged the same way
-               in both history and day-mode responses, so "other" simply means
-               "deviceId isn't mine" — never a max-of-two-guesses. */
+               "Today" is reconstructed additively: a baseline for today
+               plus this device's own unsynced buf delta on top. The
+               baseline prefers sheetBaseline (kept fresh by hydrate()/
+               flush()) when it has actually loaded for today; otherwise it
+               falls back to today's row inside `h` (the range=all response
+               already fetched for the rest of the history) so the
+               dashboard still renders something sane before the first
+               hydrate() completes. Preferring sheetBaseline means a flush()
+               that just landed shows up immediately, without waiting on a
+               second range=all round trip. */
             function mergedHistory() {
                 const h = DASH.history;
                 if (!h) return null;
@@ -31531,8 +31589,8 @@
 
                 /* Layered: the sheet (or its cache) is the base for every day
                    except today, days still sitting in the outbox override
-                   it, and today is rebuilt entirely from local + every other
-                   device's row for today. */
+                   it, and today is rebuilt entirely from baseline + local
+                   delta. */
                 const queued = outboxAsRows();
                 const queuedDates = new Set(queued.training.map(r => r.date)
                     .concat(queued.paper.map(r => r.date)));
@@ -31544,61 +31602,50 @@
                     .filter(r => r.date !== t && !queuedDates.has(r.date))
                     .concat(queued.paper.filter(r => r.date !== t));
 
-                const otherTrain = {};
-                h.training.filter(r => r.date === t && r.deviceId !== SX_DEVICE_ID).forEach(r => {
-                    const cur = otherTrain[r.activity] || { reps: 0, correct: 0, avgRt: null };
-                    cur.reps += r.reps;
-                    cur.correct += r.correct || 0;
-                    if (r.avgRt != null) cur.avgRt = r.avgRt;
-                    otherTrain[r.activity] = cur;
-                });
-                let otherPaper = null;
-                h.paper.filter(r => r.date === t && r.deviceId !== SX_DEVICE_ID).forEach(r => {
-                    if (!otherPaper) otherPaper = { trades: 0, wins: 0, losses: 0, grossPnl: 0, netPnl: 0, grossProfit: 0, grossLoss: 0, maxDdPct: 0 };
-                    otherPaper.trades += r.trades;
-                    otherPaper.wins += r.wins;
-                    otherPaper.losses += r.losses;
-                    otherPaper.grossPnl += r.grossPnl;
-                    otherPaper.netPnl += r.netPnl;
-                    otherPaper.grossProfit += r.grossProfit || 0;
-                    otherPaper.grossLoss += r.grossLoss || 0;
-                    if (r.maxDdPct > otherPaper.maxDdPct) otherPaper.maxDdPct = r.maxDdPct;
-                });
+                let baseTrain, basePaper;
+                if (sheetBaseline.date === t && sheetBaseline.fetchedAt) {
+                    baseTrain = sheetBaseline.train;
+                    basePaper = sheetBaseline.paper;
+                } else {
+                    baseTrain = {};
+                    h.training.filter(r => r.date === t).forEach(r => { baseTrain[r.activity] = r; });
+                    basePaper = h.paper.find(r => r.date === t) || null;
+                }
 
                 ACTIVITIES.forEach(a => {
                     const local = buf.act[a];
-                    const other = otherTrain[a];
-                    const reps = (local ? local.reps : 0) + (other ? other.reps : 0);
+                    const base = baseTrain[a];
+                    const reps = (local ? local.reps : 0) + (base ? base.reps : 0);
                     if (!reps) return;
-                    const correct = (local ? local.correct : 0) + (other ? other.correct : 0);
+                    const correct = (local ? local.correct : 0) + (base ? base.correct : 0);
                     training.push({
                         date: t,
                         activity: a,
                         reps: reps,
                         correct: UNGRADED.indexOf(a) === -1 ? correct : 0,
                         accuracy: UNGRADED.indexOf(a) === -1 && reps ? (correct / reps) * 100 : null,
-                        avgRt: local && local.rtN ? local.rtSum / local.rtN : (other ? other.avgRt : null),
+                        avgRt: local && local.rtN ? local.rtSum / local.rtN : (base ? base.avgRt : null),
                         targetReps: SX_TRACK.TARGET_REPS[a] || 0,
                         targetMet: reps >= (SX_TRACK.TARGET_REPS[a] || 0) ? 'Y' : 'N'
                     });
                 });
 
                 const localPs = paperStats();
-                const trades = (localPs ? localPs.trades : 0) + (otherPaper ? otherPaper.trades : 0);
+                const trades = (localPs ? localPs.trades : 0) + (basePaper ? basePaper.trades : 0);
                 if (trades) {
-                    const grossPnl = (localPs ? localPs.grossPnl : 0) + (otherPaper ? otherPaper.grossPnl : 0);
-                    const netPnl = (localPs ? localPs.netPnl : 0) + (otherPaper ? otherPaper.netPnl : 0);
-                    const wins = (localPs ? localPs.wins : 0) + (otherPaper ? otherPaper.wins : 0);
+                    const grossPnl = (localPs ? localPs.grossPnl : 0) + (basePaper ? basePaper.grossPnl : 0);
+                    const netPnl = (localPs ? localPs.netPnl : 0) + (basePaper ? basePaper.netPnl : 0);
+                    const wins = (localPs ? localPs.wins : 0) + (basePaper ? basePaper.wins : 0);
                     paper.push({
                         date: t, startCapital: SX_TRACK.START_CAPITAL, trades: trades,
                         wins: wins,
-                        losses: (localPs ? localPs.losses : 0) + (otherPaper ? otherPaper.losses : 0),
+                        losses: (localPs ? localPs.losses : 0) + (basePaper ? basePaper.losses : 0),
                         winRate: trades ? (wins / trades) * 100 : 0,
                         grossPnl: grossPnl, netPnl: netPnl,
-                        grossProfit: (localPs ? localPs.grossProfit : 0) + (otherPaper ? otherPaper.grossProfit : 0),
-                        grossLoss: (localPs ? localPs.grossLoss : 0) + (otherPaper ? otherPaper.grossLoss : 0),
+                        grossProfit: (localPs ? localPs.grossProfit : 0) + (basePaper ? basePaper.grossProfit : 0),
+                        grossLoss: (localPs ? localPs.grossLoss : 0) + (basePaper ? basePaper.grossLoss : 0),
                         netPnlPct: (netPnl / SX_TRACK.START_CAPITAL) * 100,
-                        maxDdPct: Math.max(localPs ? localPs.maxDdPct : 0, otherPaper ? otherPaper.maxDdPct : 0),
+                        maxDdPct: Math.max(localPs ? localPs.maxDdPct : 0, basePaper ? basePaper.maxDdPct : 0),
                         targetTrades: SX_TRACK.TARGET_TRADES,
                         targetMet: trades >= SX_TRACK.TARGET_TRADES ? 'Y' : 'N'
                     });
@@ -32312,10 +32359,10 @@
                 if (!m) return;
                 m.classList.add('open');
                 // No separate hydrate() call here: mergedHistory() already
-                // derives "today, other devices" straight from the range=all
-                // response loadDashboard is about to fetch (every row is
-                // deviceId-tagged), so a second request would just be an
-                // extra network round trip for data already on its way.
+                // falls back to today's row inside the range=all response
+                // loadDashboard is about to fetch when sheetBaseline hasn't
+                // loaded yet, so a second request would just be an extra
+                // network round trip for data already on its way.
                 loadDashboard(false);
             };
             window.sxCloseDashboard = function () {
