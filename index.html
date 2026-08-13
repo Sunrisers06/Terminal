@@ -12043,11 +12043,13 @@
                 const hadCache = applyFHCache();
                 if (hadCache && typeof window.refreshFHUI === 'function') window.refreshFHUI();
 
+                /* navigator.onLine is a hint, not a verdict. It reports false
+                   spuriously in iOS home-screen web apps and WebViews, and a
+                   hard return there meant favourites never synced on mobile even
+                   with a working connection. The request is attempted regardless;
+                   a genuine outage just fails fast and the cache is kept. */
                 if (navigator.onLine === false) {
-                    console.warn('[SundarX] Offline — using cached F/H tickers.');
-                    window._fhLoaded = hadCache;
-                    window._fhLoading = false;
-                    return;
+                    console.warn('[SundarX] Browser reports offline — trying anyway (the flag is unreliable on mobile).');
                 }
 
                 /* Queued edits go up FIRST. A fetch before them returns sheet
@@ -12062,37 +12064,58 @@
 
                 console.log('[SundarX] Syncing F/H tickers...');
                 try {
-                    // 1. Fetch static CSV — columns: A=FunFav, B=Holding, C=TechFav
-                    const text = await window._smartFetch(FH_CSV_URL);
-                    const lines = text.replace(/\r/g, '').trim().split('\n');
-                    const ffSet = new Set(), holdSet = new Set(), tfSet = new Set();
-                    for (let i = 1; i < lines.length; i++) {
-                        const cols = lines[i].split(',').map(c => c.replace(/^"|"$/g, '').trim().toUpperCase());
-                        const funfav = cols[0] || '';
-                        const hold = cols[1] || '';
-                        const techfav = cols[2] || '';
-                        if (funfav && funfav !== 'FUNFAV' && funfav !== 'FAVORITES') ffSet.add(funfav);
-                        if (hold && hold !== 'HOLDING' && hold !== 'HOLDINGS') holdSet.add(hold);
-                        if (techfav && techfav !== 'TECHFAV') tfSet.add(techfav);
-                    }
-                    window._sheetFF = ffSet;
-                    window._sheetTF = tfSet;
-                    window._sheetFavs = new Set([...ffSet, ...tfSet]); // combined for backward compat
-                    window._sheetHolds = holdSet;
-                    console.log(`[SundarX] CSV: FunFav=${ffSet.size}, TechFav=${tfSet.size}, Hold=${holdSet.size}`);
-
-                    // 2. Fetch dynamic data from Apps Script (cross-device sync)
+                    /* 1. Apps Script FIRST, and on its own. It is the source of
+                       truth (recomputeFHTickers prefers it), and it is a single
+                       direct request rather than a walk through CORS proxies. */
+                    let remoteOk = false;
                     try {
-                        const resp = await fetch(SYNC_URL);
+                        const ctrl = new AbortController();
+                        const tid = setTimeout(() => ctrl.abort(), 12000);
+                        const resp = await fetch(SYNC_URL, { signal: ctrl.signal });
+                        clearTimeout(tid);
                         const remoteData = await resp.json();
-                        console.log('[SundarX] Remote sync data received:', remoteData);
                         if (Array.isArray(remoteData.FF)) window._remoteFF = new Set(remoteData.FF.map(t => String(t).toUpperCase()));
                         if (Array.isArray(remoteData.TF)) window._remoteTF = new Set(remoteData.TF.map(t => String(t).toUpperCase()));
                         if (Array.isArray(remoteData.F)) window._remoteFavs = new Set(remoteData.F.map(t => String(t).toUpperCase()));
                         if (Array.isArray(remoteData.H)) window._remoteHolds = new Set(remoteData.H.map(t => String(t).toUpperCase()));
                         window._remoteSyncSuccess = true;
+                        remoteOk = true;
+                        console.log('[SundarX] Remote sync OK — F=' +
+                            ((remoteData.F || []).length) + ', H=' + ((remoteData.H || []).length));
                     } catch (re) {
-                        console.warn('[SundarX] Remote sync fetch failed, using CSV fallback:', re.message);
+                        console.warn('[SundarX] Remote sync failed:', re.message);
+                    }
+
+                    /* 2. The published CSV is only a supplement now, and never
+                       blocks the above. It used to run first inside the same try,
+                       so a CSV failure aborted the whole block and the live sync
+                       never happened — which is how mobile ended up with no
+                       favourites at all. */
+                    try {
+                        const text = await window._smartFetch(FH_CSV_URL);
+                        const lines = text.replace(/\r/g, '').trim().split('\n');
+                        const ffSet = new Set(), holdSet = new Set(), tfSet = new Set();
+                        for (let i = 1; i < lines.length; i++) {
+                            const cols = lines[i].split(',').map(c => c.replace(/^"|"$/g, '').trim().toUpperCase());
+                            const funfav = cols[0] || '';
+                            const hold = cols[1] || '';
+                            const techfav = cols[2] || '';
+                            if (funfav && funfav !== 'FUNFAV' && funfav !== 'FAVORITES') ffSet.add(funfav);
+                            if (hold && hold !== 'HOLDING' && hold !== 'HOLDINGS') holdSet.add(hold);
+                            if (techfav && techfav !== 'TECHFAV') tfSet.add(techfav);
+                        }
+                        window._sheetFF = ffSet;
+                        window._sheetTF = tfSet;
+                        window._sheetFavs = new Set([...ffSet, ...tfSet]);
+                        window._sheetHolds = holdSet;
+                        console.log(`[SundarX] CSV: FunFav=${ffSet.size}, TechFav=${tfSet.size}, Hold=${holdSet.size}`);
+                    } catch (ce) {
+                        console.warn('[SundarX] CSV supplement unavailable:', ce.message);
+                    }
+
+                    if (!remoteOk && !(window._sheetFF && window._sheetFF.size) &&
+                        !(window._sheetHolds && window._sheetHolds.size)) {
+                        throw new Error('no F/H source reachable');
                     }
 
                     recomputeFHTickers();
@@ -31012,10 +31035,14 @@
             /* Apps Script Web Apps do not answer the CORS preflight, so the body
                goes out as text/plain — a safelisted content type that skips
                preflight entirely. doPost still reads it with JSON.parse. */
-            async function postJSON(payload) {
+            async function postJSON(payload, fastFail) {
                 let delay = 900;
                 let lastErr = null;
-                for (let i = 0; i < SX_TRACK.RETRIES; i++) {
+                // One shot when the browser claims to be offline: if that is
+                // right the retries are wasted, and if it is wrong (mobile) a
+                // single attempt still gets the data through.
+                const attempts = fastFail ? 1 : SX_TRACK.RETRIES;
+                for (let i = 0; i < attempts; i++) {
                     try {
                         const ctrl = new AbortController();
                         const tid = setTimeout(() => ctrl.abort(), 15000);
@@ -31039,7 +31066,7 @@
                     } catch (err) {
                         lastErr = err;
                     }
-                    if (i < SX_TRACK.RETRIES - 1) {
+                    if (i < attempts - 1) {
                         await sleep(delay + Math.random() * 400);   // jitter
                         delay *= 2;
                     }
@@ -31096,17 +31123,13 @@
                     return;
                 }
 
-                // Offline: keep everything on disk and say so, rather than
-                // burning the retry backoff against a connection that is down.
-                if (!NET.online) {
-                    NET.reachable = false;
-                    updateOfflineUI();
-                    if (loud) {
-                        toast('Offline — ' + describePending() +
-                            ' saved on this device. It will upload automatically when you reconnect.', 'err');
-                    }
-                    return;
-                }
+                /* navigator.onLine is a hint, not a verdict: iOS home-screen web
+                   apps and WebViews report false with a perfectly good connection.
+                   Returning here on that basis meant the training log never
+                   uploaded on mobile. The request is always attempted; when the
+                   flag says offline we simply do not burn the full retry backoff
+                   on what is probably a real outage. */
+                const fastFail = !NET.online;
 
                 inFlight = true;
                 clearTimeout(flushTimer);
@@ -31118,14 +31141,14 @@
                 try {
                     // Oldest first, so the sheet fills in chronological order.
                     for (let i = 0; i < queue.length; i++) {
-                        await postJSON(queue[i]);
+                        await postJSON(queue[i], fastFail);
                         sentDays++;
                     }
                     // Every queued day landed — clear them together.
                     if (sentDays) { queue = []; saveOutbox(queue); }
 
                     if (hasToday) {
-                        await postJSON(todayPayload);
+                        await postJSON(todayPayload, fastFail);
                         buf.synced = true;
                         saveBuf();
                     }
@@ -31148,8 +31171,12 @@
                     setSyncState('failed');
                     console.warn('[SundarX] Training log sync failed:', err.message);
                     if (loud) {
-                        toast('Could not reach the sheet: ' + err.message + '. ' +
-                            describePending() + ' safe on this device — will retry.', 'err');
+                        // Say which it is: a browser that reports offline, versus
+                        // one that thinks it is online but cannot reach the sheet.
+                        toast((NET.online
+                            ? 'Could not reach the sheet: ' + err.message + '. '
+                            : 'Offline — ') +
+                            describePending() + ' saved on this device, and will upload automatically.', 'err');
                     }
                 } finally {
                     inFlight = false;
@@ -32117,12 +32144,6 @@
                 DASH.error = null;
                 renderDashboard();
 
-                if (!NET.online) {
-                    DASH.loading = false;
-                    if (!DASH.history) DASH.error = 'offline';
-                    renderDashboard();
-                    return;
-                }
 
                 const spin = document.getElementById('sx-dash-refresh');
                 if (spin) spin.classList.add('spin');
@@ -32208,20 +32229,21 @@
                 updateOfflineUI();
             });
 
-            /* Retry while anything is waiting. Cheap: it only fires a request
-               when there is something to send AND the browser thinks it is
-               online, so a genuinely offline device does no work at all. */
+            /* Retry while anything is waiting. The onLine flag is deliberately
+               NOT a precondition — it reads false on some mobile setups that are
+               actually connected, and gating on it is what stopped uploads there.
+               A truly offline device just fails one cheap request per minute. */
             setInterval(() => {
                 if (!SX_TRACK.ENDPOINT) return;
                 const p = buildPayload(buf);
                 const waiting = pendingCount() || p.training.length || p.paper;
-                if (waiting && NET.online && !inFlight) flush(false);
+                if (waiting && !inFlight) flush(false);
             }, 60000);
 
             // Flush pending reps when the chart modal closes or the tab is hidden.
             document.addEventListener('visibilitychange', () => {
                 if (document.visibilityState === 'hidden') flush(false);
-                else { updateOfflineUI(); if (NET.online && pendingCount()) flush(false); }
+                else { updateOfflineUI(); if (pendingCount()) flush(false); }
             });
             window.addEventListener('pagehide', () => flush(false));
 
