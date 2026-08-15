@@ -12008,7 +12008,16 @@
         // Override resetAllAppFilters to also reset top state
         const _origReset = window.resetAllAppFilters;
         window.resetAllAppFilters = function () {
-            _origReset();
+            /* These two are cleared BEFORE _origReset(), not after.
+               _origReset() ends in setFilterById('all') -> doFilter(), and
+               that is the ONLY re-filter/re-render the whole reset performs.
+               Clearing afterwards meant that pass still saw the old Top /
+               F-H state and faithfully rebuilt the same filtered view — so
+               the first logo click appeared to do nothing, and only a second
+               click (by which point the state was already null) actually
+               reset anything. Both states are read during the pass:
+               _topState at the card-render level, _fhState by the doFilter
+               wrapper that narrows allData and the news panes. */
             if (window._topState && window._topState.active) {
                 window._topState.active = false;
                 updateTopBtnState();
@@ -12018,6 +12027,7 @@
                 window._fhState.active = null;
                 if (typeof window._updateFHBtnState === 'function') window._updateFHBtnState();
             }
+            _origReset();
         };
     </script>
 
