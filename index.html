@@ -6496,17 +6496,29 @@
                             title="Fullscreen">⛶</button>
                     </div>
 
-                    <!-- SUB-SECTIONS -->
+                    <!-- SUB-SECTIONS
+                         Each label is its own span (not a bare text node) so
+                         narrow screens can flex the count ABOVE the name —
+                         see .deal-sub-tab in the mobile media query. DOM
+                         order stays label-then-count either way; the mobile
+                         rule reverses the visual order with flex `order`,
+                         not by moving markup, so desktop is untouched. -->
                     <div class="deal-sub-tabs">
                         <button class="deal-sub-tab active" id="dsub-insider"
-                            onclick="switchDealSub('insider')">Insider<span class="dsub-count"
-                                id="dsub-count-insider"></span></button>
-                        <button class="deal-sub-tab" id="dsub-bulk" onclick="switchDealSub('bulk')">Bulk<span
-                                class="dsub-count" id="dsub-count-bulk"></span></button>
-                        <button class="deal-sub-tab" id="dsub-block" onclick="switchDealSub('block')">Block<span
-                                class="dsub-count" id="dsub-count-block"></span></button>
-                        <button class="deal-sub-tab" id="dsub-sast" onclick="switchDealSub('sast')">SAST<span
-                                class="dsub-count" id="dsub-count-sast"></span></button>
+                            onclick="switchDealSub('insider')"><span class="dsub-label">Insider</span><span
+                                class="dsub-count" id="dsub-count-insider"></span></button>
+                        <button class="deal-sub-tab" id="dsub-bulk" onclick="switchDealSub('bulk')"><span
+                                class="dsub-label">Bulk</span><span class="dsub-count"
+                                id="dsub-count-bulk"></span></button>
+                        <button class="deal-sub-tab" id="dsub-block" onclick="switchDealSub('block')"><span
+                                class="dsub-label">Block</span><span class="dsub-count"
+                                id="dsub-count-block"></span></button>
+                        <button class="deal-sub-tab" id="dsub-sast" onclick="switchDealSub('sast')"><span
+                                class="dsub-label">SAST</span><span class="dsub-count"
+                                id="dsub-count-sast"></span></button>
+                        <button class="deal-sub-tab" id="dsub-analysis" onclick="switchDealSub('analysis')"><span
+                                class="dsub-label">📊 Analysis</span><span class="dsub-count"
+                                id="dsub-count-analysis"></span></button>
                     </div>
 
                     <!-- INSIDER TRADES -->
@@ -6619,6 +6631,45 @@
                                 <button class="deal-load-more-btn" onclick="loadNextDealPage('sast')">Load Next
                                     100</button>
                             </div>
+                        </div>
+                    </div>
+
+                    <!-- TRANSACTION ANALYSIS -->
+                    <div class="deal-sub-pane" id="deal-analysis-pane">
+                        <div class="da-filters">
+                            <div class="da-seg-group" id="da-seg-group">
+                                <button class="da-seg active" data-seg="insider">Insider</button>
+                                <button class="da-seg active" data-seg="bulk">Bulk</button>
+                                <button class="da-seg active" data-seg="block">Block</button>
+                            </div>
+                            <button class="da-superman-btn" id="da-superman-btn"
+                                title="Show only transactions by known institutional / HNI investors (LIC, BlackRock, Jhunjhunwala, Damani, ...)">🦸
+                                Superman</button>
+                            <div class="da-pills" id="da-pills">
+                                <button class="da-pill" data-days="7">7D</button>
+                                <button class="da-pill" data-days="30">30D</button>
+                                <button class="da-pill" data-days="90">90D</button>
+                                <button class="da-pill" data-days="365">1Y</button>
+                                <button class="da-pill" data-days="730">2Y</button>
+                                <button class="da-pill" data-days="1095">3Y</button>
+                                <button class="da-pill active" data-days="0">All</button>
+                            </div>
+                            <select class="da-select" id="da-index-filter" title="Index filter">
+                                <option value="all">All Indices</option>
+                            </select>
+                            <div class="da-date-range">
+                                <input type="date" class="da-date" id="da-date-from" title="From date">
+                                <span class="da-date-sep">→</span>
+                                <input type="date" class="da-date" id="da-date-to" title="To date">
+                            </div>
+                            <input class="da-search" id="da-search" placeholder="Search ticker…">
+                            <span class="da-refresh" id="da-refresh"
+                                title="Reset this tab's filters (segments, index, dates, search, Superman) and refresh"
+                                onclick="window._daRefresh()">⟳</span>
+                        </div>
+                        <span class="da-sub" id="da-sub"></span>
+                        <div class="da-body" id="da-body">
+                            <div class="da-empty">Loading…</div>
                         </div>
                     </div>
 
@@ -7389,11 +7440,14 @@
                 style.textContent = `
       .deal-table tbody td,
             .breadth-table td,
-            .ss-table tbody td { font-size: ${currentFS}px !important; }
+            .ss-table tbody td,
+            .da-table tbody td { font-size: ${currentFS}px !important; }
       .deal-table thead th,
             .breadth-table th,
-            .ss-table thead th { font-size: ${Math.max(7, currentFS - 2)}px !important; }
-      .deal-table .dt-ticker { font-size: ${Math.max(7, currentFS - 0.5)}px !important; }
+            .ss-table thead th,
+            .da-table thead th { font-size: ${Math.max(7, currentFS - 2)}px !important; }
+      .deal-table .dt-ticker,
+            .da-table .dt-ticker { font-size: ${Math.max(7, currentFS - 0.5)}px !important; }
     `;
                 try { localStorage.setItem(FS_KEY_DEAL, currentFS); } catch (e) { }
             }
@@ -18584,6 +18638,1421 @@
         })();
     </script>
 
+    <style>
+        /* ═══ DEAL TRANSACTION ANALYSIS DASHBOARD ═══
+           A sub-tab of the Deal section (#deal-analysis-pane, a sibling of
+           #deal-insider-pane etc.), not a modal — it inherits the shared
+           .deal-sub-pane flex-column layout, the shared ⛶ fullscreen toggle
+           on #deal-block-section, and the same accent tokens the deal
+           tables use (--pop-green / --pop-red / --text2 / --border, all
+           globals from :root), so this reads as part of the Deal section
+           rather than a bolted-on feature. */
+        .da-sub {
+            display: block;
+            font-size: 9.5px;
+            color: var(--text2);
+            padding: 6px 14px 0;
+            flex: 0 0 auto;
+        }
+
+        .da-refresh {
+            cursor: pointer;
+            font-size: 14px;
+            color: var(--text2);
+            flex-shrink: 0;
+            margin-left: auto;
+        }
+
+        .da-refresh:hover {
+            color: #22d3ee;
+        }
+
+        .da-filters {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+            padding: 9px 14px;
+            border-bottom: 1px solid var(--border);
+            flex: 0 0 auto;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .da-seg-group {
+            display: flex;
+            gap: 4px;
+        }
+
+        .da-seg {
+            background: rgba(118, 118, 128, 0.18);
+            border: 1px solid transparent;
+            color: var(--text2);
+            font-family: inherit;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 5px 10px;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .da-seg:hover {
+            color: #fff;
+        }
+
+        .da-seg.active {
+            background: rgba(139, 92, 246, 0.22);
+            border-color: #a78bfa;
+            color: #fff;
+        }
+
+        /* "Superman" = the notable-investor filter (LIC, BlackRock, Jhunjhunwala,
+           Damani, ...) — a gold accent so it reads as distinct from the plain
+           segment toggles beside it. */
+        .da-superman-btn {
+            background: rgba(251, 191, 36, 0.08);
+            border: 1px solid rgba(251, 191, 36, 0.35);
+            color: #fbbf24;
+            font-family: inherit;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 5px 10px;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+
+        .da-superman-btn:hover {
+            background: rgba(251, 191, 36, 0.16);
+        }
+
+        .da-superman-btn.active {
+            background: rgba(251, 191, 36, 0.28);
+            border-color: #fbbf24;
+            color: #fff;
+        }
+
+        .da-select,
+        .da-date,
+        .da-search {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            color: #f8fafc;
+            font-family: inherit;
+            font-size: 10.5px;
+            padding: 5px 8px;
+            border-radius: 6px;
+            outline: none;
+        }
+
+        .da-search {
+            width: 130px;
+        }
+
+        .da-date {
+            color-scheme: dark;
+        }
+
+        .da-date-range {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .da-date-sep {
+            color: var(--text2);
+            font-size: 10px;
+        }
+
+        .da-pills {
+            display: flex;
+            gap: 4px;
+        }
+
+        .da-pill {
+            background: rgba(118, 118, 128, 0.18);
+            border: 1px solid transparent;
+            color: var(--text2);
+            font-family: inherit;
+            font-size: 9.5px;
+            font-weight: 700;
+            padding: 5px 9px;
+            border-radius: 999px;
+            cursor: pointer;
+        }
+
+        .da-pill:hover {
+            color: #fff;
+        }
+
+        .da-pill.active {
+            background: rgba(34, 211, 238, 0.18);
+            border-color: #22d3ee;
+            color: #fff;
+        }
+
+        .da-body {
+            padding: 12px 14px 16px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            flex: 1 1 auto;
+        }
+
+        .da-tiles {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+            gap: 6px;
+            margin-bottom: 12px;
+        }
+
+        .da-tile {
+            background: rgba(0, 0, 0, 0.28);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 7px;
+            padding: 8px 9px;
+            min-width: 0;
+        }
+
+        .da-tile-lbl {
+            font-size: 8px;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: var(--text2);
+            margin-bottom: 4px;
+        }
+
+        .da-tile-val {
+            font-size: 15px;
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .da-tile-val.pos {
+            color: var(--pop-green);
+        }
+
+        .da-tile-val.neg {
+            color: var(--pop-red);
+        }
+
+        .da-tile-sub {
+            font-size: 8.5px;
+            color: var(--text2);
+            margin-top: 2px;
+        }
+
+        .da-table-wrap {
+            overflow-x: auto;
+        }
+
+        .da-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 10.5px;
+        }
+
+        .da-table th {
+            text-align: left;
+            padding: 6px 8px;
+            font-size: 8.5px;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: var(--text2);
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+
+        .da-table th.da-sortable {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .da-table th.da-sortable:hover {
+            color: #fff;
+        }
+
+        .da-table th.da-sorted {
+            color: #22d3ee;
+        }
+
+        .da-sort-arrow {
+            font-size: 7px;
+            margin-left: 2px;
+            opacity: 0.8;
+        }
+
+        .da-table td {
+            padding: 7px 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+            vertical-align: middle;
+        }
+
+        .da-table tr:hover td {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .da-summary-row {
+            cursor: pointer;
+        }
+
+        /* The selected stock — a single rectangle around the whole row
+           (outline on the <tr>, not a per-cell box-shadow, which would
+           double up at shared cell borders). Up/Down arrow keys move this;
+           clicking anywhere in a row sets it too. */
+        .da-table tr.da-row-selected {
+            outline: 2px solid #22d3ee;
+            outline-offset: -2px;
+        }
+
+        .da-table tr.da-row-selected td {
+            background: rgba(34, 211, 238, 0.07);
+        }
+
+        /* Full-row buy/sell tint on the transaction-level tables (drill-down
+           + excluded-pairs list) — sell is orange here, not the app-wide red,
+           per this dashboard's own convention. */
+        .da-table tr.da-row-buy td {
+            background: rgba(34, 197, 94, 0.1);
+        }
+
+        .da-table tr.da-row-buy:hover td {
+            background: rgba(34, 197, 94, 0.17);
+        }
+
+        .da-table tr.da-row-sell td {
+            background: rgba(251, 146, 60, 0.1);
+        }
+
+        .da-table tr.da-row-sell:hover td {
+            background: rgba(251, 146, 60, 0.17);
+        }
+
+        .da-type-buy {
+            color: var(--pop-green);
+            font-weight: 700;
+        }
+
+        .da-type-sell {
+            color: var(--pop-orange);
+            font-weight: 700;
+        }
+
+        .da-rank {
+            color: var(--text2);
+            font-size: 9px;
+            width: 26px;
+        }
+
+        .da-company {
+            display: block;
+            font-size: 8.5px;
+            color: var(--text2);
+            max-width: 130px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .da-count-line {
+            font-size: 10px;
+            line-height: 1.6;
+            white-space: nowrap;
+        }
+
+        .da-count-buy {
+            color: var(--pop-green);
+            font-weight: 700;
+        }
+
+        .da-count-sell {
+            color: var(--pop-red);
+            font-weight: 700;
+        }
+
+        .da-val-cell {
+            cursor: pointer;
+            border-radius: 5px;
+            padding: 4px 6px;
+            margin: -4px -6px;
+            transition: background 0.15s;
+            display: inline-block;
+        }
+
+        .da-val-cell:hover {
+            background: rgba(34, 211, 238, 0.1);
+        }
+
+        .da-val-line {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 10px;
+            line-height: 1.6;
+            white-space: nowrap;
+        }
+
+        .da-val-line.buy {
+            color: var(--pop-green);
+        }
+
+        .da-val-line.sell {
+            color: var(--pop-red);
+        }
+
+        .da-net {
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+
+        .da-net.pos {
+            color: var(--pop-green);
+        }
+
+        .da-net.neg {
+            color: var(--pop-red);
+        }
+
+        .da-empty {
+            padding: 40px 10px;
+            text-align: center;
+            font-size: 11px;
+            color: var(--text2);
+            line-height: 1.7;
+        }
+
+        /* ── Detail (drill-down) view ── */
+        .da-back-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+            font-size: 10.5px;
+            font-weight: 700;
+            color: #22d3ee;
+            margin-bottom: 10px;
+        }
+
+        .da-back-btn:hover {
+            text-decoration: underline;
+        }
+
+        .da-detail-head {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .da-detail-ticker {
+            font-size: 16px;
+            font-weight: 800;
+        }
+
+        .da-detail-company {
+            font-size: 10.5px;
+            color: var(--text2);
+        }
+
+        .da-persons-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .da-persons-col {
+            background: rgba(0, 0, 0, 0.22);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 7px;
+            padding: 8px 10px;
+            min-width: 0;
+        }
+
+        .da-persons-hdr {
+            font-size: 8.5px;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+
+        .da-persons-hdr.buy {
+            color: var(--pop-green);
+        }
+
+        .da-persons-hdr.sell {
+            color: var(--pop-red);
+        }
+
+        .da-person-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            font-size: 10px;
+            padding: 2px 0;
+        }
+
+        .da-person-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .da-person-val {
+            flex-shrink: 0;
+            font-variant-numeric: tabular-nums;
+            color: var(--text2);
+        }
+
+        .da-excluded-toggle {
+            font-size: 9px;
+            color: var(--text2);
+            cursor: pointer;
+            margin: 8px 0;
+            display: inline-block;
+        }
+
+        .da-excluded-toggle:hover {
+            color: #fff;
+        }
+
+        /* Matches _IS_MOBILE_DEAL / the rest of the Deal section's own
+           mobile cutoff, rather than an unrelated breakpoint of this
+           tab's own choosing — so "mobile" means the same width here as
+           it does for Insider/Bulk/Block/SAST right next to it. */
+        @media (max-width: 1400px) {
+            .da-filters {
+                gap: 4px;
+                padding: 6px 8px;
+            }
+
+            .da-seg,
+            .da-superman-btn,
+            .da-pill {
+                font-size: 9px;
+                padding: 4px 7px;
+            }
+
+            .da-select,
+            .da-date {
+                font-size: 9.5px;
+                padding: 4px 6px;
+            }
+
+            .da-search {
+                width: 88px;
+                font-size: 9.5px;
+                padding: 4px 6px;
+            }
+
+            .da-tiles {
+                grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+                gap: 5px;
+            }
+
+            .da-tile {
+                padding: 6px 7px;
+            }
+
+            .da-tile-val {
+                font-size: 13px;
+            }
+
+            .da-table {
+                font-size: 9.5px;
+            }
+
+            .da-table th,
+            .da-table td {
+                padding: 5px 6px;
+            }
+
+            .da-company {
+                max-width: 90px;
+            }
+
+            .da-persons-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .da-detail-head {
+                flex-wrap: wrap;
+            }
+        }
+
+        /* Phones narrower than a small tablet: the company sub-label under
+           the ticker is the first thing worth dropping — the ticker badge
+           alone (plus the drill-down, which still has the full name) is
+           enough to identify the row, and it buys the Value/Net columns
+           real room instead of eliding on every stock. */
+        @media (max-width: 600px) {
+            .da-company {
+                display: none;
+            }
+
+            .da-filters {
+                gap: 3px;
+                padding: 5px 6px;
+            }
+
+            .da-search {
+                width: 72px;
+            }
+
+            .da-val-line,
+            .da-count-line,
+            .da-net {
+                font-size: 9px;
+            }
+
+            .da-tiles {
+                grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+            }
+        }
+    </style>
+
+    <script>
+        /* ══════════════════════════════════════════════════════
+           DEAL TRANSACTION ANALYSIS DASHBOARD
+           Reads window._dealData (populated by the Deal Block engine
+           above) — purely additive, touches none of that engine's own
+           state, filters, or rendering.
+
+           "Intraday" pairs: a BUY and a SELL of the SAME stock, on the
+           SAME day, within the SAME segment (Insider is never paired
+           against Bulk/Block, etc.), whose values sit within 10% of
+           one another. Bulk/Block prints routinely record a single real
+           trade as two rows — one per side of the deal — so without this
+           a stock traded once for ₹50 Cr would read as ₹100 Cr of
+           "activity", split evenly into fake buy and sell pressure.
+           These pairs are excluded from every count/value here, but
+           never discarded — they stay visible, muted, in a ticker's
+           drill-down, so nothing is silently dropped from the record.
+        ══════════════════════════════════════════════════════ */
+        (function () {
+            'use strict';
+
+            /* ── date parsing — same formats formatDealDate already handles,
+               so a transaction's date here never disagrees with the raw
+               Insider/Bulk/Block tables. ── */
+            function daParseDate(raw) {
+                if (!raw) return null;
+                const s = String(raw).trim();
+                if (!s) return null;
+                let d = null;
+                const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+                if (dmy) {
+                    const day = parseInt(dmy[1], 10), mon = parseInt(dmy[2], 10) - 1, yr = parseInt(dmy[3], 10);
+                    if (mon >= 0 && mon < 12) d = new Date(yr < 100 ? 2000 + yr : yr, mon, day);
+                }
+                if (!d || isNaN(d)) {
+                    const iso = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+                    if (iso) d = new Date(parseInt(iso[1], 10), parseInt(iso[2], 10) - 1, parseInt(iso[3], 10));
+                }
+                if (!d || isNaN(d)) d = new Date(s);
+                if (!d || isNaN(d.getTime())) return null;
+                return d;
+            }
+            function daDateKey(d) {
+                return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+            }
+            function daNormType(raw) {
+                const t = String(raw || '').trim();
+                if (!t) return null;
+                if (/buy|bought|acq|purchas/i.test(t)) return 'BUY';
+                if (/sell|sold|sale|divest/i.test(t)) return 'SELL';
+                return null;
+            }
+            /* Same Cr./Lacs interpretation buildDealRow uses for the raw
+               Insider table, and the same Quantity x Price the raw
+               Bulk/Block tables use — this dashboard's numbers can never
+               disagree with what those tables already show. */
+            function daValueRupees(sub, row) {
+                if (sub === 'insider') {
+                    const raw = String(row['Value'] || '').trim();
+                    if (!raw || raw === '—') return 0;
+                    const numOnly = parseFloat(raw.replace(/[^0-9.]/g, ''));
+                    if (isNaN(numOnly)) return 0;
+                    return /crore/i.test(raw) ? numOnly * 1e7 : numOnly * 1e5;
+                }
+                const qty = parseFloat(String(row['Quantity'] || '').replace(/[^0-9.]/g, '')) || 0;
+                const price = parseFloat(String(row['Price'] || '').replace(/[^0-9.]/g, '')) || 0;
+                return (qty > 0 && price > 0) ? qty * price : 0;
+            }
+
+            /* Rows with no recognisable BUY/SELL type, no parseable value,
+               or no parseable date are dropped — there is no meaningful
+               buy/sell signal to attribute them to. */
+            function daNormalizeRows(sub, rawRows) {
+                const out = [];
+                (rawRows || []).forEach(function (row) {
+                    const ticker = String(row['Ticker'] || '').trim().toUpperCase().replace(/\.NS$/i, '');
+                    if (!ticker) return;
+                    const type = daNormType(row['Type']);
+                    if (!type) return;
+                    const value = daValueRupees(sub, row);
+                    if (!(value > 0)) return;
+                    const d = daParseDate(row['Date']);
+                    if (!d) return;
+                    out.push({
+                        ticker: ticker, sub: sub, type: type, value: value, date: d, dateKey: daDateKey(d),
+                        person: String(row['Person'] || '').trim() || 'Unknown',
+                        personLink: row['Person Link'] || '',
+                        personRole: row['Person Role'] || ''
+                    });
+                });
+                return out;
+            }
+
+            /* Greedy nearest-value pairing per (segment, ticker, day). Groups
+               are a handful of prints per stock per day at most, so an O(n^2)
+               scan inside each group is irrelevant in practice. */
+            function daExcludeIntraday(rows, tolPct) {
+                const groups = new Map();
+                rows.forEach(function (r) {
+                    const key = r.sub + '|' + r.ticker + '|' + r.dateKey;
+                    if (!groups.has(key)) groups.set(key, []);
+                    groups.get(key).push(r);
+                });
+                const skipped = new Set();
+                groups.forEach(function (group) {
+                    const buys = group.filter(function (r) { return r.type === 'BUY'; });
+                    const sells = group.filter(function (r) { return r.type === 'SELL'; });
+                    const usedSell = new Array(sells.length).fill(false);
+                    buys.forEach(function (b) {
+                        let bestI = -1, bestDiff = Infinity;
+                        sells.forEach(function (s, i) {
+                            if (usedSell[i]) return;
+                            const diff = Math.abs(b.value - s.value);
+                            const tol = tolPct * Math.max(b.value, s.value);
+                            if (diff <= tol && diff < bestDiff) { bestDiff = diff; bestI = i; }
+                        });
+                        if (bestI !== -1) {
+                            usedSell[bestI] = true;
+                            skipped.add(b); skipped.add(sells[bestI]);
+                        }
+                    });
+                });
+                return {
+                    kept: rows.filter(function (r) { return !skipped.has(r); }),
+                    skipped: rows.filter(function (r) { return skipped.has(r); })
+                };
+            }
+
+            /* ── "Superman" filter — known institutional / HNI investors ──
+               Substring match, not exact: the Person field sometimes holds a
+               short form ("LIC") and sometimes the full name ("Life Insurance
+               Corporation of India"), so both are listed as independent
+               entries below rather than relying on one implying the other —
+               "life insurance corporation" does not contain "lic" as a
+               substring, so a name list without the abbreviation would miss
+               every row that only ever writes it out in full, and vice
+               versa. */
+            const SUPERMAN_NAMES = ['lic', 'life insurance corporation', 'blackrock', 'vanguard', 'singapore', 'government pension fund global', 'gqg partners', 'smallcap world fund', 'nalanda', 'new world fund', 'amansa holdings', 'pi opportunities', 'master capital services', 'oppenheimer developing markets', 'goldman sachs', 'international finance corporation', 'steadview capital mauritius', 'malabar investments', 'india capital fund', 'jwalamukhi investment holdings', 'monetary authority of singapore', 'abu dhabi', 'massachusetts institute of technology', 'nomura', 'bank muscat', 'elm park fund', 'saif partners', 'sequoia', 'albula investment', 'tree line asia master fund', 'east bridge capital master', 'atyant capital', 'bridge india', 'apms investment', 'acacia institutional', 'lavender investments', 'hypnos fund', 'europacific growth', 'valiant mauritius partners offshore', 'sparrow', 'ares', 'eastspring investments', 'matthews pacific tiger', 'baron emerging markets', 'morgan stanley', 'fidelity puritan trust', 'stichting depositary', 'eriska investment fund ltd', 'matthews india fund', 'abg capital', 'american', 'clsa global markets', 'cresta fund', 'jupiter south asia', 'acacia conservation', 'india midcap mauritius', 'antara india evergreen', 'premier investment', 'platinum asia', 'fil investments mauritius', 'em resurgent', 'lsv emerging markets', 'new horizon', 'india max', 'valuequest', 'mauritius', 'sbi', 'icici', 'hdfc', 'kotak mahindra', 'reliance', 'sundaram', 'axis', 'birla', 'canara', 'franklin india', 'general insurance', 'enam securities', 'amansa', 'master capital', 'oppenheimer', 'gagandeep credit', 'punjab national bank', 'vistra itcl', 'the new india assurance', 'international finance corporation', 'westbridge crossover', 'plutus wealth', 'bank muscat', 'jm financial services', 'saif partners', 'softbank', 'idbi bank', 'sequoia', 'abakkus', 'albula investment', 'bank of baroda', 'apms investment', 'acacia institutional', 'hypnos fund', 'zerodha', 'europacific growth', 'emerging india focus', 'union bank of india', 'united india insurance', 'national insurance', 'fidelity puritan', 'mirae', 'bennett and coleman', 'rajasthan global securities', 'indian bank', 'catamaran ventures', 'tata', 'stichting depositary apg', 'eriska investment fund ltd', 'vls finance ltd', 'matthews india fund', 'abg capital', 'mentor capital', 'shriram credit', 'ntasian discovery', 'cresta fund', 'jupiter south asia', 'acacia conservation', 'central bank of india', 'dsp-blackrock', 'premier investment', 'platinum asia', 'priyanka finance', 'bajaj allianz', 'the oriental insurance', 'indian overseas bank', 'radhakishan damani', 'rakesh jhunjhunwala', 'rekha jhunjhunwala', 'mukul agrawal', 'akash bhanshali', 'nemish shah', 'sunil singhania', 'ashish kacholia', 'madhusudan kela', 'anil kumar goel', 'ashish dhawan', 'govindlal m parikh', 'anuj anantrai sheth', 'bhavook tripathi', 'vijay kedia', 'ajay upadhyaya', 'dilipkumar lakhi', 'hiten anantrai sheth', 'hitesh satishchandra doshi', 'sanjiv dhireshbhai shah', 'vanaja sundar iyer', 'jayesh patel', 'ricky ishwardas kirpalani', 'dolly khanna', 'ashok kumar jain', 'keswani haresh', 'lata bhanshali', 'bharat jayantilal patel', 'amal parikh', 'girish gulati', 'atim kabra', 'minal bharat patel', 'suresh kumar agarwal', 'sharad kanayalal shah', 'porinju v veliyath', 'ramesh damani'];
+            /* Deal filings abbreviate institutional names inconsistently —
+               "SBI Mutual Fund" in one row, "S.B.I. Mutual Fund" or
+               "S.B.I.MUTUAL FUND" in another. A plain lowercase substring
+               check misses those: "s.b.i. mutual fund" does not contain
+               "sbi" as a contiguous substring because the periods sit
+               between the letters. Periods, hyphens and apostrophes are
+               therefore FUSED away (removed, not replaced with a space) —
+               "S.B.I." and "DSP-BlackRock" collapse to "sbi" and
+               "dspblackrock" — while genuine word separators (spaces,
+               commas, parentheses, "&") become a single space, so
+               multi-word phrases like "life insurance corporation" still
+               match only when those words actually appear together. Both
+               sides of the comparison go through the same normalization,
+               so this only widens what already matched — it never narrows
+               it. */
+            function normalizeSupermanText(s) {
+                return String(s || '')
+                    .toLowerCase()
+                    .replace(/[.\-']/g, '')
+                    .replace(/[^a-z0-9]+/g, ' ')
+                    .trim();
+            }
+            const SUPERMAN_NAMES_NORM = SUPERMAN_NAMES.map(normalizeSupermanText).filter(Boolean);
+            function matchesSuperman(person) {
+                const p = normalizeSupermanText(person);
+                if (!p) return false;
+                return SUPERMAN_NAMES_NORM.some(function (n) { return p.indexOf(n) !== -1; });
+            }
+
+            function daComputeAnalysis(opts) {
+                let rows = [];
+                (opts.subs || []).forEach(function (sub) {
+                    const raw = window._dealData && window._dealData[sub];
+                    if (raw) rows = rows.concat(daNormalizeRows(sub, raw));
+                });
+                if (opts.indexSet) rows = rows.filter(function (r) { return opts.indexSet.has(r.ticker); });
+                if (opts.from) rows = rows.filter(function (r) { return r.date >= opts.from; });
+                if (opts.to) rows = rows.filter(function (r) { return r.date <= opts.to; });
+                if (opts.tickerQuery) {
+                    const q = opts.tickerQuery.trim().toUpperCase();
+                    if (q) rows = rows.filter(function (r) { return r.ticker.indexOf(q) !== -1; });
+                }
+                if (opts.supermanOnly) rows = rows.filter(function (r) { return matchesSuperman(r.person); });
+
+                const paired = daExcludeIntraday(rows, 0.10);
+                const kept = paired.kept, skipped = paired.skipped;
+
+                const byTicker = new Map();
+                kept.forEach(function (r) {
+                    let agg = byTicker.get(r.ticker);
+                    if (!agg) {
+                        agg = {
+                            ticker: r.ticker, buyCount: 0, sellCount: 0, buyValue: 0, sellValue: 0,
+                            buyers: new Map(), sellers: new Map(), txns: [], subs: new Set()
+                        };
+                        byTicker.set(r.ticker, agg);
+                    }
+                    agg.subs.add(r.sub);
+                    agg.txns.push(r);
+                    const personMap = r.type === 'BUY' ? agg.buyers : agg.sellers;
+                    const cur = personMap.get(r.person) || { count: 0, value: 0 };
+                    cur.count++; cur.value += r.value;
+                    personMap.set(r.person, cur);
+                    if (r.type === 'BUY') { agg.buyCount++; agg.buyValue += r.value; }
+                    else { agg.sellCount++; agg.sellValue += r.value; }
+                });
+
+                const skippedByTicker = new Map();
+                skipped.forEach(function (r) {
+                    if (!skippedByTicker.has(r.ticker)) skippedByTicker.set(r.ticker, []);
+                    skippedByTicker.get(r.ticker).push(r);
+                });
+
+                const rowsOut = [];
+                byTicker.forEach(function (agg) {
+                    rowsOut.push({
+                        ticker: agg.ticker,
+                        company: (window.tickerToName && window.tickerToName[agg.ticker]) || agg.ticker,
+                        buyCount: agg.buyCount, sellCount: agg.sellCount,
+                        totalCount: agg.buyCount + agg.sellCount,
+                        buyValue: agg.buyValue, sellValue: agg.sellValue,
+                        totalValue: agg.buyValue + agg.sellValue,
+                        netValue: agg.buyValue - agg.sellValue,
+                        buyers: agg.buyers, sellers: agg.sellers,
+                        txns: agg.txns.slice().sort(function (a, b) { return b.date - a.date; }),
+                        excluded: (skippedByTicker.get(agg.ticker) || []).slice().sort(function (a, b) { return b.date - a.date; }),
+                        subs: agg.subs
+                    });
+                });
+
+                let totalBuyValue = 0, totalSellValue = 0;
+                kept.forEach(function (r) { if (r.type === 'BUY') totalBuyValue += r.value; else totalSellValue += r.value; });
+
+                return {
+                    rows: rowsOut,
+                    totalTxns: kept.length,
+                    excludedPairs: skipped.length / 2,
+                    totalBuyValue: totalBuyValue,
+                    totalSellValue: totalSellValue,
+                    tickerCount: rowsOut.length
+                };
+            }
+
+            // Exposed purely so this logic can be exercised, against the real
+            // extracted source, by a Node test harness. Never called by the UI.
+            window._daInternal = {
+                daParseDate: daParseDate, daNormType: daNormType, daValueRupees: daValueRupees,
+                daNormalizeRows: daNormalizeRows, daExcludeIntraday: daExcludeIntraday,
+                daComputeAnalysis: daComputeAnalysis, matchesSuperman: matchesSuperman,
+                SUPERMAN_NAMES: SUPERMAN_NAMES
+            };
+
+            /* ── formatting ── */
+            function daFmtINR(rupees) {
+                const v = Math.abs(Number(rupees) || 0);
+                if (v >= 1e7) return '₹' + (v / 1e7).toFixed(2) + ' Cr';
+                if (v >= 1e5) return '₹' + (v / 1e5).toFixed(2) + ' L';
+                return '₹' + v.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+            }
+            function daFmtDate(d) {
+                const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                return String(d.getDate()).padStart(2, '0') + '-' + MONTHS[d.getMonth()] + '-' + String(d.getFullYear()).slice(-2);
+            }
+
+            /* Every column header is independently clickable — a plain value
+               getter per sort key, direction handled once in applySort()
+               rather than duplicated as a pair of ascending/descending
+               comparators per column. */
+            const SORT_GETTERS = {
+                ticker: function (r) { return r.ticker; },
+                total: function (r) { return r.totalCount; },
+                totalValue: function (r) { return r.totalValue; },
+                net: function (r) { return r.netValue; }
+            };
+            // Numeric columns default to highest-first on first click;
+            // Ticker (alphabetic) defaults to A-Z.
+            const SORT_DEFAULT_DIR = { ticker: 'asc', total: 'desc', totalValue: 'desc', net: 'desc' };
+
+            function applySort(rows, key, dir) {
+                const getter = SORT_GETTERS[key] || SORT_GETTERS.total;
+                const mult = dir === 'asc' ? 1 : -1;
+                return rows.slice().sort(function (a, b) {
+                    const av = getter(a), bv = getter(b);
+                    if (av < bv) return -1 * mult;
+                    if (av > bv) return 1 * mult;
+                    return 0;
+                });
+            }
+
+            /* Same generic sort, over the individual-transaction shape shown
+               in a ticker's drill-down (date/segment/person/type/value). */
+            const TXN_SORT_GETTERS = {
+                date: function (t) { return t.date; },
+                sub: function (t) { return t.sub; },
+                person: function (t) { return String(t.person || '').toLowerCase(); },
+                type: function (t) { return t.type; },
+                value: function (t) { return t.value; }
+            };
+            const TXN_SORT_DEFAULT_DIR = { date: 'desc', sub: 'asc', person: 'asc', type: 'asc', value: 'desc' };
+
+            function applyTxnSort(txns, key, dir) {
+                const getter = TXN_SORT_GETTERS[key] || TXN_SORT_GETTERS.date;
+                const mult = dir === 'asc' ? 1 : -1;
+                return txns.slice().sort(function (a, b) {
+                    const av = getter(a), bv = getter(b);
+                    if (av < bv) return -1 * mult;
+                    if (av > bv) return 1 * mult;
+                    return 0;
+                });
+            }
+
+            /* ── state ── */
+            let _view = 'summary';   // 'summary' | 'detail'
+            let _detailTicker = null;
+            let _showExcluded = false;
+            let _sortKey = 'total';
+            let _sortDir = 'desc';
+            let _txnSortKey = 'date';
+            let _txnSortDir = 'desc';
+            let _supermanActive = false;
+            let _indexPopulated = false;
+            let _pollTimer = null;
+            let _selectedTicker = null;
+            // The exact ticker order the summary table last rendered in —
+            // what Up/Down arrow navigation walks through.
+            let _lastRenderedTickers = [];
+
+            function activeSegs() {
+                const segs = [];
+                document.querySelectorAll('#da-seg-group .da-seg.active').forEach(function (b) { segs.push(b.dataset.seg); });
+                return segs;
+            }
+
+            function currentOpts() {
+                const subs = activeSegs();
+                const idxSel = document.getElementById('da-index-filter');
+                const idxVal = idxSel ? idxSel.value : 'all';
+                let indexSet = null;
+                if (idxVal !== 'all' && window.indexDataMap && window.indexDataMap[idxVal]) {
+                    indexSet = window.indexDataMap[idxVal];
+                }
+                const fromEl = document.getElementById('da-date-from');
+                const toEl = document.getElementById('da-date-to');
+                const from = fromEl && fromEl.value ? new Date(fromEl.value + 'T00:00:00') : null;
+                const to = toEl && toEl.value ? new Date(toEl.value + 'T23:59:59') : null;
+                const searchEl = document.getElementById('da-search');
+                return {
+                    subs: subs, indexSet: indexSet, from: from, to: to,
+                    tickerQuery: searchEl ? searchEl.value : '', supermanOnly: _supermanActive
+                };
+            }
+
+            function populateIndexFilter() {
+                const sel = document.getElementById('da-index-filter');
+                if (!sel || !window.indexDataMap) return;
+                const names = Object.keys(window.indexDataMap);
+                if (!names.length) return;
+                names.sort();
+                const cur = sel.value;
+                sel.innerHTML = '<option value="all">All Indices</option>' +
+                    names.map(function (n) { return '<option value="' + escHtml(n) + '">' + escHtml(n) + '</option>'; }).join('');
+                if (names.indexOf(cur) !== -1) sel.value = cur;
+                _indexPopulated = true;
+            }
+
+            function renderTiles(res) {
+                const excl = res.excludedPairs > 0
+                    ? '<div class="da-tile"><div class="da-tile-lbl">Excluded (intraday)</div>' +
+                    '<div class="da-tile-val">' + res.excludedPairs.toLocaleString() + ' pair' + (res.excludedPairs === 1 ? '' : 's') + '</div></div>'
+                    : '';
+                const netVal = res.totalBuyValue - res.totalSellValue;
+                return '<div class="da-tiles">' +
+                    '<div class="da-tile"><div class="da-tile-lbl">Stocks</div><div class="da-tile-val">' + res.tickerCount.toLocaleString() + '</div></div>' +
+                    '<div class="da-tile"><div class="da-tile-lbl">Transactions</div><div class="da-tile-val">' + res.totalTxns.toLocaleString() + '</div></div>' +
+                    '<div class="da-tile"><div class="da-tile-lbl">Buy Value</div><div class="da-tile-val pos">' + daFmtINR(res.totalBuyValue) + '</div></div>' +
+                    '<div class="da-tile"><div class="da-tile-lbl">Sell Value</div><div class="da-tile-val neg">' + daFmtINR(res.totalSellValue) + '</div></div>' +
+                    '<div class="da-tile"><div class="da-tile-lbl">Net Flow</div><div class="da-tile-val ' + (netVal >= 0 ? 'pos' : 'neg') + '">' +
+                    (netVal >= 0 ? '+' : '−') + daFmtINR(netVal) + '</div></div>' +
+                    excl +
+                    '</div>';
+            }
+
+            function sortHeader(key, label) {
+                const isSorted = _sortKey === key;
+                const arrow = isSorted ? '<span class="da-sort-arrow">' + (_sortDir === 'asc' ? '▲' : '▼') + '</span>' : '';
+                return '<th class="da-sortable' + (isSorted ? ' da-sorted' : '') + '" onclick="window._daSortBy(\'' + key + '\')">' + label + arrow + '</th>';
+            }
+
+            function txnSortHeader(key, label) {
+                const isSorted = _txnSortKey === key;
+                const arrow = isSorted ? '<span class="da-sort-arrow">' + (_txnSortDir === 'asc' ? '▲' : '▼') + '</span>' : '';
+                return '<th class="da-sortable' + (isSorted ? ' da-sorted' : '') + '" onclick="window._daTxnSortBy(\'' + key + '\')">' + label + arrow + '</th>';
+            }
+
+            function renderSummary(res) {
+                const rows = applySort(res.rows, _sortKey, _sortDir);
+                // Keyboard Up/Down navigates this exact on-screen order.
+                _lastRenderedTickers = rows.map(function (r) { return r.ticker; });
+
+                if (!rows.length) {
+                    return renderTiles(res) + '<div class="da-empty">No transactions match these filters.</div>';
+                }
+
+                let html = renderTiles(res);
+                html += '<div class="da-table-wrap"><table class="da-table"><thead><tr>' +
+                    '<th></th>' +
+                    sortHeader('ticker', 'Ticker') +
+                    sortHeader('total', 'Transactions') +
+                    sortHeader('totalValue', 'Value (Buy / Sell)') +
+                    sortHeader('net', 'Net') +
+                    '</tr></thead><tbody>';
+
+                rows.forEach(function (r, i) {
+                    const netCls = r.netValue >= 0 ? 'pos' : 'neg';
+                    const netSign = r.netValue >= 0 ? '+' : '−';
+                    const safeTicker = r.ticker.replace(/'/g, "\\'");
+                    const rowCls = r.ticker === _selectedTicker ? ' da-row-selected' : '';
+                    html += '<tr data-ticker="' + escHtml(r.ticker) + '" class="da-summary-row' + rowCls + '">' +
+                        '<td class="da-rank">' + (i + 1) + '</td>' +
+                        '<td><span class="dt-ticker" onclick="window.setDealTickerFilter(\'' + safeTicker + '\')">' + escHtml(r.ticker) + '</span>' +
+                        '<span class="da-company">' + escHtml(r.company) + '</span></td>' +
+                        '<td class="da-count-line"><span class="da-count-buy">' + r.buyCount + ' buy</span> · <span class="da-count-sell">' + r.sellCount + ' sell</span></td>' +
+                        '<td><span class="da-val-cell" onclick="window._daOpenDetail(\'' + safeTicker + '\')" title="Click to see every transaction">' +
+                        '<span class="da-val-line buy">▲ ' + daFmtINR(r.buyValue) + '</span>' +
+                        '<span class="da-val-line sell">▼ ' + daFmtINR(r.sellValue) + '</span></span></td>' +
+                        '<td class="da-net ' + netCls + '">' + netSign + daFmtINR(Math.abs(r.netValue)) + '</td>' +
+                        '</tr>';
+                });
+                html += '</tbody></table></div>';
+                return html;
+            }
+
+            function renderPersonList(map, cls, label) {
+                const arr = Array.from(map.entries()).map(function (e) {
+                    return { name: e[0], count: e[1].count, value: e[1].value };
+                }).sort(function (a, b) { return b.value - a.value; }).slice(0, 6);
+                if (!arr.length) {
+                    return '<div class="da-persons-col"><div class="da-persons-hdr ' + cls + '">' + label + '</div>' +
+                        '<div style="font-size:9px;color:var(--text2);">None</div></div>';
+                }
+                return '<div class="da-persons-col"><div class="da-persons-hdr ' + cls + '">' + label + '</div>' +
+                    arr.map(function (p) {
+                        return '<div class="da-person-row"><span class="da-person-name" title="' + escHtml(p.name) + '">' + escHtml(p.name) + '</span>' +
+                            '<span class="da-person-val">' + daFmtINR(p.value) + ' (' + p.count + ')</span></div>';
+                    }).join('') +
+                    '</div>';
+            }
+
+            function renderDetail(r) {
+                let html = '<span class="da-back-btn" onclick="window._daBack()">← Back to overview</span>';
+                html += '<div class="da-detail-head"><span class="da-detail-ticker">' + escHtml(r.ticker) + '</span>' +
+                    '<span class="da-detail-company">' + escHtml(r.company) + '</span></div>';
+
+                html += '<div class="da-tiles">' +
+                    '<div class="da-tile"><div class="da-tile-lbl">Buy</div><div class="da-tile-val pos">' + daFmtINR(r.buyValue) + '</div>' +
+                    '<div class="da-tile-sub">' + r.buyCount + ' txns</div></div>' +
+                    '<div class="da-tile"><div class="da-tile-lbl">Sell</div><div class="da-tile-val neg">' + daFmtINR(r.sellValue) + '</div>' +
+                    '<div class="da-tile-sub">' + r.sellCount + ' txns</div></div>' +
+                    '<div class="da-tile"><div class="da-tile-lbl">Net</div><div class="da-tile-val ' + (r.netValue >= 0 ? 'pos' : 'neg') + '">' +
+                    (r.netValue >= 0 ? '+' : '−') + daFmtINR(Math.abs(r.netValue)) + '</div></div>' +
+                    '</div>';
+
+                html += '<div class="da-persons-grid">' +
+                    renderPersonList(r.buyers, 'buy', 'Top Buyers') +
+                    renderPersonList(r.sellers, 'sell', 'Top Sellers') +
+                    '</div>';
+
+                html += '<div class="da-table-wrap"><table class="da-table"><thead><tr>' +
+                    txnSortHeader('date', 'Date') +
+                    txnSortHeader('sub', 'Segment') +
+                    txnSortHeader('person', 'Person') +
+                    txnSortHeader('type', 'Type') +
+                    txnSortHeader('value', 'Value') +
+                    '</tr></thead><tbody>';
+                applyTxnSort(r.txns, _txnSortKey, _txnSortDir).forEach(function (t) {
+                    html += buildTxnRow(t);
+                });
+                html += '</tbody></table></div>';
+
+                if (r.excluded.length) {
+                    html += '<span class="da-excluded-toggle" onclick="window._daToggleExcluded()">' +
+                        (_showExcluded ? '▾' : '▸') + ' ' + r.excluded.length + ' same-day matched buy/sell pair' + (r.excluded.length === 1 ? '' : 's') +
+                        ' excluded as likely intraday (within 10% of each other)</span>';
+                    if (_showExcluded) {
+                        html += '<div class="da-table-wrap" style="opacity:0.7;"><table class="da-table"><tbody>';
+                        r.excluded.forEach(function (t) {
+                            html += buildTxnRow(t);
+                        });
+                        html += '</tbody></table></div>';
+                    }
+                }
+                return html;
+            }
+
+            /* Buy = green, sell = orange, the FULL row — not just the type
+               badge — so a transaction's direction reads at a glance down
+               the whole table, not just in one narrow column. */
+            function buildTxnRow(t) {
+                const rowCls = t.type === 'BUY' ? 'da-row-buy' : 'da-row-sell';
+                const typeCls = t.type === 'BUY' ? 'da-type-buy' : 'da-type-sell';
+                const personHtml = t.personLink
+                    ? '<a class="dt-person dt-link" href="' + escHtml(t.personLink) + '" target="_blank" rel="noopener">' + escHtml(t.person) + '</a>'
+                    : '<span class="dt-person">' + escHtml(t.person) + '</span>';
+                return '<tr class="' + rowCls + '"><td>' + daFmtDate(t.date) + '</td><td>' + escHtml(t.sub) + '</td>' +
+                    '<td>' + personHtml + '</td><td><span class="' + typeCls + '">' + t.type + '</span></td>' +
+                    '<td>' + daFmtINR(t.value) + '</td></tr>';
+            }
+
+            // applySort/buildTxnRow are declared after _daInternal's own
+            // object literal above (const declarations aren't hoisted with
+            // a value), so they're attached here instead — same test hook,
+            // never called by the UI.
+            Object.assign(window._daInternal, { applySort: applySort, buildTxnRow: buildTxnRow, applyTxnSort: applyTxnSort });
+
+            function isAnalysisTabActive() {
+                const p = document.getElementById('deal-analysis-pane');
+                return !!(p && p.classList.contains('active-sub-pane'));
+            }
+
+            function pollForData() {
+                if (_pollTimer) return;
+                let tries = 0;
+                _pollTimer = setInterval(function () {
+                    tries++;
+                    const stillOpen = isAnalysisTabActive();
+                    if (!stillOpen || window._dealData || tries > 30) {
+                        clearInterval(_pollTimer); _pollTimer = null;
+                        if (stillOpen) render();
+                    }
+                }, 400);
+            }
+
+            function render() {
+                const body = document.getElementById('da-body');
+                const subEl = document.getElementById('da-sub');
+                if (!body) return;
+
+                if (!window._dealData) {
+                    body.innerHTML = '<div class="da-empty">Loading deal data…</div>';
+                    if (typeof window._dealBlockInit === 'function') window._dealBlockInit();
+                    pollForData();
+                    return;
+                }
+                if (!_indexPopulated) populateIndexFilter();
+
+                const opts = currentOpts();
+                if (!opts.subs.length) {
+                    body.innerHTML = '<div class="da-empty">Pick at least one segment (Insider / Bulk / Block) above.</div>';
+                    if (subEl) subEl.textContent = '';
+                    return;
+                }
+
+                const res = daComputeAnalysis(opts);
+
+                if (subEl) {
+                    subEl.textContent = res.tickerCount.toLocaleString() + ' stocks · ' + res.totalTxns.toLocaleString() + ' transactions' +
+                        (res.excludedPairs ? ' · ' + res.excludedPairs.toLocaleString() + ' intraday pair' + (res.excludedPairs === 1 ? '' : 's') + ' excluded' : '');
+                }
+                const tabCountEl = document.getElementById('dsub-count-analysis');
+                if (tabCountEl) tabCountEl.textContent = res.tickerCount > 0 ? res.tickerCount.toLocaleString() : '';
+
+                if (_view === 'detail' && _detailTicker) {
+                    const r = res.rows.filter(function (x) { return x.ticker === _detailTicker; })[0];
+                    if (r) { body.innerHTML = renderDetail(r); return; }
+                    // Ticker fell out of the current filter set — fall back.
+                    _view = 'summary'; _detailTicker = null;
+                }
+                body.innerHTML = renderSummary(res);
+            }
+
+            window._daOpenDetail = function (ticker) {
+                _view = 'detail'; _detailTicker = ticker; _showExcluded = false;
+                _selectedTicker = ticker;
+                _txnSortKey = 'date'; _txnSortDir = 'desc';   // fresh sort per stock, not carried over
+                render();
+            };
+            window._daBack = function () {
+                _view = 'summary'; _detailTicker = null;
+                render();
+            };
+            window._daToggleExcluded = function () {
+                _showExcluded = !_showExcluded;
+                render();
+            };
+
+            /* ── reset this tab back to its opening state ──
+               Shared by two triggers: the ⟳ button (this tab only) and the
+               app-wide logo/Clear reset (which resets every filter in the
+               app, this one included — see the resetAllAppFilters wrapper
+               below). Only the filter INPUTS and this tab's own state are
+               touched; window._dealData itself is left alone; this is a
+               reset of what's SHOWN, not a re-fetch from the network. */
+            function resetAnalysisTab() {
+                document.querySelectorAll('#da-seg-group .da-seg').forEach(function (b) { b.classList.add('active'); });
+
+                const supermanBtn = document.getElementById('da-superman-btn');
+                if (supermanBtn) supermanBtn.classList.remove('active');
+                _supermanActive = false;
+
+                const idxSel = document.getElementById('da-index-filter');
+                if (idxSel) idxSel.value = 'all';
+
+                const fromEl = document.getElementById('da-date-from');
+                const toEl = document.getElementById('da-date-to');
+                if (fromEl) fromEl.value = '';
+                if (toEl) toEl.value = '';
+                document.querySelectorAll('#da-pills .da-pill').forEach(function (b) {
+                    b.classList.toggle('active', b.dataset.days === '0');
+                });
+
+                const searchEl = document.getElementById('da-search');
+                if (searchEl) searchEl.value = '';
+
+                _sortKey = 'total'; _sortDir = 'desc';
+                _txnSortKey = 'date'; _txnSortDir = 'desc';
+                _view = 'summary'; _detailTicker = null; _showExcluded = false;
+                _selectedTicker = null;
+
+                render();
+            }
+            window._daRefresh = resetAnalysisTab;
+            window._daSortBy = function (key) {
+                if (_sortKey === key) {
+                    _sortDir = _sortDir === 'asc' ? 'desc' : 'asc';
+                } else {
+                    _sortKey = key;
+                    _sortDir = SORT_DEFAULT_DIR[key] || 'desc';
+                }
+                render();
+            };
+            window._daTxnSortBy = function (key) {
+                if (_txnSortKey === key) {
+                    _txnSortDir = _txnSortDir === 'asc' ? 'desc' : 'asc';
+                } else {
+                    _txnSortKey = key;
+                    _txnSortDir = TXN_SORT_DEFAULT_DIR[key] || 'desc';
+                }
+                render();
+            };
+
+            /* ── row selection: rectangle highlight + arrow-key navigation ──
+               Selecting a stock (click or Up/Down) also narrows the company
+               cards to that one ticker, via the same setDealTickerFilter the
+               ticker badge itself already uses. */
+            function findSummaryRow(ticker) {
+                const body = document.getElementById('da-body');
+                if (!body) return null;
+                const rows = body.querySelectorAll('tr[data-ticker]');
+                for (let i = 0; i < rows.length; i++) {
+                    if (rows[i].dataset.ticker === ticker) return rows[i];
+                }
+                return null;
+            }
+            function applyRowHighlight() {
+                const body = document.getElementById('da-body');
+                if (!body) return;
+                body.querySelectorAll('tr[data-ticker]').forEach(function (tr) {
+                    tr.classList.toggle('da-row-selected', tr.dataset.ticker === _selectedTicker);
+                });
+            }
+            function selectRow(ticker, scrollIntoView) {
+                _selectedTicker = ticker;
+                if (typeof window.setDealTickerFilter === 'function') window.setDealTickerFilter(ticker);
+                applyRowHighlight();
+                if (scrollIntoView) {
+                    const el = findSummaryRow(ticker);
+                    if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+                }
+            }
+
+            /* ── wire into the Deal section's own tab switcher ──
+               Analysis is a fifth deal-sub-tab (Insider/Bulk/Block/SAST/
+               Analysis), so it shares the section's existing ⛶ fullscreen
+               toggle and toolbar for free — no separate open/close modal
+               concept needed. The base switchDealSub only knows about the
+               original four subs (it toggles exactly those four panes and
+               nothing else), so it is wrapped rather than replaced:
+               Insider/Bulk/Block/SAST switches still go through the real
+               implementation untouched; only the two transitions that
+               involve 'analysis' are handled here. Delegating INTO
+               analysis is safe either way, but delegating OUT of it can't
+               use the original directly — its own early-return compares
+               against ITS private _activeSub, which was never told we'd
+               left it for 'analysis', so if the target sub happens to
+               equal whatever it last remembered, it would silently no-op
+               and leave the analysis pane on screen. That transition is
+               therefore reproduced here explicitly instead. */
+            const _prevSwitchDealSub = window.switchDealSub;
+            let _onAnalysisTab = false;
+            window.switchDealSub = function (sub) {
+                if (sub === 'analysis') {
+                    if (_onAnalysisTab) return;
+                    _onAnalysisTab = true;
+                    document.querySelectorAll('.deal-sub-tab').forEach(function (btn) {
+                        btn.classList.toggle('active', btn.id === 'dsub-analysis');
+                    });
+                    ['insider', 'bulk', 'block', 'sast'].forEach(function (s) {
+                        const pane = document.getElementById('deal-' + s + '-pane');
+                        if (pane) pane.classList.remove('active-sub-pane');
+                    });
+                    const analysisPane = document.getElementById('deal-analysis-pane');
+                    if (analysisPane) analysisPane.classList.add('active-sub-pane');
+                    _view = 'summary'; _detailTicker = null;
+                    render();
+                    return;
+                }
+
+                const wasOnAnalysis = _onAnalysisTab;
+                _onAnalysisTab = false;
+                const analysisPane = document.getElementById('deal-analysis-pane');
+                if (analysisPane) analysisPane.classList.remove('active-sub-pane');
+
+                if (wasOnAnalysis) {
+                    document.querySelectorAll('.deal-sub-tab').forEach(function (btn) {
+                        btn.classList.toggle('active', btn.id === 'dsub-' + sub);
+                    });
+                    ['insider', 'bulk', 'block', 'sast'].forEach(function (s) {
+                        const pane = document.getElementById('deal-' + s + '-pane');
+                        if (pane) pane.classList.toggle('active-sub-pane', s === sub);
+                    });
+                    if (typeof window.renderDealSub === 'function') window.renderDealSub(sub);
+                    return;
+                }
+                if (typeof _prevSwitchDealSub === 'function') _prevSwitchDealSub(sub);
+            };
+
+            /* ── wire filter controls (elements above already exist in the
+               DOM by the time this script tag runs) ── */
+            const segGroup = document.getElementById('da-seg-group');
+            if (segGroup) {
+                segGroup.addEventListener('click', function (ev) {
+                    const btn = ev.target.closest('.da-seg');
+                    if (!btn) return;
+                    const activeCount = segGroup.querySelectorAll('.da-seg.active').length;
+                    // Never let all three switch off — nothing left to show.
+                    if (btn.classList.contains('active') && activeCount === 1) return;
+                    btn.classList.toggle('active');
+                    render();
+                });
+            }
+            const supermanBtn = document.getElementById('da-superman-btn');
+            if (supermanBtn) {
+                supermanBtn.addEventListener('click', function () {
+                    _supermanActive = !_supermanActive;
+                    supermanBtn.classList.toggle('active', _supermanActive);
+                    render();
+                });
+            }
+
+            const idxSel = document.getElementById('da-index-filter');
+            if (idxSel) idxSel.addEventListener('change', render);
+
+            const fromEl = document.getElementById('da-date-from');
+            const toEl = document.getElementById('da-date-to');
+            [fromEl, toEl].forEach(function (el) {
+                if (!el) return;
+                el.addEventListener('change', function () {
+                    const pillsEl = document.getElementById('da-pills');
+                    if (pillsEl) pillsEl.querySelectorAll('.da-pill').forEach(function (b) { b.classList.remove('active'); });
+                    render();
+                });
+            });
+
+            const pillsWrap = document.getElementById('da-pills');
+            if (pillsWrap) {
+                pillsWrap.addEventListener('click', function (ev) {
+                    const btn = ev.target.closest('.da-pill');
+                    if (!btn) return;
+                    pillsWrap.querySelectorAll('.da-pill').forEach(function (b) { b.classList.remove('active'); });
+                    btn.classList.add('active');
+                    const days = parseInt(btn.dataset.days, 10);
+                    const toI = document.getElementById('da-date-to');
+                    const fromI = document.getElementById('da-date-from');
+                    if (days > 0) {
+                        const to = new Date(); const from = new Date(); from.setDate(from.getDate() - days);
+                        if (toI) toI.value = to.toISOString().slice(0, 10);
+                        if (fromI) fromI.value = from.toISOString().slice(0, 10);
+                    } else {
+                        if (toI) toI.value = '';
+                        if (fromI) fromI.value = '';
+                    }
+                    render();
+                });
+            }
+
+            const searchEl = document.getElementById('da-search');
+            if (searchEl) searchEl.addEventListener('input', render);
+
+            /* Delegated on #da-body itself (not the table, which gets
+               replaced wholesale on every render): survives re-renders
+               without needing to be re-attached. */
+            const daBodyEl = document.getElementById('da-body');
+            if (daBodyEl) {
+                daBodyEl.addEventListener('click', function (ev) {
+                    const tr = ev.target.closest('tr[data-ticker]');
+                    if (!tr) return;
+                    selectRow(tr.dataset.ticker, false);
+                });
+            }
+
+            document.addEventListener('keydown', function (ev) {
+                if (ev.key !== 'ArrowDown' && ev.key !== 'ArrowUp') return;
+                if (!isAnalysisTabActive() || _view !== 'summary') return;
+                if (!_lastRenderedTickers.length) return;
+                // Don't hijack arrow keys while the user is in a text field,
+                // a <select>, or a date picker within this same filter bar.
+                const tag = document.activeElement && document.activeElement.tagName;
+                if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+
+                ev.preventDefault();
+                let idx = _lastRenderedTickers.indexOf(_selectedTicker);
+                if (idx === -1) {
+                    idx = 0;
+                } else if (ev.key === 'ArrowDown') {
+                    idx = Math.min(idx + 1, _lastRenderedTickers.length - 1);
+                } else {
+                    idx = Math.max(idx - 1, 0);
+                }
+                selectRow(_lastRenderedTickers[idx], true);
+            });
+
+            /* ── join the app-wide reset (logo click / Clear) ──
+               resetAllAppFilters is already wrapped several times over by
+               other features (F/H, Top mode, deal search sync, superstar);
+               each wrapper calls the one before it, so adding one more
+               layer here just means this tab's own reset also runs
+               whenever any of the others do — regardless of which tab is
+               currently visible, so Analysis is back to its opening state
+               the next time it's opened too. */
+            const _prevResetAllAppFilters = window.resetAllAppFilters;
+            window.resetAllAppFilters = function () {
+                if (typeof _prevResetAllAppFilters === 'function') _prevResetAllAppFilters();
+                resetAnalysisTab();
+            };
+        })();
+    </script>
+
     <!-- ══════════════════════════════════════════════════════
      DEAL FILTER SYNC — post-IIFE patches (Issues 2 & 3)
      Wires toggleFHFilter and resetAllAppFilters so the
@@ -22909,11 +24378,37 @@
                 overflow: hidden;
             }
 
+            /* Count above name — five tabs (Insider/Bulk/Block/SAST/
+               Analysis) is tight on a phone width; a badge trailing the
+               label pushes the label off-center and truncates it first.
+               Stacked, the label gets the tab's full width and the count
+               reads as a headline number above it. `order` reverses the
+               visual stack without touching DOM order — the count span is
+               still label-then-count in the markup, matching desktop. */
             .deal-sub-tab {
                 flex: 1 !important;
-                padding: 7px 4px !important;
-                font-size: 9px !important;
+                display: flex !important;
+                flex-direction: column !important;
+                align-items: center !important;
+                justify-content: center !important;
+                gap: 1px !important;
+                padding: 5px 2px !important;
+                font-size: 8px !important;
+                line-height: 1.25 !important;
                 white-space: nowrap !important;
+            }
+
+            .dsub-label {
+                order: 2;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-width: 100%;
+            }
+
+            .dsub-count {
+                order: 1;
+                margin-left: 0 !important;
+                font-size: 9px !important;
             }
 
             .deal-table tbody td,
