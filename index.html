@@ -6663,11 +6663,22 @@
                                 <input type="date" class="da-date" id="da-date-to" title="To date">
                             </div>
                             <input class="da-search" id="da-search" placeholder="Search ticker…">
+                            <!-- Phone-only: the card layout at that width has
+                                 no column headers to tap, so sorting lives
+                                 here instead. Same state as the headers. -->
+                            <span class="da-sort-mobile-wrap">
+                                <select class="da-select da-sort-mobile" id="da-sort-mobile" title="Sort the board"></select>
+                                <span class="da-sort-dir" id="da-sort-dir" title="Reverse the sort">▼</span>
+                            </span>
                             <span class="da-refresh" id="da-refresh"
                                 title="Reset this tab's filters (segments, index, dates, search, Superman) and refresh"
                                 onclick="window._daRefresh()">⟳</span>
                         </div>
                         <span class="da-sub" id="da-sub"></span>
+                        <!-- Grade legend + band filter. A sibling of the
+                             scrolling body, not inside it, so it stays put
+                             while a long board scrolls past. -->
+                        <div class="da-grade-strip" id="da-grade-strip"></div>
                         <div class="da-body" id="da-body">
                             <div class="da-empty">Loading…</div>
                         </div>
@@ -18848,6 +18859,10 @@
 
         .da-table-wrap {
             overflow-x: auto;
+            /* Momentum scrolling on iOS, and a horizontal swipe inside the
+               table must not bubble out and drag the page/tab behind it. */
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior-x: contain;
         }
 
         .da-table {
@@ -18943,12 +18958,6 @@
             font-weight: 700;
         }
 
-        .da-rank {
-            color: var(--text2);
-            font-size: 9px;
-            width: 26px;
-        }
-
         .da-company {
             display: block;
             font-size: 8.5px;
@@ -19017,6 +19026,261 @@
 
         .da-net.neg {
             color: var(--pop-red);
+        }
+
+        /* ── quarterly-result scale ──
+           The ticker badge is tinted by the stock's QUARTERLY RESULT, and
+           deliberately reuses the very --best/good/mod/weak/vweak tokens
+           the company cards are painted with, rather than picking fresh
+           hues: a stock that reads green on its card has to read green
+           here, and sharing the variables is what guarantees that even if
+           the palette is retuned later.
+
+           A left border carries the same verdict as a second, non-colour
+           cue (and matches how the Tech Screener already marks its
+           tickers), so the scale survives colour-blind viewing; the band is
+           also named in the badge's tooltip and in the strip above the
+           board, which doubles as this scale's legend. */
+        .da-r-best {
+            color: var(--best-txt);
+        }
+
+        .da-r-good {
+            color: var(--good-txt);
+        }
+
+        .da-r-moderate {
+            color: var(--mod-txt);
+        }
+
+        .da-r-weak {
+            color: var(--weak-txt);
+        }
+
+        .da-r-veryweak {
+            color: var(--vweak-txt);
+        }
+
+        .da-r-unrated {
+            color: var(--text2);
+        }
+
+        /* Three classes beats the `.deal-table .dt-ticker` base rule's two,
+           so these win without !important. */
+        .da-table .dt-ticker.da-r-best {
+            color: var(--best-txt);
+            background: var(--best-bg);
+            border-left: 3px solid var(--best-txt);
+        }
+
+        .da-table .dt-ticker.da-r-good {
+            color: var(--good-txt);
+            background: var(--good-bg);
+            border-left: 3px solid var(--good-txt);
+        }
+
+        .da-table .dt-ticker.da-r-moderate {
+            color: var(--mod-txt);
+            background: var(--mod-bg);
+            border-left: 3px solid var(--mod-txt);
+        }
+
+        .da-table .dt-ticker.da-r-weak {
+            color: var(--weak-txt);
+            background: var(--weak-bg);
+            border-left: 3px solid var(--weak-txt);
+        }
+
+        .da-table .dt-ticker.da-r-veryweak {
+            color: var(--vweak-txt);
+            background: var(--vweak-bg);
+            border-left: 3px solid var(--vweak-txt);
+        }
+
+        /* No fundamental row for this ticker — muted and dashed, so "we do
+           not know" never passes for a verdict. */
+        .da-table .dt-ticker.da-r-unrated {
+            color: var(--text2);
+            background: rgba(255, 255, 255, 0.04);
+            border-left: 3px dashed rgba(255, 255, 255, 0.18);
+        }
+
+        .da-stock-top {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        /* Small inline flags on the stock cell — kept as text glyphs plus a
+           number so they stay legible at any font size and carry their
+           meaning in the tooltip. */
+        .da-flag {
+            font-size: 8.5px;
+            font-weight: 800;
+            padding: 1px 4px;
+            border-radius: 999px;
+            white-space: nowrap;
+            cursor: help;
+        }
+
+        .da-flag.rep {
+            color: #38bdf8;
+            background: rgba(56, 189, 248, 0.14);
+        }
+
+        .da-flag.turn {
+            color: #facc15;
+            background: rgba(250, 204, 21, 0.14);
+            margin-left: 3px;
+        }
+
+        /* Trend (momentum) — recent half vs older half of the window */
+        .da-mom {
+            font-size: 9.5px;
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+
+        .da-mom.up {
+            color: var(--pop-green);
+        }
+
+        .da-mom.down {
+            color: var(--pop-orange);
+        }
+
+        .da-mom.flat {
+            color: var(--text2);
+        }
+
+        .da-mom-none {
+            color: var(--text2);
+            opacity: 0.5;
+        }
+
+        .da-sm-share {
+            font-size: 9.5px;
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .da-sm-share.hi {
+            color: #c084fc;
+        }
+
+        .da-sm-share.mid {
+            color: #a5b4fc;
+        }
+
+        .da-sm-share.lo {
+            color: var(--text2);
+            opacity: 0.6;
+        }
+
+        /* The phone-only sort control. Hidden until the card layout takes
+           over, because until then the column headers do this job. */
+        .da-sort-mobile-wrap {
+            display: none;
+            align-items: center;
+            gap: 3px;
+        }
+
+        .da-sort-dir {
+            cursor: pointer;
+            font-size: 9px;
+            padding: 3px 5px;
+            border-radius: 5px;
+            border: 1px solid var(--border);
+            color: var(--text2);
+            user-select: none;
+        }
+
+        .da-sort-dir:hover {
+            color: #fff;
+        }
+
+        /* Legend + band filter in one strip */
+        .da-grade-strip {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 5px;
+            padding: 7px 14px;
+            border-bottom: 1px solid var(--border);
+            flex: 0 0 auto;
+        }
+
+        .da-grade-strip-lbl {
+            font-size: 8px;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text2);
+            margin-right: 2px;
+        }
+
+        .da-grade-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 9px;
+            font-weight: 700;
+            padding: 3px 8px;
+            border-radius: 999px;
+            cursor: pointer;
+            border: 1px solid currentColor;
+            background: rgba(255, 255, 255, 0.03);
+            opacity: 0.75;
+            transition: opacity 0.15s, background 0.15s;
+        }
+
+        .da-grade-chip:hover {
+            opacity: 1;
+        }
+
+        .da-grade-chip.active {
+            opacity: 1;
+            background: rgba(255, 255, 255, 0.12);
+        }
+
+        .da-grade-chip b {
+            font-variant-numeric: tabular-nums;
+            opacity: 0.85;
+        }
+
+        .da-grade-clear {
+            font-size: 9px;
+            color: var(--text2);
+            cursor: pointer;
+            text-decoration: underline;
+            margin-left: 2px;
+        }
+
+        .da-grade-clear:hover {
+            color: #fff;
+        }
+
+        .da-stock-cell {
+            min-width: 96px;
+        }
+
+        .da-count-sep {
+            color: var(--text2);
+            opacity: 0.55;
+            margin: 0 2px;
+        }
+
+        .da-people,
+        .da-count-line {
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+
+        .da-last {
+            color: var(--text2);
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
         }
 
         .da-empty {
@@ -19185,37 +19449,252 @@
             .da-detail-head {
                 flex-wrap: wrap;
             }
+
+            .da-grade-strip {
+                gap: 4px;
+                padding: 6px 8px;
+            }
+
+            .da-grade-chip {
+                font-size: 8.5px;
+                padding: 3px 6px;
+            }
+
         }
 
-        /* Phones narrower than a small tablet: the company sub-label under
-           the ticker is the first thing worth dropping — the ticker badge
-           alone (plus the drill-down, which still has the full name) is
-           enough to identify the row, and it buys the Value/Net columns
-           real room instead of eliding on every stock. */
-        @media (max-width: 600px) {
-            .da-company {
+        /* ── responsive ladder ──
+           Four tiers rather than one cutoff, because the board's columns do
+           not all lose their value at the same width. Each tier drops the
+           least informative surviving column, so what remains is always the
+           most useful thing that still fits:
+
+             > 1100  everything
+             <= 1100  Trend and Superman-share go (both derived, both one
+                      tap away in the drill-down)
+             <=  820  People and Last go — an iPad in portrait sits here
+             <=  600  the table stops being a table (see below)
+
+           The 1400px block above is the Deal section's own shared mobile
+           cutoff and stays as it was, so "mobile" still means the same
+           width here as it does for Insider/Bulk/Block/SAST next door. */
+        @media (max-width: 1100px) {
+            .da-col-xl {
+                display: none;
+            }
+        }
+
+        @media (max-width: 820px) {
+            .da-col-wide {
                 display: none;
             }
 
+            .da-company {
+                max-width: 72px;
+            }
+        }
+
+        /* Tablets: the filter bar is the part that suffers first, since it
+           holds three segment toggles, seven date pills, an index select,
+           two date inputs and a search box. Letting the pill strip scroll
+           on its own keeps it to one line instead of pushing the board a
+           row further down the screen on every rotation. */
+        @media (max-width: 1024px) {
             .da-filters {
-                gap: 3px;
+                flex-wrap: wrap;
+                row-gap: 5px;
+            }
+
+            .da-pills {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+                flex-wrap: nowrap;
+                max-width: 100%;
+            }
+
+            .da-pills::-webkit-scrollbar {
+                display: none;
+            }
+
+            .da-pill {
+                flex: 0 0 auto;
+            }
+
+            .da-date-range {
+                flex-wrap: nowrap;
+            }
+
+            /* Comfortable touch targets — a 4px-padded chip is a coin toss
+               with a fingertip. */
+            .da-seg,
+            .da-superman-btn,
+            .da-pill,
+            .da-refresh {
+                min-height: 28px;
+            }
+
+            .da-table th.da-sortable {
+                /* Headers are the sort control on a tablet; give them a real
+                   tap area rather than the desktop's 5px. */
+                padding-top: 9px;
+                padding-bottom: 9px;
+            }
+        }
+
+        /* ── phones: the board stops being a table ──
+           Eleven columns cannot be squeezed into 390px, and a horizontally
+           scrolled table hides exactly the columns you were comparing. So
+           below 600px each stock becomes a self-contained card: every field
+           is present with its own label, nothing is cut, and the whole board
+           scrolls in one direction only.
+
+           Column headers disappear with the table, which would take sorting
+           with them — hence the select + direction toggle that appear in the
+           filter bar at this width and drive the same sort state. */
+        @media (max-width: 600px) {
+            .da-sort-mobile-wrap {
+                display: inline-flex;
+            }
+
+            .da-sort-mobile {
+                max-width: 118px;
+            }
+
+            .da-filters {
+                gap: 4px;
                 padding: 5px 6px;
             }
 
             .da-search {
-                width: 72px;
+                flex: 1 1 90px;
+                min-width: 72px;
+                width: auto;
+            }
+
+            .da-board thead {
+                display: none;
+            }
+
+            .da-board,
+            .da-board tbody,
+            .da-board tr,
+            .da-board td {
+                display: block;
+                width: auto;
+            }
+
+            .da-board tr.da-summary-row {
+                border: 1px solid var(--border);
+                border-radius: 9px;
+                background: rgba(0, 0, 0, 0.22);
+                padding: 8px 10px 7px;
+                margin-bottom: 6px;
+            }
+
+            .da-board tr:hover td,
+            .da-board tr.da-row-selected td {
+                /* The card itself carries the selection, not each field —
+                   per-cell backgrounds would stripe the card. */
+                background: transparent;
+            }
+
+            .da-board tr.da-row-selected {
+                background: rgba(34, 211, 238, 0.09);
+            }
+
+            .da-board td {
+                border: none;
+                padding: 2px 0;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+                font-size: 10px;
+            }
+
+            .da-board td::before {
+                content: attr(data-label);
+                font-size: 8px;
+                font-weight: 800;
+                letter-spacing: 0.05em;
+                text-transform: uppercase;
+                color: var(--text2);
+                flex: 0 0 auto;
+            }
+
+            /* The stock cell is the card's heading — no label, no split row. */
+            .da-board td.da-stock-cell::before {
+                content: none;
+            }
+
+            .da-board td.da-stock-cell {
+                display: block;
+                margin-bottom: 4px;
+            }
+
+            /* Both are worth their one line on a card, where the reason
+               they were dropped — horizontal room — no longer applies. */
+            .da-board td.da-col-wide,
+            .da-board td.da-col-xl {
+                display: flex;
+            }
+
+            .da-company {
+                display: block;
+                max-width: 100%;
+                font-size: 9px;
+            }
+
+            .da-val-cell {
+                display: flex;
+                gap: 10px;
+                margin: 0;
+                padding: 2px 4px;
             }
 
             .da-val-line,
             .da-count-line,
             .da-net {
-                font-size: 9px;
+                font-size: 10px;
             }
 
             .da-tiles {
                 grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
             }
+
+            /* The band NAME is what the chip is for; on a phone the count
+               alone would be ambiguous, so the padding goes instead. The
+               strip itself scrolls sideways rather than wrapping to three
+               lines above a board that needs the room more. */
+            .da-grade-strip {
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+            }
+
+            .da-grade-strip::-webkit-scrollbar {
+                display: none;
+            }
+
+            .da-grade-strip-lbl {
+                display: none;
+            }
+
+            .da-grade-chip {
+                font-size: 8px;
+                padding: 3px 6px;
+                gap: 3px;
+                flex: 0 0 auto;
+            }
+
+            /* The drill-down stays a real table — five columns fit, and the
+               transaction list is read down a column, not across a row. */
+            .da-table:not(.da-board) {
+                min-width: 340px;
+            }
         }
+
     </style>
 
     <script>
@@ -19342,7 +19821,11 @@
                 });
                 return {
                     kept: rows.filter(function (r) { return !skipped.has(r); }),
-                    skipped: rows.filter(function (r) { return skipped.has(r); })
+                    skipped: rows.filter(function (r) { return skipped.has(r); }),
+                    // The raw membership set as well, so a caller that has
+                    // already paired a superset of these rows can reuse the
+                    // verdict instead of re-pairing (see normalizedRows).
+                    skippedSet: skipped
                 };
             }
 
@@ -19379,17 +19862,155 @@
                     .trim();
             }
             const SUPERMAN_NAMES_NORM = SUPERMAN_NAMES.map(normalizeSupermanText).filter(Boolean);
+            /* A miss costs ~150 substring scans, and the SAME institution
+               appears on hundreds of prints, so the answer is memoised per
+               raw Person string. Deal filings are a small vocabulary of
+               names repeated endlessly — this collapses the whole check to
+               one Map lookup for every occurrence after the first. */
+            const _supermanCache = new Map();
             function matchesSuperman(person) {
-                const p = normalizeSupermanText(person);
-                if (!p) return false;
-                return SUPERMAN_NAMES_NORM.some(function (n) { return p.indexOf(n) !== -1; });
+                const key = String(person == null ? '' : person);
+                const hit = _supermanCache.get(key);
+                if (hit !== undefined) return hit;
+                const p = normalizeSupermanText(key);
+                const res = p ? SUPERMAN_NAMES_NORM.some(function (n) { return p.indexOf(n) !== -1; }) : false;
+                _supermanCache.set(key, res);
+                return res;
+            }
+
+            /* ── quarterly-result grade ──
+               NOT this dashboard's own invention: it is the very same
+               Best/Good/Moderate/Weak/Very Weak the company cards already
+               print, read straight off allData's _score (calcScore's YoY
+               growth classification). Reused rather than recomputed so the
+               two can never disagree — if a stock is "Good" on its card it
+               is "Good" here, always.
+
+               The score→band mapping is written out locally instead of
+               reaching for the global SI object so this module stays
+               self-contained (and testable in isolation); the keys and
+               labels are deliberately identical to SI's. */
+            const DA_RESULT_BANDS = [
+                { score: 4, key: 'best', label: 'Best' },
+                { score: 3, key: 'good', label: 'Good' },
+                { score: 2, key: 'moderate', label: 'Moderate' },
+                { score: 1, key: 'weak', label: 'Weak' },
+                { score: 0, key: 'veryweak', label: 'Very Weak' }
+            ];
+            // Stocks with no fundamental row at all (unlisted, newly listed,
+            // or simply absent from the results feed) get their own band —
+            // silently colouring them "Very Weak" would invent a verdict the
+            // data never gave.
+            const DA_RESULT_UNRATED = { score: null, key: 'unrated', label: 'No result' };
+            function daResultBand(score) {
+                for (let i = 0; i < DA_RESULT_BANDS.length; i++) {
+                    if (DA_RESULT_BANDS[i].score === score) return DA_RESULT_BANDS[i];
+                }
+                return DA_RESULT_UNRATED;
+            }
+
+            /* allData is a top-level `let` in an earlier script (and is
+               swapped wholesale for a filtered copy in peer mode), so it is
+               reached by name rather than off window, and the cache is keyed
+               on the array IDENTITY — a reload or a peer-mode swap produces
+               a different array and invalidates this for free. */
+            const _resultScoreCache = { src: null, map: null };
+            function daAllData() {
+                if (typeof allData !== 'undefined' && Array.isArray(allData)) return allData;
+                return (window.allData && Array.isArray(window.allData)) ? window.allData : [];
+            }
+            function daResultScore(ticker) {
+                const data = daAllData();
+                if (_resultScoreCache.src !== data) {
+                    const m = new Map();
+                    data.forEach(function (r) {
+                        const t = String(r._ticker || '').trim().toUpperCase();
+                        if (t && !m.has(t) && typeof r._score === 'number') m.set(t, r._score);
+                    });
+                    _resultScoreCache.src = data;
+                    _resultScoreCache.map = m;
+                }
+                const v = _resultScoreCache.map.get(ticker);
+                return v === undefined ? null : v;
+            }
+
+            /* ── normalization cache ──
+               Normalizing the raw feed means parsing a date and two floats
+               for every one of ~40k deal rows — by far the most expensive
+               thing here, and it was being redone from scratch on every
+               keystroke in the search box and every filter click. The Deal
+               engine REPLACES window._dealData[sub] wholesale on a refetch
+               rather than mutating it in place, so the array's identity is a
+               sound cache key: new data automatically misses.
+
+               The intraday pairing is cached alongside it. That is safe
+               because pairing groups by (segment, ticker, calendar day) and
+               every filter except Superman keeps such a group whole:
+               segment toggles select entire segments, index and ticker
+               filters select entire tickers, and the date inputs are day
+               boundaries (00:00:00 → 23:59:59) against dates parsed at
+               midnight, so a day is either wholly in range or wholly out.
+               Superman is the one filter that can cut a group in half — it
+               matches on Person, so it can remove one leg of a pair and
+               leave the other — and that path therefore still re-pairs the
+               filtered set from scratch. */
+            const _normCache = new Map();
+            function normalizedRows(sub) {
+                const raw = (window._dealData && window._dealData[sub]) || null;
+                if (!raw) return { rows: [], skip: null };
+                const hit = _normCache.get(sub);
+                if (hit && hit.src === raw) return hit;
+                const rows = daNormalizeRows(sub, raw);
+                // Superman membership is decided once, at normalization
+                // time, because the concentration column needs it for EVERY
+                // row regardless of whether the Superman filter is on.
+                rows.forEach(function (r) { r.superman = matchesSuperman(r.person); });
+                const entry = { src: raw, rows: rows, skip: daExcludeIntraday(rows, 0.10).skippedSet };
+                _normCache.set(sub, entry);
+                return entry;
+            }
+
+            /* ── grading ──
+               Five bands over the flow ratio, so a stock's ticker colour
+               states which way the money leaned without the reader having
+               to compare two rupee figures in their head.
+
+               Bands are symmetric around zero (±0.2 = balanced, ±0.6 =
+               decisive) so "Best" and "Very Weak" are mirror images — a
+               reader can trust that Weak means the same distance from
+               neutral that Good does, in the opposite direction.
+
+               A caveat worth knowing, and the reason the participant and
+               transaction counts sit right next to the grade: a stock with
+               ONE buy and no sells scores a perfect +1 and grades "Best" on
+               a single print. The grade measures direction, never
+               conviction — read it alongside how many distinct buyers and
+               how many transactions produced it. */
+            const DA_GRADES = [
+                { key: 'best', label: 'Best', min: 0.6 },
+                { key: 'good', label: 'Good', min: 0.2 },
+                { key: 'moderate', label: 'Moderate', min: -0.2 },
+                { key: 'weak', label: 'Weak', min: -0.6 },
+                { key: 'veryweak', label: 'Very Weak', min: -Infinity }
+            ];
+            function daGrade(flowRatio) {
+                const r = Number(flowRatio) || 0;
+                for (let i = 0; i < DA_GRADES.length; i++) {
+                    // Upper band wins ties: exactly +0.6 is "Best", not "Good".
+                    if (r >= DA_GRADES[i].min) return DA_GRADES[i];
+                }
+                return DA_GRADES[DA_GRADES.length - 1];
             }
 
             function daComputeAnalysis(opts) {
                 let rows = [];
+                let preSkip = null;
+                if (!opts.supermanOnly) preSkip = new Set();
                 (opts.subs || []).forEach(function (sub) {
-                    const raw = window._dealData && window._dealData[sub];
-                    if (raw) rows = rows.concat(daNormalizeRows(sub, raw));
+                    const entry = normalizedRows(sub);
+                    if (!entry.rows.length) return;
+                    rows = rows.concat(entry.rows);
+                    if (preSkip && entry.skip) entry.skip.forEach(function (r) { preSkip.add(r); });
                 });
                 if (opts.indexSet) rows = rows.filter(function (r) { return opts.indexSet.has(r.ticker); });
                 if (opts.from) rows = rows.filter(function (r) { return r.date >= opts.from; });
@@ -19398,10 +20019,34 @@
                     const q = opts.tickerQuery.trim().toUpperCase();
                     if (q) rows = rows.filter(function (r) { return r.ticker.indexOf(q) !== -1; });
                 }
-                if (opts.supermanOnly) rows = rows.filter(function (r) { return matchesSuperman(r.person); });
+                if (opts.supermanOnly) rows = rows.filter(function (r) { return r.superman; });
 
-                const paired = daExcludeIntraday(rows, 0.10);
-                const kept = paired.kept, skipped = paired.skipped;
+                let kept, skipped;
+                if (preSkip) {
+                    // Reuse the pairing decided once per segment - see the
+                    // group-integrity argument on normalizedRows().
+                    kept = []; skipped = [];
+                    rows.forEach(function (r) { (preSkip.has(r) ? skipped : kept).push(r); });
+                } else {
+                    const paired = daExcludeIntraday(rows, 0.10);
+                    kept = paired.kept; skipped = paired.skipped;
+                }
+
+                /* -- momentum split point --
+                   One split instant shared by every stock, taken from the
+                   midpoint of the date span actually present after
+                   filtering. A per-stock midpoint would measure each stock
+                   against its own private timeline, which cannot be sorted
+                   against another stock's - this way "recent half" means
+                   the same calendar half for the whole board, so the column
+                   ranks meaningfully. */
+                let minT = Infinity, maxT = -Infinity;
+                kept.forEach(function (r) {
+                    const t = r.date.getTime();
+                    if (t < minT) minT = t;
+                    if (t > maxT) maxT = t;
+                });
+                const splitT = (minT <= maxT) ? (minT + maxT) / 2 : 0;
 
                 const byTicker = new Map();
                 kept.forEach(function (r) {
@@ -19409,18 +20054,35 @@
                     if (!agg) {
                         agg = {
                             ticker: r.ticker, buyCount: 0, sellCount: 0, buyValue: 0, sellValue: 0,
-                            buyers: new Map(), sellers: new Map(), txns: [], subs: new Set()
+                            buyers: new Map(), sellers: new Map(), txns: [], subs: new Set(),
+                            buyerDates: new Map(), smBuyValue: 0, smSellValue: 0,
+                            rBuy: 0, rSell: 0, pBuy: 0, pSell: 0
                         };
                         byTicker.set(r.ticker, agg);
                     }
                     agg.subs.add(r.sub);
                     agg.txns.push(r);
-                    const personMap = r.type === 'BUY' ? agg.buyers : agg.sellers;
+                    const isBuy = r.type === 'BUY';
+                    const personMap = isBuy ? agg.buyers : agg.sellers;
                     const cur = personMap.get(r.person) || { count: 0, value: 0 };
                     cur.count++; cur.value += r.value;
                     personMap.set(r.person, cur);
-                    if (r.type === 'BUY') { agg.buyCount++; agg.buyValue += r.value; }
-                    else { agg.sellCount++; agg.sellValue += r.value; }
+                    if (isBuy) {
+                        agg.buyCount++; agg.buyValue += r.value;
+                        if (r.superman) agg.smBuyValue += r.value;
+                        /* Distinct DATES per buyer, not transactions: two
+                           prints on one day are one decision, two prints a
+                           month apart are two. */
+                        let ds = agg.buyerDates.get(r.person);
+                        if (!ds) { ds = new Set(); agg.buyerDates.set(r.person, ds); }
+                        ds.add(r.dateKey);
+                    } else {
+                        agg.sellCount++; agg.sellValue += r.value;
+                        if (r.superman) agg.smSellValue += r.value;
+                    }
+                    const recent = r.date.getTime() >= splitT;
+                    if (isBuy) { if (recent) agg.rBuy += r.value; else agg.pBuy += r.value; }
+                    else { if (recent) agg.rSell += r.value; else agg.pSell += r.value; }
                 });
 
                 const skippedByTicker = new Map();
@@ -19431,16 +20093,77 @@
 
                 const rowsOut = [];
                 byTicker.forEach(function (agg) {
+                    const txns = agg.txns.slice().sort(function (a, b) { return b.date - a.date; });
+                    const totalValue = agg.buyValue + agg.sellValue;
+                    const netValue = agg.buyValue - agg.sellValue;
+
+                    let repeatBuyers = 0, topBuyerDates = 0;
+                    agg.buyerDates.forEach(function (ds) {
+                        if (ds.size > 1) repeatBuyers++;
+                        if (ds.size > topBuyerDates) topBuyerDates = ds.size;
+                    });
+
+                    /* Momentum needs BOTH halves to have traded - a stock
+                       that only printed in the recent half has no earlier
+                       behaviour to have changed from, and reporting that as
+                       a full swing would rank a debut above a real reversal. */
+                    const rTot = agg.rBuy + agg.rSell, pTot = agg.pBuy + agg.pSell;
+                    const recentRatio = rTot ? (agg.rBuy - agg.rSell) / rTot : null;
+                    const priorRatio = pTot ? (agg.pBuy - agg.pSell) / pTot : null;
+                    const momentum = (recentRatio !== null && priorRatio !== null) ? recentRatio - priorRatio : null;
+
+                    const score = daResultScore(agg.ticker);
+
                     rowsOut.push({
                         ticker: agg.ticker,
                         company: (window.tickerToName && window.tickerToName[agg.ticker]) || agg.ticker,
                         buyCount: agg.buyCount, sellCount: agg.sellCount,
                         totalCount: agg.buyCount + agg.sellCount,
                         buyValue: agg.buyValue, sellValue: agg.sellValue,
-                        totalValue: agg.buyValue + agg.sellValue,
-                        netValue: agg.buyValue - agg.sellValue,
+                        totalValue: totalValue,
+                        netValue: netValue,
+                        /* Flow ratio: -1 (everything sold) ... +1 (everything
+                           bought). Scale-free on purpose - it answers "which
+                           way is money leaning here", independent of whether
+                           the stock trades in lakhs or hundreds of crores, so
+                           a small-cap being quietly accumulated is not buried
+                           under a large-cap's single routine block. Absolute
+                           size still has its own column and its own sort. */
+                        flowRatio: totalValue ? netValue / totalValue : 0,
+                        // The company card's own quarterly-result verdict.
+                        resultScore: score,
+                        resultBand: daResultBand(score),
+                        /* How MANY distinct institutions/people, not just how
+                           many transactions. Five different buyers is a far
+                           broader signal than one buyer averaging in five
+                           times, and the transaction count alone cannot tell
+                           those apart. */
+                        buyerCount: agg.buyers.size,
+                        sellerCount: agg.sellers.size,
+                        /* Buyers who came back on a DIFFERENT day, and the
+                           deepest such streak on this stock. One fund buying
+                           three times across three weeks is accumulation;
+                           three funds buying once each is broad interest.
+                           The participant count alone cannot separate them. */
+                        repeatBuyers: repeatBuyers,
+                        topBuyerDates: topBuyerDates,
+                        // Change in direction between the older and newer
+                        // half of the window; null when one half is empty.
+                        momentum: momentum,
+                        recentRatio: recentRatio,
+                        priorRatio: priorRatio,
+                        /* How much of the buying was TRACKED money rather
+                           than anonymous flow. The same rupee figure means
+                           something different when 90% of it is LIC than
+                           when none of it is. */
+                        smBuyValue: agg.smBuyValue,
+                        smSellValue: agg.smSellValue,
+                        smBuyShare: agg.buyValue ? agg.smBuyValue / agg.buyValue : null,
+                        smShare: totalValue ? (agg.smBuyValue + agg.smSellValue) / totalValue : 0,
+                        // txns is date-descending, so [0] is the most recent.
+                        lastDate: txns.length ? txns[0].date : null,
                         buyers: agg.buyers, sellers: agg.sellers,
-                        txns: agg.txns.slice().sort(function (a, b) { return b.date - a.date; }),
+                        txns: txns,
                         excluded: (skippedByTicker.get(agg.ticker) || []).slice().sort(function (a, b) { return b.date - a.date; }),
                         subs: agg.subs
                     });
@@ -19455,8 +20178,24 @@
                     excludedPairs: skipped.length / 2,
                     totalBuyValue: totalBuyValue,
                     totalSellValue: totalSellValue,
-                    tickerCount: rowsOut.length
+                    tickerCount: rowsOut.length,
+                    splitT: splitT,
+                    spanFrom: minT === Infinity ? null : new Date(minT),
+                    spanTo: maxT === -Infinity ? null : new Date(maxT)
                 };
+            }
+
+            /* Drops every memo this module holds. Only the manual refresh
+               calls it: the caches are all keyed on source-array identity
+               and so self-invalidate on a refetch, but a user who presses
+               the tab's own refresh button is explicitly asking for a
+               rebuild, and silently handing back memoised numbers would
+               make that button look broken. */
+            function clearCaches() {
+                _normCache.clear();
+                _supermanCache.clear();
+                _resultScoreCache.src = null;
+                _resultScoreCache.map = null;
             }
 
             // Exposed purely so this logic can be exercised, against the real
@@ -19465,7 +20204,10 @@
                 daParseDate: daParseDate, daNormType: daNormType, daValueRupees: daValueRupees,
                 daNormalizeRows: daNormalizeRows, daExcludeIntraday: daExcludeIntraday,
                 daComputeAnalysis: daComputeAnalysis, matchesSuperman: matchesSuperman,
-                SUPERMAN_NAMES: SUPERMAN_NAMES
+                SUPERMAN_NAMES: SUPERMAN_NAMES, daGrade: daGrade, DA_GRADES: DA_GRADES,
+                daResultBand: daResultBand, daResultScore: daResultScore,
+                DA_RESULT_BANDS: DA_RESULT_BANDS, DA_RESULT_UNRATED: DA_RESULT_UNRATED,
+                normalizedRows: normalizedRows, clearCaches: clearCaches
             };
 
             /* ── formatting ── */
@@ -19475,24 +20217,76 @@
                 if (v >= 1e5) return '₹' + (v / 1e5).toFixed(2) + ' L';
                 return '₹' + v.toLocaleString('en-IN', { maximumFractionDigits: 0 });
             }
+            /* Every figure on this board is a RUPEE figure: Bulk/Block
+               come through as Quantity x Price, and Insider "Value" is
+               converted from its Cr./Lacs wording by daValueRupees before
+               it ever reaches here -- so nothing on screen is ever mixing
+               units. The abbreviated form is what the cell shows; the exact
+               rupee amount is the cell's tooltip, so the full number is
+               always one hover away without widening the column. */
+            function daFmtExactINR(rupees) {
+                const v = Math.round(Number(rupees) || 0);
+                return (v < 0 ? '-₹' : '₹') + Math.abs(v).toLocaleString('en-IN');
+            }
             function daFmtDate(d) {
                 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
                 return String(d.getDate()).padStart(2, '0') + '-' + MONTHS[d.getMonth()] + '-' + String(d.getFullYear()).slice(-2);
+            }
+            /* Age, not date, for the "Last" column: scanning a list for what
+               is FRESH is the actual research question, and "3d" answers it
+               at a glance where "19-Aug-26" makes you do the subtraction on
+               every row. The exact date is still the cell's tooltip. */
+            function daFmtAge(d) {
+                const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+                if (days <= 0) return 'today';
+                if (days === 1) return '1d';
+                if (days < 30) return days + 'd';
+                if (days < 365) return Math.floor(days / 30) + 'mo';
+                const yrs = (days / 365).toFixed(1).replace(/\.0$/, '');
+                return yrs + 'y';
             }
 
             /* Every column header is independently clickable — a plain value
                getter per sort key, direction handled once in applySort()
                rather than duplicated as a pair of ascending/descending
                comparators per column. */
+            /* "Missing" is a real state for three of these columns and it
+               is not zero: an unrated stock has no quarterly result, a
+               single-half stock has no momentum, and a stock that only sold
+               has no buy-side Superman share. Each gets a sentinel BELOW
+               every value its column can actually take (result is 0..4,
+               momentum is -2..+2, share is 0..1), so blanks land together
+               at one end instead of being scattered through the middle by
+               a stand-in zero. */
             const SORT_GETTERS = {
                 ticker: function (r) { return r.ticker; },
+                result: function (r) { return r.resultScore === null ? -1 : r.resultScore; },
+                grade: function (r) { return r.flowRatio; },
+                momentum: function (r) { return r.momentum === null ? -3 : r.momentum; },
                 total: function (r) { return r.totalCount; },
+                participants: function (r) { return r.buyerCount + r.sellerCount; },
+                repeat: function (r) { return r.repeatBuyers; },
+                superman: function (r) { return r.smBuyShare === null ? -1 : r.smBuyShare; },
                 totalValue: function (r) { return r.totalValue; },
-                net: function (r) { return r.netValue; }
+                net: function (r) { return r.netValue; },
+                last: function (r) { return r.lastDate ? r.lastDate.getTime() : 0; }
             };
             // Numeric columns default to highest-first on first click;
             // Ticker (alphabetic) defaults to A-Z.
-            const SORT_DEFAULT_DIR = { ticker: 'asc', total: 'desc', totalValue: 'desc', net: 'desc' };
+            const SORT_DEFAULT_DIR = {
+                ticker: 'asc', result: 'desc', grade: 'desc', momentum: 'desc',
+                total: 'desc', participants: 'desc', repeat: 'desc', superman: 'desc',
+                totalValue: 'desc', net: 'desc', last: 'desc'
+            };
+            // Label for each key, used by the phone-sized sort control (the
+            // card layout has no column headers to click).
+            const SORT_LABELS = [
+                ['total', 'Deals'], ['totalValue', 'Value'], ['net', 'Net flow (₹)'],
+                ['result', 'Quarterly result'],
+                ['momentum', 'Trend'], ['participants', 'Participants'],
+                ['repeat', 'Repeat buyers'], ['superman', 'Superman share'],
+                ['last', 'Most recent'], ['ticker', 'Ticker A-Z']
+            ];
 
             function applySort(rows, key, dir) {
                 const getter = SORT_GETTERS[key] || SORT_GETTERS.total;
@@ -19536,6 +20330,7 @@
             let _txnSortKey = 'date';
             let _txnSortDir = 'desc';
             let _supermanActive = false;
+            let _resultFilter = null;  // null = all bands, else a DA_RESULT_BANDS key ('unrated' included)
             let _indexPopulated = false;
             let _pollTimer = null;
             let _selectedTicker = null;
@@ -19581,27 +20376,76 @@
                 _indexPopulated = true;
             }
 
-            function renderTiles(res) {
-                const excl = res.excludedPairs > 0
-                    ? '<div class="da-tile"><div class="da-tile-lbl">Excluded (intraday)</div>' +
-                    '<div class="da-tile-val">' + res.excludedPairs.toLocaleString() + ' pair' + (res.excludedPairs === 1 ? '' : 's') + '</div></div>'
-                    : '';
-                const netVal = res.totalBuyValue - res.totalSellValue;
-                return '<div class="da-tiles">' +
-                    '<div class="da-tile"><div class="da-tile-lbl">Stocks</div><div class="da-tile-val">' + res.tickerCount.toLocaleString() + '</div></div>' +
-                    '<div class="da-tile"><div class="da-tile-lbl">Transactions</div><div class="da-tile-val">' + res.totalTxns.toLocaleString() + '</div></div>' +
-                    '<div class="da-tile"><div class="da-tile-lbl">Buy Value</div><div class="da-tile-val pos">' + daFmtINR(res.totalBuyValue) + '</div></div>' +
-                    '<div class="da-tile"><div class="da-tile-lbl">Sell Value</div><div class="da-tile-val neg">' + daFmtINR(res.totalSellValue) + '</div></div>' +
-                    '<div class="da-tile"><div class="da-tile-lbl">Net Flow</div><div class="da-tile-val ' + (netVal >= 0 ? 'pos' : 'neg') + '">' +
-                    (netVal >= 0 ? '+' : '−') + daFmtINR(netVal) + '</div></div>' +
-                    excl +
-                    '</div>';
+            /* The band strip doubles as the colour LEGEND and as a filter --
+               one row of chips explains what the ticker colours mean and
+               lets you isolate a band, instead of a legend that only
+               explains sitting next to a control that only filters.
+
+               It grades by QUARTERLY RESULT, the same Best/Good/Moderate/
+               Weak/Very Weak the company cards use, because that is what
+               the ticker is coloured by. Counts come from the CURRENT
+               result set, so a band showing 0 is genuinely empty under
+               these filters rather than merely unrendered. */
+            function renderResultStrip(rows) {
+                const counts = {};
+                let unrated = 0;
+                rows.forEach(function (r) {
+                    if (r.resultScore === null) { unrated++; return; }
+                    const k = r.resultBand.key;
+                    counts[k] = (counts[k] || 0) + 1;
+                });
+                function chip(band, n) {
+                    const on = _resultFilter === band.key;
+                    return '<span class="da-grade-chip da-r-' + band.key + (on ? ' active' : '') +
+                        '" onclick="window._daFilterResult(\'' + band.key + '\')" ' +
+                        'title="Quarterly result: ' + band.label + ' -- click to ' + (on ? 'clear' : 'show only these') + '">' +
+                        band.label + '<b>' + n + '</b></span>';
+                }
+                return '<span class="da-grade-strip-lbl" title="Ticker colour = the stock\'s latest quarterly result, same scale as the company cards">Result</span>' +
+                    DA_RESULT_BANDS.map(function (b) { return chip(b, counts[b.key] || 0); }).join('') +
+                    (unrated ? chip(DA_RESULT_UNRATED, unrated) : '') +
+                    (_resultFilter ? '<span class="da-grade-clear" onclick="window._daFilterResult(null)">clear</span>' : '');
             }
 
-            function sortHeader(key, label) {
+            /* Trend: how the buy/sell lean CHANGED between the older and the
+               newer half of the selected window. A stock can be net-sold
+               overall and still be the most interesting name on the board
+               if the selling stopped and buying started -- that turn is
+               invisible in every other column here. */
+            function momentumCell(r) {
+                if (r.momentum === null) {
+                    return '<span class="da-mom-none" title="Only one half of this window has activity -- there is no earlier behaviour to compare against">--</span>';
+                }
+                const pts = Math.round(r.momentum * 100);
+                const cls = pts > 8 ? 'up' : (pts < -8 ? 'down' : 'flat');
+                const arrow = pts > 8 ? '▲' : (pts < -8 ? '▼' : '■');
+                const turned = (r.priorRatio < 0 && r.recentRatio > 0) || (r.priorRatio > 0 && r.recentRatio < 0);
+                // An arrow glyph, not '->': a bare '>' inside an attribute value
+                // is legal HTML but makes every downstream matcher that scans
+                // for tag boundaries wrong about where this tag ends.
+                const tip = 'Older half ' + Math.round(r.priorRatio * 100) + '% → recent half ' +
+                    Math.round(r.recentRatio * 100) + '%' + (turned ? ' (direction reversed)' : '');
+                return '<span class="da-mom ' + cls + '" title="' + tip + '">' + arrow +
+                    (pts >= 0 ? '+' : '') + pts + '</span>' +
+                    (turned ? '<span class="da-flag turn" title="Buying and selling swapped sides between the two halves">⇄</span>' : '');
+            }
+
+            /* Share of the BUY value that came from a tracked institution or
+               known investor. "--" means nobody bought at all in this window,
+               which is not the same fact as "no tracked money bought". */
+            function supermanCell(r) {
+                if (r.smBuyShare === null) return '<span class="da-mom-none">--</span>';
+                const pct = Math.round(r.smBuyShare * 100);
+                const cls = pct >= 60 ? 'hi' : (pct > 0 ? 'mid' : 'lo');
+                return '<span class="da-sm-share ' + cls + '" title="' + daFmtINR(r.smBuyValue) +
+                    ' of ' + daFmtINR(r.buyValue) + ' bought came from tracked investors">' + pct + '%</span>';
+            }
+
+            function sortHeader(key, label, extraCls) {
                 const isSorted = _sortKey === key;
                 const arrow = isSorted ? '<span class="da-sort-arrow">' + (_sortDir === 'asc' ? '▲' : '▼') + '</span>' : '';
-                return '<th class="da-sortable' + (isSorted ? ' da-sorted' : '') + '" onclick="window._daSortBy(\'' + key + '\')">' + label + arrow + '</th>';
+                return '<th class="da-sortable' + (isSorted ? ' da-sorted' : '') + (extraCls ? ' ' + extraCls : '') +
+                    '" onclick="window._daSortBy(\'' + key + '\')">' + label + arrow + '</th>';
             }
 
             function txnSortHeader(key, label) {
@@ -19610,38 +20454,86 @@
                 return '<th class="da-sortable' + (isSorted ? ' da-sorted' : '') + '" onclick="window._daTxnSortBy(\'' + key + '\')">' + label + arrow + '</th>';
             }
 
+            /* The phone control and the desktop column headers are two
+               views of ONE sort state, so whichever was used last, the
+               other has to show it -- otherwise rotating a tablet from
+               portrait to landscape would appear to change the sort. */
+            function syncMobileSort() {
+                const sel = document.getElementById('da-sort-mobile');
+                if (sel && sel.value !== _sortKey) sel.value = _sortKey;
+                const dir = document.getElementById('da-sort-dir');
+                if (dir) {
+                    dir.textContent = _sortDir === 'asc' ? '▲' : '▼';
+                    dir.title = _sortDir === 'asc' ? 'Lowest first -- tap for highest first' : 'Highest first -- tap for lowest first';
+                }
+            }
+
             function renderSummary(res) {
-                const rows = applySort(res.rows, _sortKey, _sortDir);
+                // The band filter narrows the board but NOT the strip's own
+                // counts -- those stay computed over the full result set, so
+                // the strip keeps showing what switching bands would give you.
+                const graded = _resultFilter
+                    ? res.rows.filter(function (r) {
+                        return (r.resultScore === null ? DA_RESULT_UNRATED.key : r.resultBand.key) === _resultFilter;
+                    })
+                    : res.rows;
+                const rows = applySort(graded, _sortKey, _sortDir);
                 // Keyboard Up/Down navigates this exact on-screen order.
                 _lastRenderedTickers = rows.map(function (r) { return r.ticker; });
 
                 if (!rows.length) {
-                    return renderTiles(res) + '<div class="da-empty">No transactions match these filters.</div>';
+                    return '<div class="da-empty">No stocks match these filters.</div>';
                 }
 
-                let html = renderTiles(res);
-                html += '<div class="da-table-wrap"><table class="da-table"><thead><tr>' +
-                    '<th></th>' +
-                    sortHeader('ticker', 'Ticker') +
-                    sortHeader('total', 'Transactions') +
-                    sortHeader('totalValue', 'Value (Buy / Sell)') +
+                let html = '<div class="da-table-wrap"><table class="da-table da-board"><thead><tr>' +
+                    sortHeader('ticker', 'Stock') +
+                    sortHeader('momentum', 'Trend', 'da-col-xl') +
+                    sortHeader('totalValue', 'Value B/S') +
                     sortHeader('net', 'Net') +
+                    sortHeader('total', 'Deals') +
+                    sortHeader('participants', 'People', 'da-col-wide') +
+                    sortHeader('superman', '🦸 Share', 'da-col-xl') +
+                    sortHeader('last', 'Last', 'da-col-wide') +
                     '</tr></thead><tbody>';
 
-                rows.forEach(function (r, i) {
+                rows.forEach(function (r) {
+                    const band = r.resultScore === null ? DA_RESULT_UNRATED : r.resultBand;
                     const netCls = r.netValue >= 0 ? 'pos' : 'neg';
-                    const netSign = r.netValue >= 0 ? '+' : '−';
+                    const netSign = r.netValue >= 0 ? '+' : '-';
                     const safeTicker = r.ticker.replace(/'/g, "\\'");
                     const rowCls = r.ticker === _selectedTicker ? ' da-row-selected' : '';
+                    const repeatFlag = r.repeatBuyers
+                        ? '<span class="da-flag rep" title="' + r.repeatBuyers + ' buyer' + (r.repeatBuyers === 1 ? '' : 's') +
+                        ' came back on a different day -- deepest streak ' + r.topBuyerDates + ' separate days">🔁' + r.repeatBuyers + '</span>'
+                        : '';
+
                     html += '<tr data-ticker="' + escHtml(r.ticker) + '" class="da-summary-row' + rowCls + '">' +
-                        '<td class="da-rank">' + (i + 1) + '</td>' +
-                        '<td><span class="dt-ticker" onclick="window.setDealTickerFilter(\'' + safeTicker + '\')">' + escHtml(r.ticker) + '</span>' +
+                        '<td class="da-stock-cell"><span class="da-stock-top"><span class="dt-ticker da-r-' + band.key +
+                        '" title="' + escHtml(r.company) + ' -- quarterly result: ' + band.label +
+                        '" onclick="window.setDealTickerFilter(\'' + safeTicker + '\')">' + escHtml(r.ticker) + '</span>' +
+                        repeatFlag + '</span>' +
                         '<span class="da-company">' + escHtml(r.company) + '</span></td>' +
-                        '<td class="da-count-line"><span class="da-count-buy">' + r.buyCount + ' buy</span> · <span class="da-count-sell">' + r.sellCount + ' sell</span></td>' +
-                        '<td><span class="da-val-cell" onclick="window._daOpenDetail(\'' + safeTicker + '\')" title="Click to see every transaction">' +
-                        '<span class="da-val-line buy">▲ ' + daFmtINR(r.buyValue) + '</span>' +
-                        '<span class="da-val-line sell">▼ ' + daFmtINR(r.sellValue) + '</span></span></td>' +
-                        '<td class="da-net ' + netCls + '">' + netSign + daFmtINR(Math.abs(r.netValue)) + '</td>' +
+
+                        '<td class="da-col-xl" data-label="Trend">' + momentumCell(r) + '</td>' +
+
+                        '<td data-label="Value B/S"><span class="da-val-cell" onclick="window._daOpenDetail(\'' + safeTicker + '\')" title="Click to see every transaction">' +
+                        '<span class="da-val-line buy" title="' + daFmtExactINR(r.buyValue) + '">▲ ' + daFmtINR(r.buyValue) + '</span>' +
+                        '<span class="da-val-line sell" title="' + daFmtExactINR(r.sellValue) + '">▼ ' + daFmtINR(r.sellValue) + '</span></span></td>' +
+
+                        '<td class="da-net ' + netCls + '" data-label="Net" title="' + daFmtExactINR(r.netValue) + '">' +
+                        netSign + daFmtINR(Math.abs(r.netValue)) + '</td>' +
+
+                        '<td class="da-count-line" data-label="Deals"><span class="da-count-buy">' + r.buyCount + '</span>' +
+                        '<span class="da-count-sep">/</span><span class="da-count-sell">' + r.sellCount + '</span></td>' +
+
+                        '<td class="da-people da-col-wide" data-label="People" title="' + r.buyerCount + ' distinct buyers / ' +
+                        r.sellerCount + ' distinct sellers"><span class="da-count-buy">' + r.buyerCount +
+                        '</span><span class="da-count-sep">/</span><span class="da-count-sell">' + r.sellerCount + '</span></td>' +
+
+                        '<td class="da-col-xl" data-label="Superman share">' + supermanCell(r) + '</td>' +
+
+                        '<td class="da-last da-col-wide" data-label="Last" title="' + (r.lastDate ? daFmtDate(r.lastDate) : '') + '">' +
+                        (r.lastDate ? daFmtAge(r.lastDate) : '--') + '</td>' +
                         '</tr>';
                 });
                 html += '</tbody></table></div>';
@@ -19670,11 +20562,11 @@
                     '<span class="da-detail-company">' + escHtml(r.company) + '</span></div>';
 
                 html += '<div class="da-tiles">' +
-                    '<div class="da-tile"><div class="da-tile-lbl">Buy</div><div class="da-tile-val pos">' + daFmtINR(r.buyValue) + '</div>' +
+                    '<div class="da-tile" title="' + daFmtExactINR(r.buyValue) + '"><div class="da-tile-lbl">Buy</div><div class="da-tile-val pos">' + daFmtINR(r.buyValue) + '</div>' +
                     '<div class="da-tile-sub">' + r.buyCount + ' txns</div></div>' +
-                    '<div class="da-tile"><div class="da-tile-lbl">Sell</div><div class="da-tile-val neg">' + daFmtINR(r.sellValue) + '</div>' +
+                    '<div class="da-tile" title="' + daFmtExactINR(r.sellValue) + '"><div class="da-tile-lbl">Sell</div><div class="da-tile-val neg">' + daFmtINR(r.sellValue) + '</div>' +
                     '<div class="da-tile-sub">' + r.sellCount + ' txns</div></div>' +
-                    '<div class="da-tile"><div class="da-tile-lbl">Net</div><div class="da-tile-val ' + (r.netValue >= 0 ? 'pos' : 'neg') + '">' +
+                    '<div class="da-tile" title="' + daFmtExactINR(r.netValue) + '"><div class="da-tile-lbl">Net</div><div class="da-tile-val ' + (r.netValue >= 0 ? 'pos' : 'neg') + '">' +
                     (r.netValue >= 0 ? '+' : '−') + daFmtINR(Math.abs(r.netValue)) + '</div></div>' +
                     '</div>';
 
@@ -19721,7 +20613,7 @@
                     : '<span class="dt-person">' + escHtml(t.person) + '</span>';
                 return '<tr class="' + rowCls + '"><td>' + daFmtDate(t.date) + '</td><td>' + escHtml(t.sub) + '</td>' +
                     '<td>' + personHtml + '</td><td><span class="' + typeCls + '">' + t.type + '</span></td>' +
-                    '<td>' + daFmtINR(t.value) + '</td></tr>';
+                    '<td title="' + daFmtExactINR(t.value) + '">' + daFmtINR(t.value) + '</td></tr>';
             }
 
             // applySort/buildTxnRow are declared after _daInternal's own
@@ -19777,12 +20669,26 @@
                 const tabCountEl = document.getElementById('dsub-count-analysis');
                 if (tabCountEl) tabCountEl.textContent = res.tickerCount > 0 ? res.tickerCount.toLocaleString() : '';
 
+                // The band strip belongs to the board, not to one stock's
+                // drill-down — hide it (rather than leave a stale copy) once
+                // we're inside a single ticker.
+                const stripEl = document.getElementById('da-grade-strip');
+
                 if (_view === 'detail' && _detailTicker) {
                     const r = res.rows.filter(function (x) { return x.ticker === _detailTicker; })[0];
-                    if (r) { body.innerHTML = renderDetail(r); return; }
+                    if (r) {
+                        if (stripEl) { stripEl.innerHTML = ''; stripEl.style.display = 'none'; }
+                        body.innerHTML = renderDetail(r);
+                        return;
+                    }
                     // Ticker fell out of the current filter set — fall back.
                     _view = 'summary'; _detailTicker = null;
                 }
+                if (stripEl) {
+                    stripEl.style.display = res.rows.length ? '' : 'none';
+                    stripEl.innerHTML = res.rows.length ? renderResultStrip(res.rows) : '';
+                }
+                syncMobileSort();
                 body.innerHTML = renderSummary(res);
             }
 
@@ -19800,6 +20706,13 @@
                 _showExcluded = !_showExcluded;
                 render();
             };
+            window._daFilterResult = function (key) {
+                // Clicking the band already showing clears it, so the strip
+                // is a toggle rather than a one-way trap.
+                _resultFilter = (!key || _resultFilter === key) ? null : key;
+                _view = 'summary'; _detailTicker = null;
+                render();
+            };
 
             /* ── reset this tab back to its opening state ──
                Shared by two triggers: the ⟳ button (this tab only) and the
@@ -19808,7 +20721,7 @@
                below). Only the filter INPUTS and this tab's own state are
                touched; window._dealData itself is left alone; this is a
                reset of what's SHOWN, not a re-fetch from the network. */
-            function resetAnalysisTab() {
+            function resetAnalysisTab(hard) {
                 document.querySelectorAll('#da-seg-group .da-seg').forEach(function (b) { b.classList.add('active'); });
 
                 const supermanBtn = document.getElementById('da-superman-btn');
@@ -19833,10 +20746,19 @@
                 _txnSortKey = 'date'; _txnSortDir = 'desc';
                 _view = 'summary'; _detailTicker = null; _showExcluded = false;
                 _selectedTicker = null;
+                _resultFilter = null;
 
+                /* Pressing THIS tab's refresh is an explicit ask for a
+                   rebuild, so the memo tables go too -- they are keyed on
+                   source identity and would otherwise quietly hand back the
+                   same numbers, which makes the button look like it did
+                   nothing. The app-wide logo reset passes hard=false: it is
+                   clearing filters across the whole app, not asking this one
+                   tab to redo ~40k rows of parsing it already has correct. */
+                if (hard) clearCaches();
                 render();
             }
-            window._daRefresh = resetAnalysisTab;
+            window._daRefresh = function () { resetAnalysisTab(true); };
             window._daSortBy = function (key) {
                 if (_sortKey === key) {
                     _sortDir = _sortDir === 'asc' ? 'desc' : 'asc';
@@ -20001,8 +20923,42 @@
                 });
             }
 
+            /* A full recompute per keystroke is wasted work: typing
+               "RELIANCE" fired eight of them and only the last one was ever
+               seen. Coalesced into one render a beat after typing stops --
+               short enough to still feel immediate, long enough that a
+               normal typing cadence produces a single pass. */
+            let _searchTimer = null;
             const searchEl = document.getElementById('da-search');
-            if (searchEl) searchEl.addEventListener('input', render);
+            if (searchEl) {
+                searchEl.addEventListener('input', function () {
+                    if (_searchTimer) clearTimeout(_searchTimer);
+                    _searchTimer = setTimeout(function () { _searchTimer = null; render(); }, 140);
+                });
+            }
+
+            /* Phone-sized screens get the card layout, which has no column
+               headers to click -- this select is how sorting stays reachable
+               there. It is the same _sortKey the headers drive, so the two
+               never disagree. */
+            const mobileSortEl = document.getElementById('da-sort-mobile');
+            if (mobileSortEl) {
+                mobileSortEl.innerHTML = SORT_LABELS.map(function (e) {
+                    return '<option value="' + e[0] + '">' + escHtml(e[1]) + '</option>';
+                }).join('');
+                mobileSortEl.addEventListener('change', function () {
+                    _sortKey = mobileSortEl.value;
+                    _sortDir = SORT_DEFAULT_DIR[_sortKey] || 'desc';
+                    render();
+                });
+            }
+            const mobileDirEl = document.getElementById('da-sort-dir');
+            if (mobileDirEl) {
+                mobileDirEl.addEventListener('click', function () {
+                    _sortDir = _sortDir === 'asc' ? 'desc' : 'asc';
+                    render();
+                });
+            }
 
             /* Delegated on #da-body itself (not the table, which gets
                replaced wholesale on every render): survives re-renders
@@ -20048,7 +21004,7 @@
             const _prevResetAllAppFilters = window.resetAllAppFilters;
             window.resetAllAppFilters = function () {
                 if (typeof _prevResetAllAppFilters === 'function') _prevResetAllAppFilters();
-                resetAnalysisTab();
+                resetAnalysisTab(false);
             };
         })();
     </script>
