@@ -6663,9 +6663,12 @@
                                 <input type="date" class="da-date" id="da-date-to" title="To date">
                             </div>
                             <input class="da-search" id="da-search" placeholder="Search ticker…">
-                            <!-- Phone-only: the card layout at that width has
-                                 no column headers to tap, so sorting lives
-                                 here instead. Same state as the headers. -->
+                            <!-- Phone-only. The column headers are still
+                                 there and still sort, but reaching one can
+                                 mean scrolling the board sideways first;
+                                 this gets to any sort key without that.
+                                 Drives the same _sortKey/_sortDir state the
+                                 headers do — see syncMobileSort. -->
                             <span class="da-sort-mobile-wrap">
                                 <select class="da-select da-sort-mobile" id="da-sort-mobile" title="Sort the board"></select>
                                 <span class="da-sort-dir" id="da-sort-dir" title="Reverse the sort">▼</span>
@@ -19387,6 +19390,72 @@
             color: #fff;
         }
 
+        /* The board's own load-more sits inside the scrolling body rather
+           than pinned under a fixed-height table, so it needs the margin the
+           deal tables' version gets from its container. */
+        .da-more-wrap {
+            margin-top: 8px;
+        }
+
+        .da-more-left {
+            color: var(--text3);
+            font-weight: 500;
+            margin-left: 4px;
+        }
+
+        /* ── the excluded round-trip list ──
+           Muted as a whole: these rows are here to be audited, not to be
+           read alongside the live ones. */
+        .da-excluded-wrap {
+            opacity: 0.72;
+            margin-top: 2px;
+        }
+
+        /* A round trip is ONE event, so nothing divides its two legs — the
+           rule goes UNDER the pair instead. That single change is what
+           makes the block read as one thing rather than as two rows that
+           happen to be adjacent. */
+        .da-excluded-table tr.da-pair-mid td {
+            border-bottom: none;
+        }
+
+        .da-excluded-table tr.da-pair-end td {
+            border-bottom: 1px solid var(--border2);
+        }
+
+        /* The bracket: spans both legs via rowspan and says, in one cell,
+           "these two, together, and this is how close they were". */
+        .da-pair-tie {
+            width: 1%;
+            white-space: nowrap;
+            text-align: center;
+            vertical-align: middle;
+            border-right: 1px solid var(--border2);
+            color: var(--text2);
+            font-size: 7.5px;
+            line-height: 1.4;
+        }
+
+        /* The tie column belongs to BOTH legs, so it must not wear the
+           buy tint it would inherit from the row that owns the cell —
+           a green gutter beside an orange SELL reads as a mislabel. */
+        .da-excluded-table tr.da-row-buy td.da-pair-tie,
+        .da-excluded-table tr.da-row-sell td.da-pair-tie,
+        .da-excluded-table tr.da-row-buy:hover td.da-pair-tie,
+        .da-excluded-table tr.da-row-sell:hover td.da-pair-tie {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .da-pair-mark {
+            display: block;
+            font-size: 11px;
+            opacity: 0.7;
+        }
+
+        .da-pair-gap {
+            display: block;
+        }
+
         /* Matches _IS_MOBILE_DEAL / the rest of the Deal section's own
            mobile cutoff, rather than an unrelated breakpoint of this
            tab's own choosing — so "mobile" means the same width here as
@@ -19460,34 +19529,74 @@
                 padding: 3px 6px;
             }
 
-        }
-
-        /* ── responsive ladder ──
-           Four tiers rather than one cutoff, because the board's columns do
-           not all lose their value at the same width. Each tier drops the
-           least informative surviving column, so what remains is always the
-           most useful thing that still fits:
-
-             > 1100  everything
-             <= 1100  Trend and Superman-share go (both derived, both one
-                      tap away in the drill-down)
-             <=  820  People and Last go — an iPad in portrait sits here
-             <=  600  the table stops being a table (see below)
-
-           The 1400px block above is the Deal section's own shared mobile
-           cutoff and stays as it was, so "mobile" still means the same
-           width here as it does for Insider/Bulk/Block/SAST next door. */
-        @media (max-width: 1100px) {
-            .da-col-xl {
-                display: none;
+            /* ── the board scrolls, it does not shed columns ──
+               All eight are present at every width; .da-table-wrap takes
+               the overflow. min-width is a FLOOR, not a fixed width: it
+               stops the eight from being squeezed into the viewport into
+               unreadable slivers, and sits close enough to their natural
+               total that the board is not padded with dead space. */
+            .da-board {
+                min-width: 560px;
             }
+
+            /* The stock column is the one you scroll AWAY from, so it is
+               pinned — a row stays identifiable however far right the
+               board has been dragged. A sticky cell scrolls OVER the cells
+               behind it, so it needs its own opaque fill; #0a0a0e is the
+               .sidebar ground this pane sits on. border-collapse: collapse
+               hands borders to the table rather than to the cell, and a
+               sticky cell can lose them in that hand-off, so the bottom
+               rule and the divider marking the frozen edge are painted as
+               inset shadows instead. */
+            .da-board thead th:first-child,
+            .da-board td.da-stock-cell {
+                position: sticky;
+                left: 0;
+                z-index: 2;
+                background: #0a0a0e;
+                box-shadow: inset -1px 0 0 var(--border), inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+            }
+
+            /* Selection and hover tint the row through a translucent
+               background, which a sticky cell cannot inherit — these are
+               those two tints pre-blended over #0a0a0e so the frozen
+               column highlights along with the rest of its row. */
+            .da-board tr:hover td.da-stock-cell {
+                background: #111115;
+            }
+
+            /* Last, so selection beats hover on the frozen cell exactly as
+               it does on the rest of the row — the base rules are in this
+               same order for the same reason. */
+            .da-board tr.da-row-selected td.da-stock-cell {
+                background: #0c181e;
+            }
+
         }
 
+        /* ── no responsive ladder: the board never sheds columns ──
+           There used to be four tiers here, each dropping the least
+           informative surviving column — Trend and Superman-share at
+           1100px, People and Last at 820px, then the whole table turning
+           into cards at 600px. All of it is gone.
+
+           Shedding columns is only a win if the reader does not want them,
+           and the give-away was that there was no way to ask for them
+           back: an iPad in portrait sat under 820px and simply could not
+           see half the board, on a screen with room to scroll. Every width
+           now renders the same eight columns and .da-table-wrap takes the
+           overflow — it already had overflow-x: auto, momentum scrolling
+           and overscroll-behavior-x: contain, so the sideways swipe was
+           always going to work; nothing was relying on the hiding.
+
+           .da-col-wide and .da-col-xl stay on the cells as tier markers —
+           they name which columns are the widest and least essential, for
+           anything that later wants that ranking — but they no longer
+           switch visibility. The board's scroll ergonomics (a width floor
+           and a frozen Stock column) live in the 1400px block above, which
+           is the Deal section's own shared mobile cutoff, so they cover
+           every iPad including Pro as well as every phone. */
         @media (max-width: 820px) {
-            .da-col-wide {
-                display: none;
-            }
-
             .da-company {
                 max-width: 72px;
             }
@@ -19541,16 +19650,26 @@
             }
         }
 
-        /* ── phones: the board stops being a table ──
-           Eleven columns cannot be squeezed into 390px, and a horizontally
-           scrolled table hides exactly the columns you were comparing. So
-           below 600px each stock becomes a self-contained card: every field
-           is present with its own label, nothing is cut, and the whole board
-           scrolls in one direction only.
+        /* ── phones: the board STAYS a table ──
+           One layout at every width. A phone reads the same board as an
+           iPad and a desktop — same columns, in the same order, under the
+           same headers — so a row means the same thing on every device and
+           nothing has to be re-learnt on rotation.
 
-           Column headers disappear with the table, which would take sorting
-           with them — hence the select + direction toggle that appear in the
-           filter bar at this width and drive the same sort state. */
+           It used to reflow into one card per stock below 600px. Cards fit
+           the width, but broke the thing a board is FOR: reading a column
+           DOWN, across stocks, to see who is being bought hardest. Stacked
+           in separate boxes, comparing two stocks means scrolling between
+           them and holding figures in your head. Scrolling .da-table-wrap
+           sideways costs less than that, and it already carries momentum
+           scrolling and overscroll-behavior-x: contain, so the swipe never
+           drags the tab behind it.
+
+           Nothing here restores columns any more: no width hides one, so
+           a phone gets the same eight an iPad and a desktop get. What is
+           left below is only what is genuinely phone-specific — a tighter
+           width floor and a narrower frozen Stock column. The scrolling
+           and the freeze itself are set once, in the 1400px block. */
         @media (max-width: 600px) {
             .da-sort-mobile-wrap {
                 display: inline-flex;
@@ -19571,91 +19690,19 @@
                 width: auto;
             }
 
-            .da-board thead {
-                display: none;
+            /* Tighter floor than the 1400px one: the phone's smaller
+               type and narrower Stock cell genuinely need less room, and
+               every pixel of floor above the natural width is a pixel of
+               pointless scrolling. */
+            .da-board {
+                min-width: 520px;
             }
 
-            .da-board,
-            .da-board tbody,
-            .da-board tr,
-            .da-board td {
-                display: block;
-                width: auto;
-            }
-
-            .da-board tr.da-summary-row {
-                border: 1px solid var(--border);
-                border-radius: 9px;
-                background: rgba(0, 0, 0, 0.22);
-                padding: 8px 10px 7px;
-                margin-bottom: 6px;
-            }
-
-            .da-board tr:hover td,
-            .da-board tr.da-row-selected td {
-                /* The card itself carries the selection, not each field —
-                   per-cell backgrounds would stripe the card. */
-                background: transparent;
-            }
-
-            .da-board tr.da-row-selected {
-                background: rgba(34, 211, 238, 0.09);
-            }
-
-            .da-board td {
-                border: none;
-                padding: 2px 0;
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 10px;
-                font-size: 10px;
-            }
-
-            .da-board td::before {
-                content: attr(data-label);
-                font-size: 8px;
-                font-weight: 800;
-                letter-spacing: 0.05em;
-                text-transform: uppercase;
-                color: var(--text2);
-                flex: 0 0 auto;
-            }
-
-            /* The stock cell is the card's heading — no label, no split row. */
-            .da-board td.da-stock-cell::before {
-                content: none;
-            }
-
+            /* The frozen column narrows with everything else; the freeze
+               itself is already set in the 1400px block. */
+            .da-board thead th:first-child,
             .da-board td.da-stock-cell {
-                display: block;
-                margin-bottom: 4px;
-            }
-
-            /* Both are worth their one line on a card, where the reason
-               they were dropped — horizontal room — no longer applies. */
-            .da-board td.da-col-wide,
-            .da-board td.da-col-xl {
-                display: flex;
-            }
-
-            .da-company {
-                display: block;
-                max-width: 100%;
-                font-size: 9px;
-            }
-
-            .da-val-cell {
-                display: flex;
-                gap: 10px;
-                margin: 0;
-                padding: 2px 4px;
-            }
-
-            .da-val-line,
-            .da-count-line,
-            .da-net {
-                font-size: 10px;
+                min-width: 84px;
             }
 
             .da-tiles {
@@ -19704,13 +19751,20 @@
            above) — purely additive, touches none of that engine's own
            state, filters, or rendering.
 
-           "Intraday" pairs: a BUY and a SELL of the SAME stock, on the
-           SAME day, within the SAME segment (Insider is never paired
-           against Bulk/Block, etc.), whose values sit within 10% of
-           one another. Bulk/Block prints routinely record a single real
-           trade as two rows — one per side of the deal — so without this
-           a stock traded once for ₹50 Cr would read as ₹100 Cr of
-           "activity", split evenly into fake buy and sell pressure.
+           "Intraday" pairs: a BUY and a SELL by the SAME person, of the
+           SAME stock, on the SAME day, within the SAME segment (Insider
+           is never paired against Bulk/Block, etc.), whose values sit
+           within 10% of one another. That is one party opening and
+           closing a position inside the session: the holding never
+           actually moved, so counting both legs would report ₹100 Cr of
+           "activity" — and a fake ₹50 Cr of buy pressure AND ₹50 Cr of
+           sell pressure — for a trade that changed nothing.
+
+           All FOUR conditions have to hold, person included. Two
+           DIFFERENT parties trading opposite sides of the same stock on
+           the same day are two real and opposite convictions, not one
+           round trip, and both legs stay counted — that disagreement is
+           precisely the signal this dashboard exists to surface.
            These pairs are excluded from every count/value here, but
            never discarded — they stay visible, muted, in a ticker's
            drill-down, so nothing is silently dropped from the record.
@@ -19742,6 +19796,31 @@
             function daDateKey(d) {
                 return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
             }
+            /* ── one parse per distinct DAY, not per row ──
+               The feed repeats each date string about 44 times (~266k rows
+               over ~6k distinct days), and every one of those was costing a
+               regex match, a Date construction and two padStart calls for
+               the key. Memoising on the raw string collapses that to one
+               parse per day — measured 7.6x faster over the real feed, and
+               it was the largest single cost in normalization.
+
+               The Date object is SHARED by every row on that day. That is
+               safe because nothing in this module ever mutates a row's date:
+               it is compared, read through getTime() and formatted, never
+               assigned to. Unparseable strings are memoised too (as null),
+               so a bad date is rejected once instead of re-parsed on every
+               row that carries it. */
+            const _dateMemo = new Map();
+            function daDateParts(raw) {
+                const key = raw == null ? '' : String(raw);
+                let hit = _dateMemo.get(key);
+                if (hit === undefined) {
+                    const d = daParseDate(key);
+                    hit = d ? { date: d, dateKey: daDateKey(d) } : null;
+                    _dateMemo.set(key, hit);
+                }
+                return hit;
+            }
             function daNormType(raw) {
                 const t = String(raw || '').trim();
                 if (!t) return null;
@@ -19749,6 +19828,51 @@
                 if (/sell|sold|sale|divest/i.test(t)) return 'SELL';
                 return null;
             }
+            /* Identity key for the intraday test. Filings spell one party
+               inconsistently — "S.B.I. MUTUAL FUND" on one print,
+               "SBI Mutual Fund" on the next — so periods, hyphens and
+               apostrophes are FUSED away and every other separator
+               collapses to a single space, the same normalization the
+               Superman list uses. Returns '' when there is no name at all:
+               an unnamed row cannot be shown to be the same party as any
+               other, so daExcludeIntraday leaves it unpaired. */
+            function daPersonKey(raw) {
+                return String(raw == null ? '' : raw)
+                    .toLowerCase()
+                    .replace(/[.\-']/g, '')
+                    .replace(/[^a-z0-9]+/g, ' ')
+                    .trim();
+            }
+            /* Stripping every non-numeric character before parseFloat is
+               the right reading of a messy field, but the parquet loader
+               hands over plain numeric strings ("1234.5") for which that
+               regex is pure overhead — measured 6x, over 130k rows a pass.
+               Unary + is STRICTER than parseFloat: it rejects "1,234" and
+               "12abc" outright as NaN rather than silently truncating them,
+               so anything it accepts is a well-formed number and everything
+               else falls through to the regex path. Negatives fall through
+               too — the strip removes the sign, and matching that old
+               reading matters more than the microseconds.
+
+               The two readings differ on exactly one family of input: a
+               JS-only literal the strip would mangle, "1e3" (1000 here, 13
+               after stripping) or "0x10" (16 vs 10). The real feed contains
+               none — checked across all 265k rows; the only 'e' in a value
+               field is the word "crore", which fails + and takes the regex
+               path exactly as before. Where they do differ, this reading is
+               the correct one, so the fast path is not preserving that bug
+               on purpose. */
+            function daNum(raw) {
+                if (raw === null || raw === undefined || raw === '') return 0;
+                const str = typeof raw === 'string' ? raw : String(raw);
+                const fast = +str;
+                // NaN fails >= 0, so this one test covers NaN, negatives
+                // and the Infinity a lone "Infinity" string would produce.
+                if (fast >= 0 && fast < Infinity) return fast;
+                const n = parseFloat(str.replace(/[^0-9.]/g, ''));
+                return n === n ? n : 0;
+            }
+
             /* Same Cr./Lacs interpretation buildDealRow uses for the raw
                Insider table, and the same Quantity x Price the raw
                Bulk/Block tables use — this dashboard's numbers can never
@@ -19757,12 +19881,12 @@
                 if (sub === 'insider') {
                     const raw = String(row['Value'] || '').trim();
                     if (!raw || raw === '—') return 0;
-                    const numOnly = parseFloat(raw.replace(/[^0-9.]/g, ''));
-                    if (isNaN(numOnly)) return 0;
+                    const numOnly = daNum(raw);
+                    if (!numOnly) return 0;
                     return /crore/i.test(raw) ? numOnly * 1e7 : numOnly * 1e5;
                 }
-                const qty = parseFloat(String(row['Quantity'] || '').replace(/[^0-9.]/g, '')) || 0;
-                const price = parseFloat(String(row['Price'] || '').replace(/[^0-9.]/g, '')) || 0;
+                const qty = daNum(row['Quantity']);
+                const price = daNum(row['Price']);
                 return (qty > 0 && price > 0) ? qty * price : 0;
             }
 
@@ -19778,11 +19902,15 @@
                     if (!type) return;
                     const value = daValueRupees(sub, row);
                     if (!(value > 0)) return;
-                    const d = daParseDate(row['Date']);
-                    if (!d) return;
+                    const dp = daDateParts(row['Date']);
+                    if (!dp) return;
+                    const person = String(row['Person'] || '').trim();
                     out.push({
-                        ticker: ticker, sub: sub, type: type, value: value, date: d, dateKey: daDateKey(d),
-                        person: String(row['Person'] || '').trim() || 'Unknown',
+                        ticker: ticker, sub: sub, type: type, value: value, date: dp.date, dateKey: dp.dateKey,
+                        person: person || 'Unknown',
+                        // Computed once here, not per pairing pass — the
+                        // same row is re-paired on every filter change.
+                        personKey: daPersonKey(person),
                         personLink: row['Person Link'] || '',
                         personRole: row['Person Role'] || ''
                     });
@@ -19790,17 +19918,42 @@
                 return out;
             }
 
-            /* Greedy nearest-value pairing per (segment, ticker, day). Groups
-               are a handful of prints per stock per day at most, so an O(n^2)
-               scan inside each group is irrelevant in practice. */
+            /* Greedy nearest-value pairing per (segment, ticker, day,
+               PERSON) — all four must agree before two prints are called
+               one intraday round trip, and only then does the value test
+               below decide it.
+
+               Person is what makes this an intraday test rather than a
+               blunt same-day netting. Grouping without it let A's ₹50 Cr
+               BUY cancel against B's ₹50 Cr SELL: two different parties,
+               two opposite real convictions, both erased from the board.
+               A round trip needs ONE party on both sides of it.
+
+               Rows with a blank Person carry no identity to match on and
+               are left unpaired — pooling them under a shared "unknown"
+               would assume the very thing being tested.
+
+               Groups are a handful of prints per party per stock per day,
+               so an O(n^2) scan inside each is irrelevant in practice. */
             function daExcludeIntraday(rows, tolPct) {
                 const groups = new Map();
                 rows.forEach(function (r) {
-                    const key = r.sub + '|' + r.ticker + '|' + r.dateKey;
+                    // Recomputed only for rows built outside
+                    // daNormalizeRows — the _daInternal test hook.
+                    const pk = r.personKey === undefined ? daPersonKey(r.person) : r.personKey;
+                    if (!pk) return;
+                    const key = r.sub + '|' + r.ticker + '|' + r.dateKey + '|' + pk;
                     if (!groups.has(key)) groups.set(key, []);
                     groups.get(key).push(r);
                 });
                 const skipped = new Set();
+                /* Which leg cancelled which. Held as a row -> partner Map
+                   rather than an id stamped onto the row, because the same
+                   row objects are re-paired by the Superman path: an id
+                   written during that run would still be sitting on the row,
+                   stale, once the filter came back off. A Map belongs to the
+                   run that built it and dies with it. */
+                const pairOf = new Map();
                 groups.forEach(function (group) {
                     const buys = group.filter(function (r) { return r.type === 'BUY'; });
                     const sells = group.filter(function (r) { return r.type === 'SELL'; });
@@ -19814,8 +19967,10 @@
                             if (diff <= tol && diff < bestDiff) { bestDiff = diff; bestI = i; }
                         });
                         if (bestI !== -1) {
+                            const s = sells[bestI];
                             usedSell[bestI] = true;
-                            skipped.add(b); skipped.add(sells[bestI]);
+                            skipped.add(b); skipped.add(s);
+                            pairOf.set(b, s); pairOf.set(s, b);
                         }
                     });
                 });
@@ -19825,8 +19980,59 @@
                     // The raw membership set as well, so a caller that has
                     // already paired a superset of these rows can reuse the
                     // verdict instead of re-pairing (see normalizedRows).
-                    skippedSet: skipped
+                    skippedSet: skipped,
+                    // Both directions: pairOf.get(buy) is its sell and
+                    // pairOf.get(sell) is its buy, so a leg found anywhere
+                    // can name its counterpart without a second search.
+                    pairOf: pairOf
                 };
+            }
+
+            /* Regroups one ticker's excluded legs into the round trips
+               they actually formed — newest first, BUY above its own SELL.
+
+               A flat date-sorted list of legs became unreadable the moment
+               a stock had two round trips on one day: four rows, one date,
+               and nothing saying which sell cancelled which buy — the one
+               question the list is opened to answer. pairOf already holds
+               that answer; this reads it back out.
+
+               A leg whose partner is absent is still emitted, alone, rather
+               than dropped. Excluded rows staying visible is this module's
+               rule, and an orphan appearing is a thing worth seeing. */
+            function daBuildRoundTrips(legs, pairOf) {
+                const seen = new Set();
+                const trips = [];
+                legs.forEach(function (r) {
+                    if (seen.has(r)) return;
+                    seen.add(r);
+                    const partner = pairOf ? pairOf.get(r) : null;
+                    if (!partner || seen.has(partner)) {
+                        trips.push({
+                            buy: r.type === 'BUY' ? r : null,
+                            sell: r.type === 'BUY' ? null : r,
+                            diffPct: null
+                        });
+                        return;
+                    }
+                    seen.add(partner);
+                    const buy = r.type === 'BUY' ? r : partner;
+                    const sell = r.type === 'BUY' ? partner : r;
+                    const hi = Math.max(buy.value, sell.value);
+                    trips.push({
+                        buy: buy, sell: sell,
+                        // How close the two values sat — the number that
+                        // decided these were one trade and not two, shown
+                        // so the exclusion can be judged, not just trusted.
+                        diffPct: hi > 0 ? Math.abs(buy.value - sell.value) / hi : 0
+                    });
+                });
+                // Both legs of a trip share a date (day is in the group
+                // key), so either one dates the whole trip.
+                trips.sort(function (a, b) {
+                    return (b.buy || b.sell).date - (a.buy || a.sell).date;
+                });
+                return trips;
             }
 
             /* ── "Superman" filter — known institutional / HNI investors ──
@@ -19862,9 +20068,34 @@
                     .trim();
             }
             const SUPERMAN_NAMES_NORM = SUPERMAN_NAMES.map(normalizeSupermanText).filter(Boolean);
-            /* A miss costs ~150 substring scans, and the SAME institution
-               appears on hundreds of prints, so the answer is memoised per
-               raw Person string. Deal filings are a small vocabulary of
+
+            /* ── the whole list as ONE alternation ──
+               A miss used to walk all 168 names with indexOf: 168 separate
+               passes over the same string. One RegExp lets the engine walk
+               it once instead — measured 16x faster over the 41,439 distinct
+               Person strings in the real feed (191 ms -> 12 ms), with zero
+               disagreements against the old scan on any of them.
+
+               The semantics are identical by construction: alternation IS
+               "any of these as a substring", which is exactly what
+               .some(indexOf) meant. Order does not matter either, since both
+               forms only ever answer yes/no.
+
+               normalizeSupermanText already reduces every entry to
+               [a-z0-9 ], so none of them carry regex metacharacters today.
+               Escaping anything outside that alphabet anyway costs one pass
+               at startup and means a name added later with a '.' or a '+'
+               in it cannot quietly turn into a wildcard. Escaping only
+               non-alphanumerics is also why this cannot accidentally build
+               a class like \w — those characters are never escaped. */
+            const SUPERMAN_RE = new RegExp(
+                SUPERMAN_NAMES_NORM
+                    .map(function (n) { return n.replace(/[^a-z0-9 ]/g, function (c) { return '\\' + c; }); })
+                    .join('|')
+            );
+
+            /* The SAME institution appears on hundreds of prints, so the
+               answer is memoised per raw Person string. Deal filings are a small vocabulary of
                names repeated endlessly — this collapses the whole check to
                one Map lookup for every occurrence after the first. */
             const _supermanCache = new Map();
@@ -19873,7 +20104,8 @@
                 const hit = _supermanCache.get(key);
                 if (hit !== undefined) return hit;
                 const p = normalizeSupermanText(key);
-                const res = p ? SUPERMAN_NAMES_NORM.some(function (n) { return p.indexOf(n) !== -1; }) : false;
+                // No /g flag, so .test carries no lastIndex state between calls.
+                const res = p ? SUPERMAN_RE.test(p) : false;
                 _supermanCache.set(key, res);
                 return res;
             }
@@ -19944,16 +20176,21 @@
                sound cache key: new data automatically misses.
 
                The intraday pairing is cached alongside it. That is safe
-               because pairing groups by (segment, ticker, calendar day) and
-               every filter except Superman keeps such a group whole:
-               segment toggles select entire segments, index and ticker
-               filters select entire tickers, and the date inputs are day
+               because pairing groups by (segment, ticker, calendar day,
+               person) and every filter keeps such a group whole: segment
+               toggles select entire segments, index and ticker filters
+               select entire tickers, and the date inputs are day
                boundaries (00:00:00 → 23:59:59) against dates parsed at
                midnight, so a day is either wholly in range or wholly out.
-               Superman is the one filter that can cut a group in half — it
-               matches on Person, so it can remove one leg of a pair and
-               leave the other — and that path therefore still re-pairs the
-               filtered set from scratch. */
+               Superman used to be the exception — it matches on Person, so
+               while person sat OUTSIDE the group key it could strip one leg
+               of a pair and leave the other stranded — but a group is now
+               one person's prints, whose rows share a single Superman
+               verdict, so that filter too takes a group whole or not at
+               all. The re-pair path below is kept regardless: it costs one
+               pass over an already-narrowed set, and it keeps this cache
+               correct if the Superman rule ever grows a per-row component
+               that Person alone does not decide. */
             const _normCache = new Map();
             function normalizedRows(sub) {
                 const raw = (window._dealData && window._dealData[sub]) || null;
@@ -19965,7 +20202,8 @@
                 // time, because the concentration column needs it for EVERY
                 // row regardless of whether the Superman filter is on.
                 rows.forEach(function (r) { r.superman = matchesSuperman(r.person); });
-                const entry = { src: raw, rows: rows, skip: daExcludeIntraday(rows, 0.10).skippedSet };
+                const paired = daExcludeIntraday(rows, 0.10);
+                const entry = { src: raw, rows: rows, skip: paired.skippedSet, pairOf: paired.pairOf };
                 _normCache.set(sub, entry);
                 return entry;
             }
@@ -20004,13 +20242,16 @@
 
             function daComputeAnalysis(opts) {
                 let rows = [];
-                let preSkip = null;
-                if (!opts.supermanOnly) preSkip = new Set();
+                let preSkip = null, prePairOf = null;
+                if (!opts.supermanOnly) { preSkip = new Set(); prePairOf = new Map(); }
                 (opts.subs || []).forEach(function (sub) {
                     const entry = normalizedRows(sub);
                     if (!entry.rows.length) return;
                     rows = rows.concat(entry.rows);
                     if (preSkip && entry.skip) entry.skip.forEach(function (r) { preSkip.add(r); });
+                    // Merged, not replaced: segments never pair against each
+                    // other, so their maps are disjoint by construction.
+                    if (prePairOf && entry.pairOf) entry.pairOf.forEach(function (partner, r) { prePairOf.set(r, partner); });
                 });
                 if (opts.indexSet) rows = rows.filter(function (r) { return opts.indexSet.has(r.ticker); });
                 if (opts.from) rows = rows.filter(function (r) { return r.date >= opts.from; });
@@ -20021,15 +20262,15 @@
                 }
                 if (opts.supermanOnly) rows = rows.filter(function (r) { return r.superman; });
 
-                let kept, skipped;
+                let kept, skipped, pairOf;
                 if (preSkip) {
                     // Reuse the pairing decided once per segment - see the
                     // group-integrity argument on normalizedRows().
-                    kept = []; skipped = [];
+                    kept = []; skipped = []; pairOf = prePairOf;
                     rows.forEach(function (r) { (preSkip.has(r) ? skipped : kept).push(r); });
                 } else {
                     const paired = daExcludeIntraday(rows, 0.10);
-                    kept = paired.kept; skipped = paired.skipped;
+                    kept = paired.kept; skipped = paired.skipped; pairOf = paired.pairOf;
                 }
 
                 /* -- momentum split point --
@@ -20056,12 +20297,16 @@
                             ticker: r.ticker, buyCount: 0, sellCount: 0, buyValue: 0, sellValue: 0,
                             buyers: new Map(), sellers: new Map(), txns: [], subs: new Set(),
                             buyerDates: new Map(), smBuyValue: 0, smSellValue: 0,
-                            rBuy: 0, rSell: 0, pBuy: 0, pSell: 0
+                            rBuy: 0, rSell: 0, pBuy: 0, pSell: 0, lastDate: null
                         };
                         byTicker.set(r.ticker, agg);
                     }
                     agg.subs.add(r.sub);
                     agg.txns.push(r);
+                    // Running max: the board's "Last" column used to come
+                    // from txns[0] after a full date sort of the stock's
+                    // transactions. One comparison per row replaces that.
+                    if (agg.lastDate === null || r.date > agg.lastDate) agg.lastDate = r.date;
                     const isBuy = r.type === 'BUY';
                     const personMap = isBuy ? agg.buyers : agg.sellers;
                     const cur = personMap.get(r.person) || { count: 0, value: 0 };
@@ -20093,7 +20338,6 @@
 
                 const rowsOut = [];
                 byTicker.forEach(function (agg) {
-                    const txns = agg.txns.slice().sort(function (a, b) { return b.date - a.date; });
                     const totalValue = agg.buyValue + agg.sellValue;
                     const netValue = agg.buyValue - agg.sellValue;
 
@@ -20114,7 +20358,7 @@
 
                     const score = daResultScore(agg.ticker);
 
-                    rowsOut.push({
+                    const out = {
                         ticker: agg.ticker,
                         company: (window.tickerToName && window.tickerToName[agg.ticker]) || agg.ticker,
                         buyCount: agg.buyCount, sellCount: agg.sellCount,
@@ -20160,13 +20404,52 @@
                         smSellValue: agg.smSellValue,
                         smBuyShare: agg.buyValue ? agg.smBuyValue / agg.buyValue : null,
                         smShare: totalValue ? (agg.smBuyValue + agg.smSellValue) / totalValue : 0,
-                        // txns is date-descending, so [0] is the most recent.
-                        lastDate: txns.length ? txns[0].date : null,
+                        // Newest print on this stock, tracked as a running
+                        // max above rather than read off a sorted list.
+                        lastDate: agg.lastDate,
                         buyers: agg.buyers, sellers: agg.sellers,
-                        txns: txns,
-                        excluded: (skippedByTicker.get(agg.ticker) || []).slice().sort(function (a, b) { return b.date - a.date; }),
                         subs: agg.subs
+                    };
+
+                    /* ── txns and excluded are built ON DEMAND ──
+                       Both are read by exactly one view: the drill-down for
+                       the single stock you clicked. Building them for all
+                       ~3,000 board rows cost ~78 ms on every render — a date
+                       sort of 130k transactions split across 3,000 arrays,
+                       plus 28k round-trip objects materialised — to serve a
+                       click that needs about half a millisecond of it. The
+                       board itself never touches either: no sort getter, no
+                       summary cell and no band strip reads them.
+
+                       Getters rather than a build(row) call, so every
+                       existing reader is untouched — r.txns, r.excluded.length
+                       and applyTxnSort(r.txns, ...) all still just work — and
+                       each memoises on first read, so a drill-down that
+                       touches one twice still pays for it once. Both are
+                       enumerable to keep the row shape spreadable. */
+                    let _txns = null, _excluded = null;
+                    Object.defineProperty(out, 'txns', {
+                        enumerable: true, configurable: true,
+                        get: function () {
+                            if (_txns === null) {
+                                _txns = agg.txns.slice().sort(function (a, b) { return b.date - a.date; });
+                            }
+                            return _txns;
+                        }
                     });
+                    Object.defineProperty(out, 'excluded', {
+                        enumerable: true, configurable: true,
+                        get: function () {
+                            if (_excluded === null) {
+                                // One entry per round trip, both legs inside
+                                // it — NOT a flat list of legs. See
+                                // daBuildRoundTrips.
+                                _excluded = daBuildRoundTrips(skippedByTicker.get(agg.ticker) || [], pairOf);
+                            }
+                            return _excluded;
+                        }
+                    });
+                    rowsOut.push(out);
                 });
 
                 let totalBuyValue = 0, totalSellValue = 0;
@@ -20194,6 +20477,7 @@
             function clearCaches() {
                 _normCache.clear();
                 _supermanCache.clear();
+                _dateMemo.clear();
                 _resultScoreCache.src = null;
                 _resultScoreCache.map = null;
             }
@@ -20203,6 +20487,7 @@
             window._daInternal = {
                 daParseDate: daParseDate, daNormType: daNormType, daValueRupees: daValueRupees,
                 daNormalizeRows: daNormalizeRows, daExcludeIntraday: daExcludeIntraday,
+                daBuildRoundTrips: daBuildRoundTrips,
                 daComputeAnalysis: daComputeAnalysis, matchesSuperman: matchesSuperman,
                 SUPERMAN_NAMES: SUPERMAN_NAMES, daGrade: daGrade, DA_GRADES: DA_GRADES,
                 daResultBand: daResultBand, daResultScore: daResultScore,
@@ -20337,6 +20622,25 @@
             // The exact ticker order the summary table last rendered in —
             // what Up/Down arrow navigation walks through.
             let _lastRenderedTickers = [];
+
+            /* ── how many board rows reach the DOM at once ──
+               The same page size the Insider/Bulk/Block/SAST tables next
+               door already use (DEAL_PAGE_SIZE), for the same reason. The
+               unfiltered board is ~3,000 stocks, and handing all of them to
+               innerHTML meant 4.5 MB of HTML and ~25,000 <td> nodes in one
+               assignment — measured 142 ms just to BUILD the string, before
+               the browser had parsed or laid out any of it, on a screen that
+               shows about twenty rows.
+
+               Only the slice given to the DOM is capped. Every count, the
+               band strip, the sort and the excluded totals are still
+               computed over the whole result set, so nothing the header
+               claims is affected by where the page happens to end. */
+            const DA_PAGE_SIZE = 100;
+            let _pageLimit = DA_PAGE_SIZE;
+            // Total rows the current filters produced, so the arrow keys and
+            // the load-more button know whether anything is left.
+            let _boardTotal = 0;
 
             function activeSegs() {
                 const segs = [];
@@ -20478,12 +20782,17 @@
                     })
                     : res.rows;
                 const rows = applySort(graded, _sortKey, _sortDir);
-                // Keyboard Up/Down navigates this exact on-screen order.
-                _lastRenderedTickers = rows.map(function (r) { return r.ticker; });
+                _boardTotal = rows.length;
 
                 if (!rows.length) {
+                    _lastRenderedTickers = [];
                     return '<div class="da-empty">No stocks match these filters.</div>';
                 }
+
+                const shown = rows.length > _pageLimit ? rows.slice(0, _pageLimit) : rows;
+                // Keyboard Up/Down navigates this exact on-screen order —
+                // which is the RENDERED page, not the full result set.
+                _lastRenderedTickers = shown.map(function (r) { return r.ticker; });
 
                 let html = '<div class="da-table-wrap"><table class="da-table da-board"><thead><tr>' +
                     sortHeader('ticker', 'Stock') +
@@ -20496,7 +20805,7 @@
                     sortHeader('last', 'Last', 'da-col-wide') +
                     '</tr></thead><tbody>';
 
-                rows.forEach(function (r) {
+                shown.forEach(function (r) {
                     const band = r.resultScore === null ? DA_RESULT_UNRATED : r.resultBand;
                     const netCls = r.netValue >= 0 ? 'pos' : 'neg';
                     const netSign = r.netValue >= 0 ? '+' : '-';
@@ -20537,6 +20846,18 @@
                         '</tr>';
                 });
                 html += '</tbody></table></div>';
+
+                /* Deliberately the sibling deal tables' own button classes,
+                   not a private copy: this is the same control doing the
+                   same job one tab across, and it should not drift from it. */
+                const left = rows.length - shown.length;
+                if (left > 0) {
+                    html += '<div class="deal-load-more-wrap da-more-wrap">' +
+                        '<button class="deal-load-more-btn" onclick="window._daLoadMore()">' +
+                        'Load Next ' + Math.min(DA_PAGE_SIZE, left) +
+                        ' <span class="da-more-left">' + left.toLocaleString() + ' more</span>' +
+                        '</button></div>';
+                }
                 return html;
             }
 
@@ -20588,13 +20909,15 @@
                 html += '</tbody></table></div>';
 
                 if (r.excluded.length) {
+                    // One entry per round trip now, so this is already the
+                    // count of trips — no halving.
                     html += '<span class="da-excluded-toggle" onclick="window._daToggleExcluded()">' +
-                        (_showExcluded ? '▾' : '▸') + ' ' + r.excluded.length + ' same-day matched buy/sell pair' + (r.excluded.length === 1 ? '' : 's') +
-                        ' excluded as likely intraday (within 10% of each other)</span>';
+                        (_showExcluded ? '▾' : '▸') + ' ' + r.excluded.length + ' same-day round trip' + (r.excluded.length === 1 ? '' : 's') +
+                        ' excluded as likely intraday (same person, buy and sell within 10%)</span>';
                     if (_showExcluded) {
-                        html += '<div class="da-table-wrap" style="opacity:0.7;"><table class="da-table"><tbody>';
-                        r.excluded.forEach(function (t) {
-                            html += buildTxnRow(t);
+                        html += '<div class="da-table-wrap da-excluded-wrap"><table class="da-table da-excluded-table"><tbody>';
+                        r.excluded.forEach(function (trip) {
+                            html += buildRoundTripRows(trip);
                         });
                         html += '</tbody></table></div>';
                     }
@@ -20604,23 +20927,63 @@
 
             /* Buy = green, sell = orange, the FULL row — not just the type
                badge — so a transaction's direction reads at a glance down
-               the whole table, not just in one narrow column. */
-            function buildTxnRow(t) {
-                const rowCls = t.type === 'BUY' ? 'da-row-buy' : 'da-row-sell';
+               the whole table, not just in one narrow column.
+
+               extraCls and leadCell exist for the excluded list alone,
+               where two rows have to read as one bracketed round trip. The
+               transaction table calls this with neither and gets exactly
+               the row it always got. */
+            function buildTxnRow(t, extraCls, leadCell) {
+                const rowCls = (t.type === 'BUY' ? 'da-row-buy' : 'da-row-sell') + (extraCls ? ' ' + extraCls : '');
                 const typeCls = t.type === 'BUY' ? 'da-type-buy' : 'da-type-sell';
                 const personHtml = t.personLink
                     ? '<a class="dt-person dt-link" href="' + escHtml(t.personLink) + '" target="_blank" rel="noopener">' + escHtml(t.person) + '</a>'
                     : '<span class="dt-person">' + escHtml(t.person) + '</span>';
-                return '<tr class="' + rowCls + '"><td>' + daFmtDate(t.date) + '</td><td>' + escHtml(t.sub) + '</td>' +
+                return '<tr class="' + rowCls + '">' + (leadCell || '') +
+                    '<td>' + daFmtDate(t.date) + '</td><td>' + escHtml(t.sub) + '</td>' +
                     '<td>' + personHtml + '</td><td><span class="' + typeCls + '">' + t.type + '</span></td>' +
                     '<td title="' + daFmtExactINR(t.value) + '">' + daFmtINR(t.value) + '</td></tr>';
+            }
+
+            /* One round trip as ONE block: the BUY, its matching SELL
+               directly beneath it, and a tie cell spanning the two that
+               states how close their values sat — the number that decided
+               they were a single trade. Seeing the two legs together, and
+               seeing why they were joined, is the entire point of opening
+               this list; a date-sorted heap of legs showed neither.
+
+               An orphaned leg (no partner) renders alone under a ⚠ rather
+               than being hidden — see daBuildRoundTrips. */
+            function buildRoundTripRows(trip) {
+                const legs = [];
+                if (trip.buy) legs.push(trip.buy);
+                if (trip.sell) legs.push(trip.sell);
+                if (!legs.length) return '';
+                const paired = legs.length === 2;
+                const gap = !paired ? 'no partner'
+                    : (trip.diffPct > 0 ? 'within ' + (trip.diffPct * 100).toFixed(1) + '%' : 'same value');
+                const tie = '<td class="da-pair-tie" rowspan="' + legs.length + '" title="' +
+                    (paired ? 'These two legs cancelled each other — same person, same stock, same day, values ' + gap
+                        : 'This leg was excluded but its partner is not in the current view') + '">' +
+                    '<span class="da-pair-mark">' + (paired ? '⇄' : '⚠') + '</span>' +
+                    '<span class="da-pair-gap">' + gap + '</span></td>';
+                let out = '';
+                legs.forEach(function (t, i) {
+                    // Last leg closes the block; the rule under it is what
+                    // separates one round trip from the next.
+                    out += buildTxnRow(t, i === legs.length - 1 ? 'da-pair-end' : 'da-pair-mid', i === 0 ? tie : null);
+                });
+                return out;
             }
 
             // applySort/buildTxnRow are declared after _daInternal's own
             // object literal above (const declarations aren't hoisted with
             // a value), so they're attached here instead — same test hook,
             // never called by the UI.
-            Object.assign(window._daInternal, { applySort: applySort, buildTxnRow: buildTxnRow, applyTxnSort: applyTxnSort });
+            Object.assign(window._daInternal, {
+                applySort: applySort, buildTxnRow: buildTxnRow,
+                applyTxnSort: applyTxnSort, buildRoundTripRows: buildRoundTripRows
+            });
 
             function isAnalysisTabActive() {
                 const p = document.getElementById('deal-analysis-pane');
@@ -20640,7 +21003,11 @@
                 }, 400);
             }
 
-            function render() {
+            function render(keepPage) {
+                // Everything except "show me more" starts the board back at
+                // page one: a new sort, filter or search means the TOP of
+                // the new list is what was asked for.
+                if (!keepPage) _pageLimit = DA_PAGE_SIZE;
                 const body = document.getElementById('da-body');
                 const subEl = document.getElementById('da-sub');
                 if (!body) return;
@@ -20701,6 +21068,12 @@
             window._daBack = function () {
                 _view = 'summary'; _detailTicker = null;
                 render();
+            };
+            /* The only caller that keeps the current page — everything else
+               goes through plain render() and resets to the first. */
+            window._daLoadMore = function () {
+                _pageLimit += DA_PAGE_SIZE;
+                render(true);
             };
             window._daToggleExcluded = function () {
                 _showExcluded = !_showExcluded;
@@ -20986,6 +21359,12 @@
                 if (idx === -1) {
                     idx = 0;
                 } else if (ev.key === 'ArrowDown') {
+                    // Arrowing off the end of a page pulls the next one in,
+                    // rather than stopping at a wall the header says is not
+                    // there ("3,081 stocks", but only 100 reachable).
+                    if (idx === _lastRenderedTickers.length - 1 && _lastRenderedTickers.length < _boardTotal) {
+                        window._daLoadMore();
+                    }
                     idx = Math.min(idx + 1, _lastRenderedTickers.length - 1);
                 } else {
                     idx = Math.max(idx - 1, 0);
