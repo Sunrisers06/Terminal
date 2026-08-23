@@ -4521,6 +4521,24 @@
             cursor: pointer;
         }
 
+        /* Seven rows now rather than two, so they get their own scroll box
+           instead of growing the modal past the viewport on a phone. */
+        #fav-type-list {
+            display: flex;
+            flex-direction: column;
+            max-height: 46vh;
+            overflow-y: auto;
+        }
+
+        /* How many tickers the list already holds — the one number that makes
+           "which of these is my main list?" answerable at a glance. */
+        .fav-cb-count {
+            margin-left: auto;
+            font-size: 0.8rem;
+            color: var(--text3);
+            font-variant-numeric: tabular-nums;
+        }
+
         .fav-save-btn {
             margin-top: 10px;
             background: #3b82f6;
@@ -4577,6 +4595,46 @@
         .fav-dd-item:hover {
             background: rgba(255, 255, 255, 0.05);
             color: #fff;
+        }
+
+        /* Seven watchlists plus "All Favorites" — the menu now needs a name
+           and a count side by side, and a cap before it runs off a phone. */
+        .fav-dd-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            white-space: nowrap;
+        }
+
+        .fav-dropdown-menu {
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+
+        .fav-dd-count {
+            margin-left: auto;
+            font-size: 0.75rem;
+            color: var(--text3);
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* The list currently being filtered on. The button only has room for
+           the KEY, so this is where you confirm which list that key is. */
+        .fav-dd-item.fav-dd-on {
+            color: #fbbf24;
+            background: rgba(234, 179, 8, 0.1);
+        }
+
+        .fav-dd-item.fav-dd-on .fav-dd-count {
+            color: #fbbf24;
+        }
+
+        /* Separates the union from the individual lists that feed it. */
+        .fav-dd-sep {
+            height: 1px;
+            background: rgba(255, 255, 255, 0.08);
+            margin: 2px 0;
+            flex: 0 0 auto;
         }
 
         /* ══════════════════════════════════════════════════════
@@ -7025,11 +7083,9 @@
                     <div class="fav-dropdown-wrap">
                         <button class="fh-filter-btn" id="fav-filter-btn" onclick="toggleFavMenu(event)"
                             title="Favorite Tickers">F</button>
-                        <div id="fav-dropdown-menu" class="fav-dropdown-menu">
-                            <div class="fav-dd-item" onclick="toggleFHFilter('F')">All Favorites</div>
-                            <div class="fav-dd-item" onclick="toggleFHFilter('FF')">FunFav Only</div>
-                            <div class="fav-dd-item" onclick="toggleFHFilter('TF')">TechFav Only</div>
-                        </div>
+                        <!-- Filled by _renderFavMenu(): one row per watchlist,
+                             named by the sheet. -->
+                        <div id="fav-dropdown-menu" class="fav-dropdown-menu"></div>
                     </div>
                     <button class="fh-filter-btn" id="hold-filter-btn" onclick="toggleFHFilter('H')"
                         title="Holding Tickers">H</button>
@@ -7946,6 +8002,72 @@
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
         }
+        /* ══ WATCHLIST OPTIONS, IN ONE PLACE ══
+           Four separate controls let you pick a watchlist — the main filter
+           pane's index dropdown, the Full Screen Chart, the Breadth Charts and
+           the Trend Scanner. Each used to hardcode "Favorites" and "Holdings",
+           which is why adding a list meant finding all four. They now share
+           these three functions, so a column filled in the sheet appears in
+           every one of them at once, under whatever name the sheet gives it.
+
+           'favorites' and 'holdings' keep their original option VALUES rather
+           than moving to the fh_ scheme, so a selection saved by an older
+           build still resolves instead of silently falling back to "all". */
+        window.fhGroupOptionsHtml = function () {
+            const nm = window.fhName || function (k) { return k; };
+            let h = '<option value="favorites">⭐ ' + escHtml(nm('F')) + '</option>' +
+                '<option value="holdings">💼 ' + escHtml(nm('H')) + '</option>';
+            (window.FH_FAV_KEYS || []).forEach(function (k) {
+                h += '<option value="fh_' + k + '">☆ ' + escHtml(nm(k)) + '</option>';
+            });
+            return h;
+        };
+        /* Resolve a group value to a Set of BARE uppercase symbols (no .NS),
+           or null when it is not a watchlist group at all — the caller then
+           goes on to handle indices. Returning null rather than an empty Set
+           matters: an empty watchlist and "not a watchlist" mean opposite
+           things to every caller. */
+        window.fhGroupSet = function (g) {
+            let key = null;
+            if (g === 'favorites') key = 'F';
+            else if (g === 'holdings') key = 'H';
+            else if (typeof g === 'string' && g.indexOf('fh_') === 0) key = g.slice(3);
+            if (!key) return null;
+            const out = new Set();
+            const src = window._fhTickers && window._fhTickers[key];
+            if (src) src.forEach(function (t) { out.add(String(t).replace(/\.NS$/i, '').toUpperCase()); });
+            return out;
+        };
+        window.fhIsGroup = function (g) {
+            return g === 'favorites' || g === 'holdings' ||
+                (typeof g === 'string' && g.indexOf('fh_') === 0);
+        };
+        /* The Watchlist optgroup for the main filter pane's index dropdown.
+           Kept separate from populateDropdowns because the NAMES arrive with
+           the F/H sync, usually after the dropdowns are first built, and
+           re-running the whole of populateDropdowns would reset the user's
+           current selection in four other selects. */
+        window.fhWatchlistOptionsHtml = function () {
+            const nm = window.fhName || function (k) { return k; };
+            let h = '<option value="fh_F">' + escHtml(nm('F')) + '</option>';
+            (window.FH_FAV_KEYS || []).forEach(function (k) {
+                h += '<option value="fh_' + k + '">' + escHtml(nm(k)) + '</option>';
+            });
+            return h + '<option value="fh_H">' + escHtml(nm('H')) + '</option>';
+        };
+        window.fhRefreshIndexFilterOptions = function () {
+            const sel = document.getElementById('index-filter');
+            if (!sel) return;
+            const grp = sel.querySelector('optgroup[label="Watchlist"]');
+            if (!grp) return;
+            const html = window.fhWatchlistOptionsHtml();
+            if (grp.innerHTML === html) return;
+            // Rewriting the group drops the selection, so put it back.
+            const prev = sel.value;
+            grp.innerHTML = html;
+            sel.value = prev;
+        };
+
         function fmt(v) { const x = parseFloat(v); if (isNaN(x) || v == null || v === '') return '—'; return Math.abs(x) >= 1000 ? x.toFixed(0) : Math.abs(x) >= 100 ? x.toFixed(0) : Math.abs(x) >= 10 ? x.toFixed(1) : x.toFixed(2); }
         function fmtWhole(v) { const x = parseFloat(v); if (isNaN(x) || v == null || v === '') return '—'; return Math.round(x).toString(); }
         function fmtAbs(v) { const x = parseFloat(v); if (isNaN(x) || v == null || v === '') return '—'; return Math.abs(Math.round(x)).toString(); }
@@ -9795,12 +9917,7 @@
             const idxSel = document.getElementById('index-filter');
             idxSel.innerHTML = '<option value="all">All Indices</option>' +
                 idxNames.map(i => `<option value="${i}">${i}</option>`).join('') +
-                '<optgroup label="Watchlist">' +
-                '<option value="fh_F">All Favorites</option>' +
-                '<option value="fh_FF">FunFav Only</option>' +
-                '<option value="fh_TF">TechFav Only</option>' +
-                '<option value="fh_H">Holding</option>' +
-                '</optgroup>';
+                '<optgroup label="Watchlist">' + window.fhWatchlistOptionsHtml() + '</optgroup>';
             if (idxNames.includes('Nifty_ALL')) idxSel.value = 'Nifty_ALL';
             document.getElementById('qtr-filter').innerHTML = '<option value="all">All Quarters</option>' + [...qtrSet].sort().map(i => `<option value="${i}">${i}</option>`).join('');
             document.getElementById('sec-filter').innerHTML = '<option value="all">All Sectors</option>' + [...secSet].sort().map(i => `<option value="${i}">${i}</option>`).join('');
@@ -10936,9 +11053,7 @@
             const sel = document.getElementById('bc-group-sel');
             if (!sel) return;
             const prev = sel.value || window._bcGroup || 'all';
-            let html = '<option value="all">All Stocks</option>' +
-                '<option value="favorites">⭐ Favorites</option>' +
-                '<option value="holdings">💼 Holdings</option>';
+            let html = '<option value="all">All Stocks</option>' + window.fhGroupOptionsHtml();
             if (window.indexDataMap) {
                 const names = Object.keys(window.indexDataMap).sort();
                 if (names.some(function (nm) { return nm.toLowerCase() === 'index_main'; })) {
@@ -10958,14 +11073,8 @@
         function _bcUniverseSet() {
             const g = window._bcGroup || 'all';
             if (g === 'all') return null; // null = no filter, whole universe
-            if (g === 'favorites' || g === 'holdings') {
-                const key = g === 'favorites' ? 'F' : 'H';
-                const s = new Set();
-                if (window._fhTickers && window._fhTickers[key]) {
-                    window._fhTickers[key].forEach(function (t) { s.add(String(t).replace(/\.NS$/i, '').toUpperCase()); });
-                }
-                return s;
-            }
+            const fhSet = window.fhGroupSet(g);
+            if (fhSet) return fhSet;
             if (g === 'index_main') {
                 const key = Object.keys(window.indexDataMap || {}).find(function (k) { return k.toLowerCase() === 'index_main'; }) || 'Index_main';
                 return (window.indexDataMap && window.indexDataMap[key]) ? window.indexDataMap[key] : new Set();
@@ -11704,7 +11813,7 @@
             _bcPopulateGroupSelect();
 
             const g = window._bcGroup || 'all';
-            if (g === 'favorites' || g === 'holdings') {
+            if (window.fhIsGroup(g)) {
                 if (typeof window.loadFHTickers === 'function') await window.loadFHTickers();
             }
 
@@ -12116,10 +12225,70 @@
 
             const SYNC_URL = 'https://script.google.com/macros/s/AKfycbzGitT82ELDNGnkLd55q5d2YCHoDwqDFmgKLpdbD7PGss7AjkTrQ-IgDNcYh9YV5VrqXw/exec';
 
-            window._fhState = { active: null }; // null | 'F' | 'FF' | 'TF' | 'H'
-            window._fhTickers = { F: new Set(), FF: new Set(), TF: new Set(), H: new Set() };
-            window._sheetFavs = new Set(); // Static favs from CSV
-            window._remoteFavs = new Set(); // Dynamic favs from Sync URL
+            /* ══ THE WATCHLIST REGISTRY ══
+               One key per favourite column in the Holding sheet: FF is column
+               A and TF is column C (both original); W1..W5 are columns D..H,
+               added later. H (Holding, column B) is deliberately NOT a
+               favourite key — it has its own button and its own meaning, and
+               folding it in would make "All Favorites" mean "everything I own
+               as well".
+
+               Keys are stable, NAMES are not. Every list is named by row 1 of
+               its own column in the sheet and can be renamed there at any
+               time, so nothing below ever compares against a name — filters,
+               the cache and the offline queue all key off FF/TF/W1..W5. That
+               split is exactly what lets a list be renamed without orphaning
+               the tickers already stored against it. */
+            const FH_FAV_KEYS = ['FF', 'TF', 'W1', 'W2', 'W3', 'W4', 'W5'];
+            // Every set _fhTickers holds: the favourites, their union F, and H.
+            const FH_ALL_KEYS = ['F'].concat(FH_FAV_KEYS, ['H']);
+            // 0-based column in the sheet / published CSV, matching the Apps
+            // Script's FH_COLS. F has none — it is a union, not a column.
+            const FH_COL_IDX = { FF: 0, H: 1, TF: 2, W1: 3, W2: 4, W3: 5, W4: 6, W5: 7 };
+            const FH_DEFAULT_NAMES = {
+                F: 'All Favorites', FF: 'FunFav', TF: 'TechFav', H: 'Holding',
+                W1: 'Watchlist 1', W2: 'Watchlist 2', W3: 'Watchlist 3',
+                W4: 'Watchlist 4', W5: 'Watchlist 5'
+            };
+            window.FH_FAV_KEYS = FH_FAV_KEYS;
+            window.FH_ALL_KEYS = FH_ALL_KEYS;
+            window._fhNames = Object.assign({}, FH_DEFAULT_NAMES);
+
+            /* Display name for a key, falling back to the built-in default so
+               a list the sheet has not named yet still reads as something
+               rather than as a bare "W4". */
+            window.fhName = function (key) {
+                return (window._fhNames && window._fhNames[key]) || FH_DEFAULT_NAMES[key] || key;
+            };
+            /* True for any state that shows a FAVOURITE list — the union F, or
+               one of the individual lists. Used everywhere an edit has to
+               re-run the filter because it may have changed what is on screen.
+               H is not a favourite and is intentionally excluded. */
+            function fhIsFavKey(k) {
+                return k === 'F' || FH_FAV_KEYS.indexOf(k) !== -1;
+            }
+            window.fhIsFavKey = fhIsFavKey;
+
+            /* One shape in, one shape out: an Apps Script JSON payload becomes
+               the key -> Set map everything downstream expects. A key the
+               payload omits becomes an EMPTY set rather than undefined, so no
+               caller has to guard for it. */
+            function fhSetsFromPayload(payload) {
+                const out = {};
+                FH_ALL_KEYS.forEach(function (k) {
+                    out[k] = new Set(Array.isArray(payload && payload[k])
+                        ? payload[k].map(function (t) { return String(t).toUpperCase(); })
+                        : []);
+                });
+                return out;
+            }
+
+            window._fhState = { active: null }; // null | 'F' | 'H' | any FH_FAV_KEYS entry
+            window._fhTickers = {};
+            FH_ALL_KEYS.forEach(function (k) { window._fhTickers[k] = new Set(); });
+            // Resolved sets from each source, keyed exactly like _fhTickers.
+            window._fhRemote = null;   // Apps Script (source of truth)
+            window._fhSheet = null;    // published CSV (supplement)
             window._remoteSyncSuccess = false; // Source of truth flag
             window._fhLoaded = false;
             window._fhLoading = false;
@@ -12136,13 +12305,14 @@
 
             function saveFHCache() {
                 try {
-                    localStorage.setItem(FH_CACHE_KEY, JSON.stringify({
-                        at: Date.now(),
-                        FF: [...window._fhTickers.FF],
-                        TF: [...window._fhTickers.TF],
-                        F: [...window._fhTickers.F],
-                        H: [...window._fhTickers.H]
-                    }));
+                    // Names are cached alongside the tickers so the menus
+                    // read correctly offline instead of falling back to
+                    // "Watchlist 3" until a sync lands.
+                    const payload = { at: Date.now(), names: window._fhNames };
+                    FH_ALL_KEYS.forEach(function (k) {
+                        payload[k] = [...(window._fhTickers[k] || [])];
+                    });
+                    localStorage.setItem(FH_CACHE_KEY, JSON.stringify(payload));
                 } catch (e) {
                     console.warn('[SundarX] Could not cache F/H tickers:', e.message);
                 }
@@ -12154,12 +12324,15 @@
                 let c = null;
                 try { c = JSON.parse(localStorage.getItem(FH_CACHE_KEY)); } catch (e) { }
                 if (!c) return false;
-                const n = (c.FF || []).length + (c.TF || []).length + (c.H || []).length;
+                /* Counts the real columns only, never F: a cache holding
+                   nothing but the union would restore "favourites" that no
+                   longer belong to any list, which then cannot be un-starred
+                   because no list claims them. */
+                let n = 0;
+                FH_ALL_KEYS.forEach(function (k) { if (k !== 'F') n += (c[k] || []).length; });
                 if (!n) return false;
-                window._fhTickers.FF = new Set(c.FF || []);
-                window._fhTickers.TF = new Set(c.TF || []);
-                window._fhTickers.F = new Set(c.F || []);
-                window._fhTickers.H = new Set(c.H || []);
+                FH_ALL_KEYS.forEach(function (k) { window._fhTickers[k] = new Set(c[k] || []); });
+                if (c.names) window._fhNames = Object.assign({}, FH_DEFAULT_NAMES, c.names);
                 window._fhFromCache = true;
                 window._fhCachedAt = c.at || null;
                 console.log('[SundarX] F/H restored from cache (' + n + ' tickers, ' +
@@ -12208,14 +12381,18 @@
                         const resp = await fetch(SYNC_URL, { signal: ctrl.signal });
                         clearTimeout(tid);
                         const remoteData = await resp.json();
-                        if (Array.isArray(remoteData.FF)) window._remoteFF = new Set(remoteData.FF.map(t => String(t).toUpperCase()));
-                        if (Array.isArray(remoteData.TF)) window._remoteTF = new Set(remoteData.TF.map(t => String(t).toUpperCase()));
-                        if (Array.isArray(remoteData.F)) window._remoteFavs = new Set(remoteData.F.map(t => String(t).toUpperCase()));
-                        if (Array.isArray(remoteData.H)) window._remoteHolds = new Set(remoteData.H.map(t => String(t).toUpperCase()));
+                        window._fhRemote = fhSetsFromPayload(remoteData);
+                        /* The names travel with the data. Row 1 of the sheet is
+                           the only place a list is named, so renaming one there
+                           shows up everywhere on the next sync with nothing
+                           else to change. */
+                        if (remoteData.names) {
+                            window._fhNames = Object.assign({}, FH_DEFAULT_NAMES, remoteData.names);
+                        }
                         window._remoteSyncSuccess = true;
                         remoteOk = true;
-                        console.log('[SundarX] Remote sync OK — F=' +
-                            ((remoteData.F || []).length) + ', H=' + ((remoteData.H || []).length));
+                        console.log('[SundarX] Remote sync OK — F=' + window._fhRemote.F.size +
+                            ', H=' + window._fhRemote.H.size);
                     } catch (re) {
                         console.warn('[SundarX] Remote sync failed:', re.message);
                     }
@@ -12228,27 +12405,52 @@
                     try {
                         const text = await window._smartFetch(FH_CSV_URL);
                         const lines = text.replace(/\r/g, '').trim().split('\n');
-                        const ffSet = new Set(), holdSet = new Set(), tfSet = new Set();
+                        const cut = function (line) {
+                            return line.split(',').map(function (c) {
+                                return c.replace(/^"|"$/g, '').trim();
+                            });
+                        };
+                        const hdr = lines.length ? cut(lines[0]) : [];
+                        const hdrUp = hdr.map(function (h) { return h.toUpperCase(); });
+                        const sets = {};
+                        FH_ALL_KEYS.forEach(function (k) { sets[k] = new Set(); });
                         for (let i = 1; i < lines.length; i++) {
-                            const cols = lines[i].split(',').map(c => c.replace(/^"|"$/g, '').trim().toUpperCase());
-                            const funfav = cols[0] || '';
-                            const hold = cols[1] || '';
-                            const techfav = cols[2] || '';
-                            if (funfav && funfav !== 'FUNFAV' && funfav !== 'FAVORITES') ffSet.add(funfav);
-                            if (hold && hold !== 'HOLDING' && hold !== 'HOLDINGS') holdSet.add(hold);
-                            if (techfav && techfav !== 'TECHFAV') tfSet.add(techfav);
+                            const cols = cut(lines[i]).map(function (c) { return c.toUpperCase(); });
+                            FH_ALL_KEYS.forEach(function (k) {
+                                if (k === 'F') return;           // union, not a column
+                                const v = cols[FH_COL_IDX[k]] || '';
+                                /* A cell equal to its own column header is a
+                                   repeated header row, which some published
+                                   sheets emit — not a ticker. Comparing
+                                   against the ACTUAL header replaces the old
+                                   hardcoded 'FUNFAV'/'TECHFAV' list, which
+                                   could not know what D..H are called. */
+                                if (!v || v === hdrUp[FH_COL_IDX[k]]) return;
+                                sets[k].add(v);
+                            });
                         }
-                        window._sheetFF = ffSet;
-                        window._sheetTF = tfSet;
-                        window._sheetFavs = new Set([...ffSet, ...tfSet]);
-                        window._sheetHolds = holdSet;
-                        console.log(`[SundarX] CSV: FunFav=${ffSet.size}, TechFav=${tfSet.size}, Hold=${holdSet.size}`);
+                        FH_FAV_KEYS.forEach(function (k) {
+                            sets[k].forEach(function (t) { sets.F.add(t); });
+                        });
+                        window._fhSheet = sets;
+                        /* The CSV header names the lists too, but only stands
+                           in when the Apps Script did not answer — that one is
+                           the source of truth for names as well as tickers. */
+                        if (!remoteOk) {
+                            FH_ALL_KEYS.forEach(function (k) {
+                                if (k === 'F') return;
+                                const nm = (hdr[FH_COL_IDX[k]] || '').trim();
+                                if (nm) window._fhNames[k] = nm;
+                            });
+                        }
+                        console.log('[SundarX] CSV: ' + FH_FAV_KEYS.concat(['H']).map(function (k) {
+                            return window.fhName(k) + '=' + sets[k].size;
+                        }).join(', '));
                     } catch (ce) {
                         console.warn('[SundarX] CSV supplement unavailable:', ce.message);
                     }
 
-                    if (!remoteOk && !(window._sheetFF && window._sheetFF.size) &&
-                        !(window._sheetHolds && window._sheetHolds.size)) {
+                    if (!remoteOk && !(window._fhSheet && (window._fhSheet.F.size || window._fhSheet.H.size))) {
                         throw new Error('no F/H source reachable');
                     }
 
@@ -12260,7 +12462,9 @@
                     window._fhFromCache = false;
                     window._fhCachedAt = Date.now();
                     saveFHCache();
-                    console.log(`[SundarX] Ready — F=${window._fhTickers.F.size}, FF=${window._fhTickers.FF.size}, TF=${window._fhTickers.TF.size}, H=${window._fhTickers.H.size}`);
+                    console.log('[SundarX] Ready — ' + FH_ALL_KEYS.map(function (k) {
+                        return k + '=' + window._fhTickers[k].size;
+                    }).join(', '));
                 } catch (e) {
                     /* Network failed. Only fall back to recompute (which yields
                        empty sets) if there was no cache to keep — otherwise the
@@ -12330,25 +12534,29 @@
                   live sets and left the cache stale. Saving here means the
                   cache tracks every change, whatever triggered it. */
             window.recomputeFHTickers = function () {
-                const next = window._remoteSyncSuccess
-                    ? {
-                        FF: new Set(window._remoteFF || []),
-                        TF: new Set(window._remoteTF || []),
-                        F: new Set(window._remoteFavs || []),
-                        H: new Set(window._remoteHolds || [])
-                    }
-                    : {
-                        FF: new Set(window._sheetFF || []),
-                        TF: new Set(window._sheetTF || []),
-                        F: new Set(window._sheetFavs || []),
-                        H: new Set(window._sheetHolds || [])
-                    };
+                const src = window._remoteSyncSuccess ? window._fhRemote : window._fhSheet;
+                const next = {};
+                FH_ALL_KEYS.forEach(function (k) {
+                    next[k] = new Set((src && src[k]) || []);
+                });
+                /* F is always rebuilt from the parts rather than trusted from
+                   the source. A list can gain a ticker locally — an offline
+                   edit — without the union having been recomputed anywhere
+                   remote, and a stale F is precisely what makes a favourite
+                   show its star while vanishing from the F filter. */
+                next.F = new Set();
+                FH_FAV_KEYS.forEach(function (k) {
+                    next[k].forEach(function (t) { next.F.add(t); });
+                });
 
-                const incoming = next.FF.size + next.TF.size + next.F.size + next.H.size;
-                const current = (window._fhTickers.FF ? window._fhTickers.FF.size : 0) +
-                    (window._fhTickers.TF ? window._fhTickers.TF.size : 0) +
-                    (window._fhTickers.F ? window._fhTickers.F.size : 0) +
-                    (window._fhTickers.H ? window._fhTickers.H.size : 0);
+                // Real columns only: F is derived, so counting it would let an
+                // empty rebuild look non-empty and defeat the guard below.
+                let incoming = 0, current = 0;
+                FH_ALL_KEYS.forEach(function (k) {
+                    if (k === 'F') return;
+                    incoming += next[k].size;
+                    current += window._fhTickers[k] ? window._fhTickers[k].size : 0;
+                });
 
                 if (incoming === 0 && current > 0) {
                     console.warn('[SundarX] recomputeFHTickers: no source data — keeping the ' +
@@ -12362,12 +12570,28 @@
 
 
             let _favTypeResolve = null;
-            window.promptFavType = function (tk, isFF, isTF) {
+            /* activeKeys is the list of watchlists the ticker is already in.
+               The checkboxes are BUILT here rather than written into the HTML
+               because both how many there are and what they are called come
+               from the sheet — a rename or a newly filled column has to show
+               up without an edit to the markup. */
+            window.promptFavType = function (tk, activeKeys) {
                 return new Promise(resolve => {
                     _favTypeResolve = resolve;
                     document.getElementById('fav-modal-ticker').textContent = tk;
-                    document.getElementById('cb-fun-fav').checked = isFF;
-                    document.getElementById('cb-tech-fav').checked = isTF;
+                    const on = new Set(activeKeys || []);
+                    const box = document.getElementById('fav-type-list');
+                    if (box) {
+                        box.innerHTML = FH_FAV_KEYS.map(function (k) {
+                            const n = window._fhTickers[k] ? window._fhTickers[k].size : 0;
+                            return '<label class="fav-checkbox-label">' +
+                                '<input type="checkbox" data-fh-key="' + k + '"' +
+                                (on.has(k) ? ' checked' : '') + '>' +
+                                '<span>' + escHtml(window.fhName(k)) + '</span>' +
+                                '<span class="fav-cb-count">' + n + '</span>' +
+                                '</label>';
+                        }).join('');
+                    }
                     document.getElementById('fav-type-modal-overlay').classList.add('open');
                 });
             };
@@ -12377,14 +12601,19 @@
                 if (_favTypeResolve) { _favTypeResolve(null); _favTypeResolve = null; }
             };
             window.submitFavType = function () {
-                const ff = document.getElementById('cb-fun-fav').checked;
-                const tf = document.getElementById('cb-tech-fav').checked;
+                const lists = [];
+                document.querySelectorAll('#fav-type-list input[data-fh-key]').forEach(function (cb) {
+                    if (cb.checked) lists.push(cb.getAttribute('data-fh-key'));
+                });
                 document.getElementById('fav-type-modal-overlay').classList.remove('open');
-                if (_favTypeResolve) { _favTypeResolve({ ff, tf }); _favTypeResolve = null; }
+                if (_favTypeResolve) { _favTypeResolve({ lists: lists }); _favTypeResolve = null; }
             };
 
             window.toggleFavMenu = function (e) {
                 e.stopPropagation();
+                // Rebuilt on open as well, so counts are current even when
+                // nothing has re-rendered the button since the last sync.
+                _renderFavMenu();
                 document.getElementById('fav-dropdown-menu').classList.toggle('show');
             };
             document.addEventListener('click', () => {
@@ -12467,21 +12696,38 @@
             }
             window._fhPendingCount = fhPending().length;
 
-            /** Apply an edit to the live sets immediately, and persist it. */
+            /* A queue entry written by an OLDER build of this app carries
+               ff/tf booleans instead of a lists array. Reading both shapes
+               means an offline edit made before this update still uploads
+               correctly instead of being silently dropped on the next load. */
+            function fhMutLists(m) {
+                if (Array.isArray(m.lists)) return m.lists;
+                const out = [];
+                if (m.ff) out.push('FF');
+                if (m.tf) out.push('TF');
+                return out;
+            }
+
+            /* Apply an edit to the live sets immediately, and persist it.
+               For favourites, opts.lists is the COMPLETE set of lists the
+               ticker should belong to afterwards — the same final-state shape
+               that goes to the sheet, which is what makes replaying the queue
+               idempotent. */
             function fhApplyLocal(tk, type, opts) {
                 const T = window._fhTickers;
                 if (type === 'H') {
                     if (opts.on) T.H.add(tk); else T.H.delete(tk);
                 } else {
-                    if (opts.ff) T.FF.add(tk); else T.FF.delete(tk);
-                    if (opts.tf) T.TF.add(tk); else T.TF.delete(tk);
-                    if (opts.ff || opts.tf) T.F.add(tk); else T.F.delete(tk);
+                    const on = new Set(opts.lists || []);
+                    FH_FAV_KEYS.forEach(function (k) {
+                        if (on.has(k)) T[k].add(tk); else T[k].delete(tk);
+                    });
+                    if (on.size) T.F.add(tk); else T.F.delete(tk);
                 }
                 // Mirror into the remote-shaped sets so a later recompute agrees.
-                window._remoteFF = new Set(T.FF);
-                window._remoteTF = new Set(T.TF);
-                window._remoteFavs = new Set(T.F);
-                window._remoteHolds = new Set(T.H);
+                const mirror = {};
+                FH_ALL_KEYS.forEach(function (k) { mirror[k] = new Set(T[k]); });
+                window._fhRemote = mirror;
                 if (typeof saveFHCache === 'function') saveFHCache();
                 if (typeof window.refreshFHUI === 'function') window.refreshFHUI();
             }
@@ -12498,7 +12744,7 @@
                     try {
                         const url = m.type === 'H'
                             ? `${SYNC_URL}?action=${m.on ? 'add' : 'remove'}&ticker=${m.tk}&type=H`
-                            : `${SYNC_URL}?action=update_fav&ticker=${m.tk}&ff=${!!m.ff}&tf=${!!m.tf}`;
+                            : `${SYNC_URL}?action=update_fav&ticker=${m.tk}&lists=${fhMutLists(m).join(',')}`;
                         const r = await fetch(url);
                         const after = await r.json();
 
@@ -12515,7 +12761,7 @@
                                 want = m.on ? 'in holdings' : 'out of holdings';
                                 applied = has(after.H, m.tk) === !!m.on;
                             } else {
-                                const wantFav = !!(m.ff || m.tf);
+                                const wantFav = fhMutLists(m).length > 0;
                                 want = wantFav ? 'in favourites' : 'out of favourites';
                                 applied = has(after.F, m.tk) === wantFav;
                             }
@@ -12560,9 +12806,11 @@
                     if (m.type === 'H') {
                         if (m.on) T.H.add(m.tk); else T.H.delete(m.tk);
                     } else {
-                        if (m.ff) T.FF.add(m.tk); else T.FF.delete(m.tk);
-                        if (m.tf) T.TF.add(m.tk); else T.TF.delete(m.tk);
-                        if (m.ff || m.tf) T.F.add(m.tk); else T.F.delete(m.tk);
+                        const on = new Set(fhMutLists(m));
+                        FH_FAV_KEYS.forEach(function (k) {
+                            if (on.has(k)) T[k].add(m.tk); else T[k].delete(m.tk);
+                        });
+                        if (on.size) T.F.add(m.tk); else T.F.delete(m.tk);
                     }
                 });
                 console.log('[SundarX] Re-applied ' + q.length + ' pending F/H edit(s) over the sheet data.');
@@ -12581,32 +12829,36 @@
                 window._syncLocks.add(lockKey);
 
                 if (type === 'F') {
-                    const isFF = window._fhTickers.FF ? window._fhTickers.FF.has(tk) : false;
-                    const isTF = window._fhTickers.TF ? window._fhTickers.TF.has(tk) : false;
-                    const result = await window.promptFavType(tk, isFF, isTF);
+                    // Which lists the ticker is in right now, so the modal
+                    // opens showing the truth rather than empty boxes.
+                    const current = FH_FAV_KEYS.filter(function (k) {
+                        return window._fhTickers[k] && window._fhTickers[k].has(tk);
+                    });
+                    const result = await window.promptFavType(tk, current);
                     if (!result) { window._syncLocks.delete(lockKey); return; }
+                    const lists = result.lists || [];
 
                     if (navigator.onLine === false) {
                         // Take the edit now; the sheet catches up on reconnect.
-                        fhApplyLocal(tk, 'F', { ff: result.ff, tf: result.tf });
-                        fhQueue({ tk: tk, type: 'F', ff: result.ff, tf: result.tf });
+                        fhApplyLocal(tk, 'F', { lists: lists });
+                        fhQueue({ tk: tk, type: 'F', lists: lists });
                         const offBtns = document.querySelectorAll(`.fav-toggle-${tk}`);
                         offBtns.forEach(b => window._setFHGlow(b, 'F', window._fhTickers.F.has(tk)));
                         if (window._sxToast) {
                             window._sxToast('Saved on this device — syncs when you reconnect.', 'ok');
                         }
-                        if (['F', 'FF', 'TF'].indexOf(window._fhState.active) !== -1) doFilter();
+                        if (fhIsFavKey(window._fhState.active)) doFilter();
                         window._syncLocks.delete(lockKey);
                         return;
                     }
 
                     try {
-                        const resp = await fetch(`${SYNC_URL}?action=update_fav&ticker=${tk}&ff=${result.ff}&tf=${result.tf}`);
+                        const resp = await fetch(`${SYNC_URL}?action=update_fav&ticker=${tk}&lists=${lists.join(',')}`);
                         const data = await resp.json();
-                        if (data.F) window._remoteFavs = new Set(data.F.map(t => String(t).toUpperCase()));
-                        if (data.FF) window._remoteFF = new Set(data.FF.map(t => String(t).toUpperCase()));
-                        if (data.TF) window._remoteTF = new Set(data.TF.map(t => String(t).toUpperCase()));
-                        if (data.H) window._remoteHolds = new Set(data.H.map(t => String(t).toUpperCase()));
+                        window._fhRemote = fhSetsFromPayload(data);
+                        if (data.names) {
+                            window._fhNames = Object.assign({}, FH_DEFAULT_NAMES, data.names);
+                        }
                         window._remoteSyncSuccess = true;
 
                         recomputeFHTickers();
@@ -12616,19 +12868,19 @@
                         const btns = document.querySelectorAll(`.fav-toggle-${tk}`);
                         btns.forEach(b => window._setFHGlow(b, 'F', finalState));
 
-                        if (window._fhState.active === 'F' || window._fhState.active === 'FF' || window._fhState.active === 'TF') doFilter();
+                        if (fhIsFavKey(window._fhState.active)) doFilter();
                     } catch (e) {
                         // Online but unreachable: keep the edit rather than
                         // silently discarding what the user just did.
                         console.warn('[SundarX] Fav sync failed, queued instead:', e.message);
-                        fhApplyLocal(tk, 'F', { ff: result.ff, tf: result.tf });
-                        fhQueue({ tk: tk, type: 'F', ff: result.ff, tf: result.tf });
+                        fhApplyLocal(tk, 'F', { lists: lists });
+                        fhQueue({ tk: tk, type: 'F', lists: lists });
                         const qBtns = document.querySelectorAll(`.fav-toggle-${tk}`);
                         qBtns.forEach(b => window._setFHGlow(b, 'F', window._fhTickers.F.has(tk)));
                         if (window._sxToast) {
                             window._sxToast("Couldn't reach the sheet — saved here, will sync.", 'err');
                         }
-                        if (['F', 'FF', 'TF'].indexOf(window._fhState.active) !== -1) doFilter();
+                        if (fhIsFavKey(window._fhState.active)) doFilter();
                     } finally {
                         window._syncLocks.delete(lockKey);
                     }
@@ -12659,7 +12911,13 @@
                 try {
                     const resp = await fetch(`${SYNC_URL}?action=${action}&ticker=${tk}&type=${type}`);
                     const result = await resp.json();
-                    if (result.H) window._remoteHolds = new Set(result.H.map(t => String(t).toUpperCase()));
+                    // The endpoint returns every list, not just H — taking the
+                    // whole payload keeps the favourite sets from going stale
+                    // behind a holdings edit.
+                    window._fhRemote = fhSetsFromPayload(result);
+                    if (result.names) {
+                        window._fhNames = Object.assign({}, FH_DEFAULT_NAMES, result.names);
+                    }
                     window._remoteSyncSuccess = true;
 
                     recomputeFHTickers();
@@ -12685,15 +12943,47 @@
                 }
             };
 
+            /* The dropdown is rebuilt rather than written into the HTML:
+               the list names live in the sheet, arrive with the first sync and
+               can change at any time. Counts come along because "which of my
+               seven lists has anything in it" is the first thing you want to
+               know when picking one. */
+            function _renderFavMenu() {
+                const menu = document.getElementById('fav-dropdown-menu');
+                if (!menu) return;
+                const active = window._fhState.active;
+                let html = '<div class="fav-dd-item' + (active === 'F' ? ' fav-dd-on' : '') +
+                    '" onclick="toggleFHFilter(\'F\')">' + escHtml(window.fhName('F')) +
+                    '<span class="fav-dd-count">' +
+                    (window._fhTickers.F ? window._fhTickers.F.size : 0) + '</span></div>' +
+                    '<div class="fav-dd-sep"></div>';
+                FH_FAV_KEYS.forEach(function (k) {
+                    const n = window._fhTickers[k] ? window._fhTickers[k].size : 0;
+                    html += '<div class="fav-dd-item' + (active === k ? ' fav-dd-on' : '') +
+                        '" onclick="toggleFHFilter(\'' + k + '\')" title="' +
+                        escHtml(window.fhName(k)) + '">' + escHtml(window.fhName(k)) +
+                        '<span class="fav-dd-count">' + n + '</span></div>';
+                });
+                if (menu.innerHTML !== html) menu.innerHTML = html;
+            }
+            window._renderFavMenu = _renderFavMenu;
+
             function _updateFHBtnState() {
                 const favBtn = document.getElementById('fav-filter-btn');
                 const holdBtn = document.getElementById('hold-filter-btn');
                 if (!favBtn || !holdBtn) return;
-                favBtn.classList.toggle('fh-active', ['F', 'FF', 'TF'].includes(window._fhState.active));
-                holdBtn.classList.toggle('fh-active', window._fhState.active === 'H');
-                if (window._fhState.active === 'FF') favBtn.textContent = 'FF';
-                else if (window._fhState.active === 'TF') favBtn.textContent = 'TF';
-                else favBtn.textContent = 'F';
+                const active = window._fhState.active;
+                favBtn.classList.toggle('fh-active', fhIsFavKey(active));
+                holdBtn.classList.toggle('fh-active', active === 'H');
+                /* The button is barely two characters wide, so an active list
+                   shows its KEY (FF, TF, W3) — a sheet-supplied name could be
+                   anything and would not fit. The name is in the tooltip and
+                   in the menu, where there is room for it. */
+                favBtn.textContent = (fhIsFavKey(active) && active !== 'F') ? active : 'F';
+                favBtn.title = fhIsFavKey(active)
+                    ? 'Showing ' + window.fhName(active) + ' — click to change'
+                    : 'Favorite Tickers';
+                _renderFavMenu();
             }
             window._updateFHBtnState = _updateFHBtnState;
 
@@ -12704,6 +12994,12 @@
             window.refreshFHUI = function () {
                 try {
                     _updateFHBtnState();
+                    // Names arrive with the sync, after populateDropdowns has
+                    // already run — this is what makes a rename in the sheet
+                    // show up in the main filter pane without a reload.
+                    if (typeof window.fhRefreshIndexFilterOptions === 'function') {
+                        window.fhRefreshIndexFilterOptions();
+                    }
                     if (window._fhState && window._fhState.active &&
                         typeof doFilter === 'function') doFilter();
                 } catch (e) {
@@ -21799,14 +22095,10 @@
                 <button id="fav-type-modal-close" onclick="closeFavTypeModal(null)" title="Close">✕</button>
             </div>
             <div id="fav-type-modal-body">
-                <label class="fav-checkbox-label">
-                    <input type="checkbox" id="cb-fun-fav">
-                    <span>FunFav</span>
-                </label>
-                <label class="fav-checkbox-label">
-                    <input type="checkbox" id="cb-tech-fav">
-                    <span>TechFav</span>
-                </label>
+                <!-- One checkbox per watchlist, generated by promptFavType.
+                     They cannot be written here: both the number of lists and
+                     their names come from the Holding sheet. -->
+                <div id="fav-type-list"></div>
                 <button class="fav-save-btn" onclick="submitFavType()">Save</button>
             </div>
         </div>
@@ -25258,9 +25550,7 @@
             const sel = document.getElementById('ts-group-sel');
             if (!sel) return;
             const prev = sel.value || window._tsState.group || 'all';
-            let html = '<option value="all">All Stocks</option>' +
-                '<option value="favorites">⭐ Favorites</option>' +
-                '<option value="holdings">💼 Holdings</option>';
+            let html = '<option value="all">All Stocks</option>' + window.fhGroupOptionsHtml();
             if (window.indexDataMap) {
                 const names = Object.keys(window.indexDataMap).sort();
                 if (names.some(function (n) { return n.toLowerCase() === 'index_main'; })) {
@@ -25280,14 +25570,8 @@
         function _tsGroupSet() {
             const g = window._tsState.group || 'all';
             if (g === 'all') return null;
-            if (g === 'favorites' || g === 'holdings') {
-                const key = g === 'favorites' ? 'F' : 'H';
-                const s = new Set();
-                if (window._fhTickers && window._fhTickers[key]) {
-                    window._fhTickers[key].forEach(function (t) { s.add(String(t).replace(/\.NS$/i, '').toUpperCase()); });
-                }
-                return s;
-            }
+            const fhSet = window.fhGroupSet(g);
+            if (fhSet) return fhSet;
             if (g === 'index_main') {
                 const key = Object.keys(window.indexDataMap || {}).find(function (k) { return k.toLowerCase() === 'index_main'; }) || 'Index_main';
                 return (window.indexDataMap && window.indexDataMap[key]) ? window.indexDataMap[key] : new Set();
@@ -29197,12 +29481,9 @@
                 const groupSel = document.getElementById('fs-group-select');
                 const prevGroup = groupSel ? groupSel.value : null;
 
-                groupSel.innerHTML = `
-                    <option value="all">All Tickers</option>
-                    <option value="favorites">Favorites</option>
-                    <option value="holdings">Holdings</option>
-                    <option value="index_main">📈 Index_main</option>
-                `;
+                groupSel.innerHTML = '<option value="all">All Tickers</option>' +
+                    window.fhGroupOptionsHtml() +
+                    '<option value="index_main">📈 Index_main</option>';
 
 
                 // Add individual indices if available (skip 'Index_main' — handled separately)
@@ -29308,7 +29589,7 @@
                 await window.toggleRemoteFH(tk, type);
                 // Refresh list if we are currently filtering by favorites/holdings group
                 const group = document.getElementById('fs-group-select').value;
-                if (group === 'favorites' || group === 'holdings') {
+                if (window.fhIsGroup(group)) {
                     window.updateFSTickers(true);
                 }
             };
@@ -29412,14 +29693,9 @@
                         if (window._fhTickers.F) window._fhTickers.F.forEach(t => tickerSet.add(t.replace(/\.NS$/i, '').toUpperCase()));
                         if (window._fhTickers.H) window._fhTickers.H.forEach(t => tickerSet.add(t.replace(/\.NS$/i, '').toUpperCase()));
                     }
-                } else if (group === 'favorites') {
-                    if (window._fhTickers && window._fhTickers.F) {
-                        window._fhTickers.F.forEach(t => tickerSet.add(t.replace(/\.NS$/i, '').toUpperCase()));
-                    }
-                } else if (group === 'holdings') {
-                    if (window._fhTickers && window._fhTickers.H) {
-                        window._fhTickers.H.forEach(t => tickerSet.add(t.replace(/\.NS$/i, '').toUpperCase()));
-                    }
+                } else if (window.fhIsGroup(group)) {
+                    const fhSet = window.fhGroupSet(group);
+                    if (fhSet) fhSet.forEach(t => tickerSet.add(t));
                 } else if (group === 'index_main') {
                     // Index_main: use the sequence defined in the watchlist (indices.parquet)
                     const key = Object.keys(window.indexDataMap || {}).find(k => k.toLowerCase() === 'index_main') || 'Index_main';
