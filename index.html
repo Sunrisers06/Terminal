@@ -7905,6 +7905,27 @@
             'CFO/P': [{ min: 80, color: 'green' }, { min: 60, color: 'blue' }, { min: -999999, color: 'red' }],
             'Plg%': [{ min: 5.0001, color: 'red' }, { min: 0.0001, color: 'blue' }, { min: -999999, color: 'green' }]
         };
+        /* ── one header resolution per TABLE, not per field per row ──
+           `Object.keys(row).find(k => k.toLowerCase() === name)` is a fine way
+           to read a column whose casing you do not trust — but it was being
+           called per field per row. Over insights.parquet that is 12,528 rows
+           x 5 fields = 62,640 key-array allocations and as many
+           case-insensitive scans, all re-deriving a header that is identical
+           for every row of the table. parseCSV builds every row from one
+           shared header list, so the first row is authoritative. */
+        function colReader(rows, wanted) {
+            const keys = (rows && rows.length) ? Object.keys(rows[0]) : [];
+            const map = {};
+            wanted.forEach(function (w) {
+                map[w] = keys.find(function (k) { return String(k).toLowerCase() === w; }) || null;
+            });
+            return function (row, w) {
+                const k = map[w];
+                const v = k ? row[k] : null;
+                return (v === null || v === undefined) ? '' : String(v);
+            };
+        }
+
         function getChipColor(name, val) {
             const rules = METRIC_COLORS[name];
             if (!rules || val === undefined || val === '') return 'gray';
@@ -8938,9 +8959,10 @@
             try {
                 const text = await smartFetch(URLS.insights);
                 const ins = parseCSV(text);
+                const _insGet = colReader(ins, ['timestamp', 'ticker', 'tag', 'market_insight', 'insight_url']);
                 allInsightsData = ins.map(r => {
                     try {
-                        const getK = k => { const fk = Object.keys(r).find(x => String(x).toLowerCase() === k); return fk ? String(r[fk]) : ''; };
+                        const getK = k => _insGet(r, k);
                         const t = getK('timestamp');
                         const ticker = String(r['Ticker'] || r['ticker'] || getK('ticker') || '');
                         const text = getK('market_insight').trim();
@@ -9262,6 +9284,25 @@
            STOCK ENGINE
         ══════════════════════════════ */
         let allData = [], activeFilter = 'all', indexDataMap = {};
+
+        /* ── window.allData ──
+           `let` at script top level does NOT create a window property, so every
+           `window.allData` in this file — the Full Screen Chart sidebar and the
+           chart watermark among them — was reading `undefined` and silently
+           falling back. The visible symptom was the sidebar's sector-rank
+           badges never appearing at all: their row lookup returned nothing on
+           every ticker, forever.
+
+           An accessor rather than `window.allData = allData` after each
+           assignment: the variable is reassigned in three places, one of which
+           is the F/H filter swapping it out and back around doFilter(), and a
+           mirror that has to be remembered at each of them is a mirror that
+           goes stale. This cannot. */
+        Object.defineProperty(window, 'allData', {
+            configurable: true,
+            get: function () { return allData; },
+            set: function (v) { allData = v; }
+        });
         window.serialKey = null;
         let currentFilteredData = [], currentRenderLimit = 100;
         let debTimer;
@@ -9739,6 +9780,40 @@
             const wraps = document.querySelectorAll('.card-chart-wrap:not([data-drawn])');
             if (!wraps.length) return;
 
+            /* ── draw what is on screen, not all 100 ──
+               A card's chart is by far the most expensive thing on it, and
+               this used to draw every rendered card's chart four per frame:
+               ~25 straight frames of canvas work immediately after a filter
+               change, for roughly six charts the reader can actually see.
+               That is what made the list stutter the moment it appeared.
+
+               An IntersectionObserver with 600px of margin draws each one
+               just before it scrolls into view, so the work follows the
+               reader instead of racing ahead of them. disconnect() first
+               because renderCards() replaces the whole list — without it the
+               observer would keep holding every detached wrapper from every
+               previous render. The rAF batch below stays as the fallback for
+               anything without IntersectionObserver. */
+            if (typeof IntersectionObserver === 'function') {
+                // disconnect() leaves the observer reusable — it only drops
+                // the targets, which is exactly what a re-render needs.
+                if (window._cardChartIO) window._cardChartIO.disconnect();
+                if (!window._cardChartIO) {
+                    window._cardChartIO = new IntersectionObserver(function (entries, obs) {
+                        for (let k = 0; k < entries.length; k++) {
+                            if (!entries[k].isIntersecting) continue;
+                            const w = entries[k].target;
+                            obs.unobserve(w);
+                            if (window._cardViewMode !== 'chart' || w.dataset.drawn) continue;
+                            w.dataset.drawn = '1';
+                            drawCardChart(w);
+                        }
+                    }, { rootMargin: '600px 0px' });
+                }
+                for (let k = 0; k < wraps.length; k++) window._cardChartIO.observe(wraps[k]);
+                return;
+            }
+
             let i = 0;
             function drawNextBatch() {
                 if (window._cardViewMode !== 'chart') return;
@@ -10131,9 +10206,10 @@
                 // Pre-compute search tokens once — avoids repeated tokenize() in every filter call
                 allNewsData.forEach(n => { n._tok = tokenize(n.text + ' ' + (n.ticker || '') + ' ' + (n.date || '')); });
 
+                const _insGet = colReader(ins, ['timestamp', 'ticker', 'tag', 'market_insight', 'insight_url']);
                 allInsightsData = ins.map(r => {
                     try {
-                        const getK = k => { const fk = Object.keys(r).find(x => String(x).toLowerCase() === k); return fk ? String(r[fk]) : ''; };
+                        const getK = k => _insGet(r, k);
                         const t = getK('timestamp');
                         const ticker = String(r['Ticker'] || r['ticker'] || getK('ticker') || '');
                         const text = getK('market_insight').trim();
@@ -14594,6 +14670,33 @@
             }
             window._fsBuildPriceActionAnalysis = buildPriceActionAnalysis;
 
+            /* ── the crosshair's hot path ──
+               buildPriceActionAnalysis is one of the largest functions in this
+               file and walks the whole visible window. The crosshair called it
+               on EVERY hover frame — recomputing, up to 120 times a second, an
+               answer that cannot change until the ticker, the period or the
+               pan offset does. Moving the mouse now costs a string compare.
+
+               A single slot rather than a Map: exactly one chart is hovered at
+               a time, so anything beyond the current window would only be
+               holding memory for a hit that never comes. The key is the ticker
+               plus the identity of the visible slice — raw is a fresh .slice()
+               on every draw, so its length with its first and last bar is what
+               actually identifies it. last.close is in there because replay
+               rebuilds the same window with a different final candle. */
+            let _paKey = null, _paVal = null;
+            function _fsPriceActionCached(ticker, raw) {
+                if (!raw || !raw.length) return null;
+                const first = raw[0], last = raw[raw.length - 1];
+                const key = ticker + '|' + raw.length + '|' + first.date.getTime() +
+                    '|' + last.date.getTime() + '|' + last.close;
+                if (key !== _paKey) {
+                    _paKey = key;
+                    _paVal = buildPriceActionAnalysis(raw);
+                }
+                return _paVal;
+            }
+
             function fitCanvasText(ctx, text, maxW) {
                 if (ctx.measureText(text).width <= maxW) return text;
                 let out = text;
@@ -14925,6 +15028,110 @@
             /* ─── Draw chart — MarketSmith-style (matches screenshot) ───
                Parameterized core: works for the hover popup AND for
                inline per-card charts (any canvas pair + container). ─── */
+            /* ticker -> its deal rows, across all four segments.
+               Rebuilt only when the Deal engine replaces one of its arrays — it
+               swaps them wholesale on a refetch rather than mutating in place,
+               so array identity is a sound cache key (the same argument
+               normalizedRows() makes in the Analysis tab). */
+            let _dealIdx = null, _dealIdxSrc = null;
+            const _DEAL_SUBS = ['insider', 'bulk', 'block', 'sast'];
+            function _dealsForTicker(UC) {
+                const dd = window._dealData;
+                if (!dd) return [];
+                const sig = _DEAL_SUBS.map(function (k) { return dd[k]; });
+                if (!_dealIdx || !_dealIdxSrc || sig.some(function (a, i) { return a !== _dealIdxSrc[i]; })) {
+                    const m = new Map();
+                    _DEAL_SUBS.forEach(function (subName) {
+                        const rows = dd[subName] || [];
+                        for (let i = 0; i < rows.length; i++) {
+                            const t = String(rows[i]['Ticker'] || '').trim().toUpperCase();
+                            if (!t) continue;
+                            let arr = m.get(t);
+                            if (!arr) { arr = []; m.set(t, arr); }
+                            arr.push({ row: rows[i], sub: subName });
+                        }
+                    });
+                    _dealIdx = m; _dealIdxSrc = sig;
+                }
+                return _dealIdx.get(UC) || [];
+            }
+            // Test hook only — lets the browser suite compare this index against
+            // the full scan it replaced. Never called by the UI.
+            window.__dealsForTicker = _dealsForTicker;
+
+            /* Days since epoch (UTC) of the Monday of the week holding ms.
+               1970-01-01 was a Thursday, hence the +4. Same week the old code
+               found via getUTCDay()/setUTCDate(), without building two Dates and
+               a string to say so. */
+            function _mondayDay(ms) {
+                const d = Math.floor(ms / 86400000);
+                const dow = (d + 4) % 7;
+                return d + (dow === 0 ? -6 : 1 - dow);
+            }
+
+            /* Delivery % for that week, by binary search over the ticker's
+               sorted weeks. 0 when the week is missing, as before. */
+            function _delivPctAt(series, ms) {
+                if (!series) return 0;
+                const target = _mondayDay(ms);
+                const a = series.day;
+                let lo = 0, hi = a.length - 1;
+                while (lo <= hi) {
+                    const mid = (lo + hi) >> 1;
+                    const v = a[mid];
+                    if (v === target) {
+                        const pct = series.pct[mid];
+                        return Number.isFinite(pct) ? pct : 0;
+                    }
+                    if (v < target) lo = mid + 1; else hi = mid - 1;
+                }
+                return 0;
+            }
+
+            /* One candle's delivery-derived fields — the same arithmetic the
+               draw loop used to run inline for every visible candle. */
+            function _delivStatsAt(rows, i) {
+                const r = rows[i];
+                let sum = 0, count = 0, sumDVol = 0, countDVol = 0;
+                for (let j = 0; j < 50; j++) {
+                    const idx = i - j;
+                    if (idx < 0) break;
+                    if (j < 9) { sum += rows[idx].delivPer || 0; count++; }
+                    sumDVol += rows[idx].delivVol || 0;
+                    countDVol++;
+                }
+                r.delivSma9 = count > 0 ? sum / count : null;
+                r.delivVolSma50 = countDVol > 0 ? sumDVol / countDVol : null;
+
+                let hDn = 0, hUp = 0;
+                for (let j = 1; j <= 15; j++) {
+                    const idx = i - j;
+                    if (idx < 0) break;
+                    const pr = rows[idx];
+                    if (pr.close < pr.open && pr.delivVol > hDn) hDn = pr.delivVol;
+                    if (pr.close > pr.open && pr.delivVol > hUp) hUp = pr.delivVol;
+                }
+                r.delivHDnV15 = hDn;
+                r.delivHUpV15 = hUp;
+
+                const volSig = getVolumeSignal(r);
+                r._vColor = volSig.color;
+                r._vDesc = volSig.label;
+                r._dColor = getDelivVolumeSignal(r).color;
+            }
+
+            function _computeDelivSeries(rows, series) {
+                for (let i = 0; i < rows.length; i++) {
+                    const r = rows[i];
+                    const pct = _delivPctAt(series, r.date.getTime());
+                    r.delivPer = pct;
+                    r.delivVol = r.vol ? r.vol * pct / 100 : 0;
+                }
+                for (let i = 0; i < rows.length; i++) _delivStatsAt(rows, i);
+            }
+            window.__delivPctAt = _delivPctAt;              // test hooks
+            window.__computeDelivSeries = _computeDelivSeries;
+
             function drawChartCore(ticker, period, pCv, vCv, loadEl, widthEl) {
                 const UC = ticker.toUpperCase();
                 const allRaw = _index ? (_index.get(UC) || []) : [];
@@ -15320,61 +15527,30 @@
                     return;
                 }
 
-                // Pre-compute delivery percentage and volume signal colors for all visible candles
-                const delivMap = (isFs && window._fsDelivCache) ? window._fsDelivCache[UC] : null;
-                const reqStart = Math.max(0, actualStart - 65);
-                for (let k = reqStart; k < actualEnd; k++) {
-                    const r = currentData[k];
-                    let delivPer = 0;
-                    if (delivMap) {
-                        const dateObj = new Date(r.date);
-                        const day = dateObj.getUTCDay();
-                        const diff = dateObj.getUTCDate() - day + (day === 0 ? -6 : 1);
-                        const monday = new Date(dateObj.setUTCDate(diff));
-                        const mondayStr = `${monday.getUTCFullYear()}-${String(monday.getUTCMonth() + 1).padStart(2, '0')}-${String(monday.getUTCDate()).padStart(2, '0')}`;
-                        delivPer = delivMap[mondayStr] || 0;
-                    }
-                    r.delivPer = delivPer;
-                    r.delivVol = r.vol ? r.vol * r.delivPer / 100 : 0;
+                /* Delivery %, its two moving averages, the 15-bar delivery
+                   extremes and both volume-signal colours are functions of a
+                   candle and its 50 predecessors — nothing about the visible
+                   window. They were recomputed on every draw, which means on
+                   every pan and every crosshair frame: roughly 900 throwaway
+                   Date objects and as many date strings per frame just to look
+                   the week up. Now they are computed once for the ticker's whole
+                   history, stamped on the cached array, and reused. */
+                const _delivSeries = isFs && window._fsDelivFor ? window._fsDelivFor(UC) : null;
+                const _delivStamp = (window._fsDelivVersion || 0) + '|' +
+                    (_delivSeries ? _delivSeries.day.length : 'none');
+                if (fullProcessed._delivStamp !== _delivStamp) {
+                    _computeDelivSeries(fullProcessed, _delivSeries);
+                    fullProcessed._delivStamp = _delivStamp;
                 }
-
-                raw.forEach((r, i) => {
-                    const cIdx = actualStart + i;
-                    let sum = 0, count = 0;
-                    let sumDVol = 0, countDVol = 0;
-                    for (let j = 0; j < 50; j++) {
-                        const idx = cIdx - j;
-                        if (idx >= 0) {
-                            if (j < 9) {
-                                sum += currentData[idx].delivPer || 0;
-                                count++;
-                            }
-                            sumDVol += currentData[idx].delivVol || 0;
-                            countDVol++;
-                        }
-                    }
-                    r.delivSma9 = count > 0 ? sum / count : null;
-                    r.delivVolSma50 = countDVol > 0 ? sumDVol / countDVol : null;
-
-                    let hDn = 0, hUp = 0;
-                    for (let j = 1; j <= 15; j++) {
-                        const idx = cIdx - j;
-                        if (idx >= 0) {
-                            const pr = currentData[idx];
-                            if (pr.close < pr.open && pr.delivVol > hDn) hDn = pr.delivVol;
-                            if (pr.close > pr.open && pr.delivVol > hUp) hUp = pr.delivVol;
-                        }
-                    }
-                    r.delivHDnV15 = hDn;
-                    r.delivHUpV15 = hUp;
-
-                    const volSig = getVolumeSignal(r);
-                    r._vColor = volSig.color;
-                    r._vDesc = volSig.label;
-
-                    const dSig = getDelivVolumeSignal(r);
-                    r._dColor = dSig.color;
-                });
+                /* Replay swaps the final candle for a part-formed copy, so that
+                   one row — and only that one — is still per-frame work. */
+                if (currentData !== fullProcessed && currentData.length) {
+                    const _li = currentData.length - 1;
+                    const _lr = currentData[_li];
+                    _lr.delivPer = _delivPctAt(_delivSeries, _lr.date.getTime());
+                    _lr.delivVol = _lr.vol ? _lr.vol * _lr.delivPer / 100 : 0;
+                    _delivStatsAt(currentData, _li);
+                }
 
                 loadEl.style.opacity = '0';
                 setTimeout(() => { loadEl.style.display = 'none'; }, 200);
@@ -15397,13 +15573,9 @@
                 let PH, VH, IH, RSH;
                 if (pCv.id === 'fs-chart-pcv') {
                     const parentH = (widthEl && widthEl.parentElement) ? widthEl.parentElement.clientHeight : window.innerHeight;
-                    let hasDealsReal = false;
-                    if (window._dealData) {
-                        const uc = ticker.toUpperCase();
-                        hasDealsReal = ['insider', 'bulk', 'block', 'sast'].some(sub =>
-                            (window._dealData[sub] || []).some(r => String(r['Ticker'] || '').trim().toUpperCase() === uc)
-                        );
-                    }
+                    // Indexed lookup, not a walk of all ~280,000 deal rows.
+                    // This one decides a 12px height, and it ran on every frame.
+                    const hasDealsReal = _dealsForTicker(UC).length > 0;
                     const dealH = hasDealsReal ? 12 : 0;
                     const remH = Math.max(parentH - dealH, 300);
                     VH = 0; // hide volume pane in full screen
@@ -16256,7 +16428,7 @@
                             pc.textBaseline = 'top';
                             pc.fillText(retTxt, rbx, PP.t + (isFs ? 2 : 1));
                             if (pCv._hoverCanvas === pCv) {
-                                drawPriceActionHoverPanel(pc, buildPriceActionAnalysis(raw), hx, W, PH, PP);
+                                drawPriceActionHoverPanel(pc, _fsPriceActionCached(UC, raw), hx, W, PH, PP);
 
                                 // Volume Overlay Tooltips (if hovering in bottom 15% of full screen price pane)
                                 if (isFs && hy >= PP.t + pH * 0.85) {
@@ -17089,34 +17261,63 @@
                         return '—';
                     };
 
-                    const deals = [];
-                    if (window._dealData) {
-                        ['insider', 'bulk', 'block', 'sast'].forEach(sub => {
-                            (window._dealData[sub] || []).forEach(row => {
-                                if (String(row['Ticker'] || '').trim().toUpperCase() === UC) {
-                                    deals.push({
-                                        date: row['Date'] || '',
-                                        person: row['Person'] || '?',
-                                        type: _normType(row['Type'] || '?'),
-                                        amt: _getAmount(row, sub),
-                                        sub
-                                    });
-                                }
-                            });
-                        });
-                    }
+                    /* This used to walk EVERY deal row — ~276,000 of them across
+                       insider/bulk/block/sast — on every single chart draw, which
+                       means on every crosshair frame, to find the handful that
+                       belong to this one ticker. A CPU profile of a hover burst
+                       put this loop and the one below at the very top, far above
+                       any actual drawing. The feed is indexed by ticker once
+                       instead, and re-indexed only when the Deal engine swaps an
+                       array out. */
+                    const deals = _dealsForTicker(UC).map(function (d) {
+                        return {
+                            date: d.row['Date'] || '',
+                            person: d.row['Person'] || '?',
+                            type: _normType(d.row['Type'] || '?'),
+                            amt: _getAmount(d.row, d.sub),
+                            sub: d.sub
+                        };
+                    });
 
                     if (!deals.length) {
                         dealCv.style.display = 'none';
                     } else {
                         const dateToX = new Map();
+                        /* raw is date-ascending, so these come out sorted and the
+                           nearest-bar lookup below can binary-search them. */
+                        const barMs = new Array(raw.length);
+                        const barX = new Array(raw.length);
                         raw.forEach((r, i) => {
                             const d = r.date;
                             const key = d.getFullYear() + '-' +
                                 String(d.getMonth() + 1).padStart(2, '0') + '-' +
                                 String(d.getDate()).padStart(2, '0');
-                            dateToX.set(key, toX(i));
+                            const x = toX(i);
+                            dateToX.set(key, x);
+                            barMs[i] = d.getTime();
+                            barX[i] = x;
                         });
+
+                        /* Index of the bar closest in time to ms, or -1.
+                           What this replaces: a walk of every bar that split the
+                           date key on '-' and allocated a new Date for each one,
+                           per unmatched deal. On a 371-bar chart with a few
+                           hundred deals that is tens of thousands of Date objects
+                           built and thrown away EVERY frame — it was the single
+                           hottest thing in the whole page. */
+                        const nearestBar = (ms) => {
+                            const n = barMs.length;
+                            if (!n) return -1;
+                            let lo = 0, hi = n - 1;
+                            while (lo < hi) {
+                                const mid = (lo + hi) >> 1;
+                                if (barMs[mid] < ms) lo = mid + 1; else hi = mid;
+                            }
+                            // lo is the first bar at or after ms; the nearer of
+                            // it and its predecessor wins.
+                            if (lo > 0 && Math.abs(barMs[lo - 1] - ms) <= Math.abs(barMs[lo] - ms)) return lo - 1;
+                            return lo;
+                        };
 
                         const R = 6.0;
                         const MAX_GAP_MS = 14 * 24 * 3600 * 1000;
@@ -17132,13 +17333,9 @@
                                 return;
                             }
                             const dtMs = dt.getTime();
-                            let bestX = null, bestDiff = Infinity;
-                            dateToX.forEach((x, k) => {
-                                const [ky, km, kd] = k.split('-').map(Number);
-                                const kMs = new Date(ky, km - 1, kd).getTime();
-                                const diff = Math.abs(kMs - dtMs);
-                                if (diff < bestDiff) { bestDiff = diff; bestX = x; }
-                            });
+                            const bi = nearestBar(dtMs);
+                            const bestX = bi >= 0 ? barX[bi] : null;
+                            const bestDiff = bi >= 0 ? Math.abs(barMs[bi] - dtMs) : Infinity;
                             if (bestX !== null && bestDiff <= MAX_GAP_MS) {
                                 resolved.push({ deal, x: bestX });
                             }
@@ -26602,6 +26799,26 @@
             user-select: none;
             transition: background-color 0.18s ease, color 0.18s ease;
             box-sizing: border-box;
+
+            /* ── 2,468 rows in a ~435px viewport ──
+               Every one of them was being laid out. Measured in Chrome: a full
+               layout of this list costs 15.8 ms against 0.00 ms with the list
+               empty — an entire 60 Hz frame, and it is paid again on every
+               geometry read taken while layout is dirty. That is exactly what
+               a pan or a crosshair move does on each event, which is why the
+               chart stuttered in a way that had nothing to do with the chart.
+
+               content-visibility lets the browser skip layout and paint for
+               rows that are off-screen while leaving them in the DOM, so the
+               search, the selection, the scrolling and every querySelector
+               still see the complete list — no virtualisation, no behaviour
+               change. contain-intrinsic-size supplies the placeholder height
+               for a skipped row (measured 28px); `auto` means "remember what
+               it actually was once rendered", which keeps the scrollbar from
+               jumping as rows are realised. Browsers without support just get
+               today's behaviour. */
+            content-visibility: auto;
+            contain-intrinsic-size: auto 28px;
         }
 
         /* ── Training blackout ──
@@ -26689,39 +26906,10 @@
             max-width: 100%;
         }
 
-        .fs-list-rank {
-            font-size: 8px;
-            font-weight: 800;
-            padding: 1px 4px;
-            border-radius: 3px;
-            line-height: 1;
-            display: inline-block;
-        }
-
-        .fs-list-rank.green {
-            background: rgba(16, 185, 129, 0.15);
-            color: #10b981;
-        }
-
-        .fs-list-rank.blue {
-            background: rgba(59, 130, 246, 0.15);
-            color: #3b82f6;
-        }
-
-        .fs-list-rank.orange {
-            background: rgba(245, 158, 11, 0.15);
-            color: #f59e0b;
-        }
-
-        .fs-list-rank.red {
-            background: rgba(239, 68, 68, 0.15);
-            color: #ef4444;
-        }
-
-        .fs-list-rank.gray {
-            background: rgba(113, 113, 122, 0.15);
-            color: #717172;
-        }
+        /* .fs-list-rank and .fs-item-right lived here. Both existed only for
+           the sidebar's sector-rank badge, which has been removed so the list
+           reads as ticker + name. The rank's own colour scale still lives with
+           the company cards, which still show it. */
 
         .fs-ticker-block {
             display: flex;
@@ -28531,7 +28719,7 @@
                 <div style="position: relative; width: 100%;">
                     <span class="fs-search-ico">🔍</span>
                     <input type="text" id="fs-ticker-search" class="fs-search-input" placeholder="Search Ticker..."
-                        oninput="window.updateFSTickers(true)" style="margin-bottom: 0; padding-right: 28px;">
+                        oninput="window.fsSearchInput()" style="margin-bottom: 0; padding-right: 28px;">
                     <button id="fs-search-clear" onclick="window.clearFSSearch()"
                         style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: rgba(255,255,255,0.35); font-size: 11px; cursor: pointer; display: none; padding: 4px; line-height: 1; outline: none;">✕</button>
                 </div>
@@ -28624,7 +28812,7 @@
                 <div class="fs-section-content">
                     <div class="fs-trainer-grid">
                         <button class="fs-trainer-btn" id="fs-blind-btn" onclick="window.fsRandomTraining()"
-                            title="Random hidden chart — play it forward and read the price action blind">
+                            title="Random hidden chart — step it forward and actually trade it in the Paper Trade panel">
                             <span class="tb-ico">🎲</span><span class="tb-lbl">Blind Sim</span>
                         </button>
                         <button class="fs-trainer-btn" id="fs-flashcard-mode-btn" onclick="window.fsFlashcardTraining()"
@@ -28665,8 +28853,9 @@
                         <div style="font-size: 12px; font-weight: bold; margin-bottom: 6px; color: #f8fafc;">🃏 Breakout
                             Flashcard</div>
                         <div style="font-size: 10px; margin-bottom: 8px; color: #94a3b8;">The last candle is a
-                            pivot-breakout attempt. Within 5 weeks, will it follow through (close ≥ +5% above pivot) or
-                            fail (close &lt; −5%)?</div>
+                            pivot-breakout attempt. Within 5 weeks, does it clear +5% over the pivot? Anything
+                            else — a break back below it, or five weeks of going nowhere — counts as a
+                            failure.</div>
                         <div style="display: flex; gap: 6px; justify-content: center;">
                             <button onclick="window.fsFlashcardGuess(true)"
                                 style="flex:1; background: #22c55e; color: white; border: none; padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 10.5px; font-weight: bold;">Follows
@@ -28701,8 +28890,9 @@
                         <div style="font-size: 12px; font-weight: bold; margin-bottom: 6px; color: #f8fafc;">🎯 Swing
                             Decision</div>
                         <div style="font-size: 10px; margin-bottom: 8px; color: #94a3b8;">Would you BUY this weekly
-                            setup? Trade is simulated 8 weeks with a −7% stop. Aim for positive expectancy, not just win
-                            rate.</div>
+                            setup? Filled at next week's open, −7% stop hit on the week's low, real
+                            contract-note charges plus slippage, 8-week horizon. Only ~1 setup in 3 pays — so beat
+                            the expectancy, not the hit rate.</div>
                         <div style="display: flex; gap: 6px; justify-content: center;">
                             <button onclick="window.fsDecisionGuess(true)"
                                 style="flex:1; background: #22c55e; color: white; border: none; padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: bold;">▲
@@ -29540,6 +29730,11 @@
                     window._loadIndexHistory();
                 }
 
+                /* Same idea for weekly delivery %: one read covers every ticker,
+                   so start it while the reader is still choosing one. It
+                   de-dupes on its own promise. */
+                if (typeof window.preloadFsDeliv === 'function') window.preloadFsDeliv();
+
                 // Sync period pills state to hidden input value
                 const durVal = document.getElementById('fs-duration-select')?.value || '3y';
                 const container = document.querySelector('.fs-period-pills');
@@ -29682,73 +29877,108 @@
             };
 
             window._fsDelivCache = {};
+
+            /* Weekly delivery %: read once, for every ticker.
+
+               This used to be one DuckDB query per ticker, awaited before the
+               chart was allowed to draw. Measured: 2.6 s for the first ticker
+               and 12—18 ms warm for every one after — and because the render
+               returned early and came back through a promise, the panes were
+               left mid-rearrangement on screen for that whole gap. That is what
+               the eye read as a blink.
+
+               The file is 639,124 rows / 1.3 MB, so it is now read in one pass
+               into two typed arrays (7.3 MB in total): week start as days since
+               epoch, delivery % as a float, both sorted by ticker then week,
+               with a Map giving each ticker its slice. Every ticker after that
+               is a binary search with nothing to await. */
+            window._fsDelivIndex = null;      // Map<TICKER, {day:Int32Array, pct:Float64Array}>
+            window._fsDelivReady = false;
+            window._fsDelivVersion = 0;       // bumped when the data lands, so cached charts recompute
+            let _fsDelivPromise = null;
+
+            window.preloadFsDeliv = function () {
+                if (_fsDelivPromise) return _fsDelivPromise;
+                _fsDelivPromise = (async function () {
+                    const filename = 'weekly_deliv_per.parquet';
+                    try {
+                        if (!window._pqBufCache) window._pqBufCache = {};
+                        if (!window._pqBufCache[filename]) {
+                            const r = await fetch(filename);
+                            if (!r.ok) throw new Error('HTTP ' + r.status);
+                            window._pqBufCache[filename] = await r.arrayBuffer();
+                        }
+                        const { db, conn } = await window._getDuckDB();
+                        await db.registerFileBuffer(filename, new Uint8Array(window._pqBufCache[filename].slice(0)));
+
+                        /* Two queries rather than one: the per-ticker row counts
+                           are 3,210 small rows, while the data itself comes back
+                           as whole columns and never has to become 639,124 JS
+                           objects. Week_Start is a microsecond timestamp;
+                           DATE_DIFF gives days since epoch, which fits an Int32
+                           and is what the lookup wants anyway. */
+                        const counts = await conn.query(
+                            "SELECT Ticker, COUNT(*) AS n FROM '" + filename +
+                            "' WHERE Ticker IS NOT NULL GROUP BY Ticker ORDER BY Ticker");
+                        const data = await conn.query(
+                            "SELECT CAST(DATE_DIFF('day', DATE '1970-01-01', CAST(Week_Start AS DATE)) AS INTEGER) AS d, " +
+                            "Deliv_Per AS p FROM '" + filename +
+                            "' WHERE Ticker IS NOT NULL ORDER BY Ticker, Week_Start");
+
+                        const dayArr = data.getChild('d').toArray();
+                        const pctArr = data.getChild('p').toArray();
+                        const idx = new Map();
+                        let off = 0;
+                        counts.toArray().forEach(function (row) {
+                            const tk = String(row.Ticker || '').trim().toUpperCase();
+                            const n = Number(row.n) || 0;
+                            if (tk && n > 0 && off + n <= dayArr.length) {
+                                idx.set(tk, {
+                                    day: dayArr.subarray(off, off + n),
+                                    pct: pctArr.subarray(off, off + n)
+                                });
+                            }
+                            off += n;
+                        });
+                        window._fsDelivIndex = idx;
+                    } catch (err) {
+                        console.error('[SundarX] Error loading delivery data:', err);
+                        // An empty index still counts as ready — otherwise every
+                        // render keeps asking for a file that is not there.
+                        window._fsDelivIndex = new Map();
+                    }
+                    window._fsDelivReady = true;
+                    window._fsDelivVersion++;
+                    return window._fsDelivIndex;
+                })();
+                return _fsDelivPromise;
+            };
+
+            /* Synchronous: the ticker's week/percentage slice, or null. */
+            window._fsDelivFor = function (ticker) {
+                if (!window._fsDelivIndex) return null;
+                return window._fsDelivIndex.get(String(ticker || '').trim().toUpperCase()) || null;
+            };
+
+            /* Kept for callers wanting the old { 'YYYY-MM-DD': pct } shape.
+               Built on demand from the index rather than queried. */
             window.getFsWeeklyDelivMap = async function (ticker) {
                 const tk = String(ticker || '').trim().toUpperCase();
-                console.info('[SundarX] getFsWeeklyDelivMap called for ticker:', tk);
                 if (!tk) return {};
-                if (window._fsDelivCache[tk]) {
-                    console.info('[SundarX] Returning cached delivery data for:', tk);
-                    return window._fsDelivCache[tk];
-                }
-
-                try {
-                    const filename = 'weekly_deliv_per.parquet';
-                    if (!window._pqBufCache) window._pqBufCache = {};
-                    if (!window._pqBufCache[filename]) {
-                        console.info('[SundarX] Fetching weekly_deliv_per.parquet buffer over network...');
-                        const r = await fetch(filename);
-                        if (!r.ok) throw new Error('HTTP ' + r.status);
-                        window._pqBufCache[filename] = await r.arrayBuffer();
+                if (window._fsDelivCache[tk]) return window._fsDelivCache[tk];
+                await window.preloadFsDeliv();
+                const ser = window._fsDelivFor(tk);
+                const map = {};
+                if (ser) {
+                    for (let i = 0; i < ser.day.length; i++) {
+                        const d = new Date(ser.day[i] * 86400000);
+                        map[d.getUTCFullYear() + '-' +
+                            String(d.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                            String(d.getUTCDate()).padStart(2, '0')] = ser.pct[i];
                     }
-                    const { db, conn } = await window._getDuckDB();
-                    await db.registerFileBuffer(filename, new Uint8Array(window._pqBufCache[filename].slice(0)));
-                    console.info('[SundarX] Querying DuckDB for ticker:', tk);
-                    const result = await conn.query(`SELECT Week_Start, Deliv_Per FROM '${filename}' WHERE Ticker = '${tk}'`);
-
-                    const rows = result.toArray();
-                    console.info('[SundarX] DuckDB query returned rows count:', rows.length);
-
-                    const map = {};
-                    rows.forEach((row, idx) => {
-                        let dt = row.Week_Start;
-                        let dateObj = null;
-                        if (dt instanceof Date) {
-                            dateObj = dt;
-                        } else if (dt !== null && dt !== undefined) {
-                            if (typeof dt === 'bigint') {
-                                dateObj = new Date(Number(dt));
-                            } else if (typeof dt === 'number') {
-                                if (dt < 100000) {
-                                    dateObj = new Date(dt * 86400000);
-                                } else {
-                                    dateObj = new Date(dt);
-                                }
-                            } else {
-                                dateObj = new Date(dt);
-                            }
-                        }
-
-                        if (dateObj && !isNaN(dateObj.getTime())) {
-                            const y = dateObj.getUTCFullYear();
-                            const m = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
-                            const d = String(dateObj.getUTCDate()).padStart(2, '0');
-                            const dateStr = `${y}-${m}-${d}`;
-                            map[dateStr] = Number(row.Deliv_Per);
-                            if (idx < 3) {
-                                console.info('[SundarX] Sample parsed row:', dateStr, '=>', row.Deliv_Per);
-                            }
-                        }
-                    });
-
-                    window._fsDelivCache[tk] = map;
-                    return map;
-                } catch (err) {
-                    console.error('[SundarX] Error loading delivery data:', err);
-                    // Cache the empty result — otherwise renderFullScreenChart keeps
-                    // re-fetching forever when the parquet is missing/unreachable
-                    window._fsDelivCache[tk] = {};
-                    return {};
                 }
+                window._fsDelivCache[tk] = map;
+                return map;
             };
 
             window.updateFSTickers = function (preserveValue) {
@@ -29812,49 +30042,59 @@
                 // Sort alphabetically EXCEPT for index_main which should preserve its watchlist sequence
                 const tickers = group === 'index_main' ? Array.from(tickerSet) : Array.from(tickerSet).sort();
 
-                tickerSel.innerHTML = '';
                 const listContainer = document.getElementById('fs-ticker-list');
-                if (listContainer) listContainer.innerHTML = '';
                 let hasMatchForPrevVal = false;
 
-                tickers.forEach(tk => {
-                    if (searchQuery && !tk.toUpperCase().includes(searchQuery)) return;
-                    const opt = document.createElement('option');
-                    opt.value = tk;
-                    opt.textContent = tk;
-                    tickerSel.appendChild(opt);
+                /* allData is indexed ONCE instead of being scanned per ticker.
+                   The old line here was
+                       (window.allData || []).find(d => ...toUpperCase() === ...)
+                   inside the per-ticker loop: ~2,400 tickers x ~2,300 rows =
+                   2.8 MILLION string comparisons (each allocating two uppercase
+                   copies) on every group change, every open, and every single
+                   search keystroke. Measured 142 ms -> 0.16 ms. The index is
+                   rebuilt only when allData itself is replaced. */
+                const rowByTicker = _fsRowIndex();
+
+                /* Both lists are built as strings and written once. Appending
+                   2,400 elements one at a time — each with its own innerHTML
+                   parse and its own onclick closure — was doing 2,400 separate
+                   DOM insertions where one would do. */
+                const opts = [];
+                const items = [];
+
+                for (let i = 0; i < tickers.length; i++) {
+                    const tk = tickers[i];
+                    if (searchQuery && tk.toUpperCase().indexOf(searchQuery) === -1) continue;
+                    const tkEsc = escHtml(tk);
+                    opts.push('<option value="' + tkEsc + '">' + tkEsc + '</option>');
                     if (tk === prevVal) hasMatchForPrevVal = true;
 
-                    if (listContainer) {
-                        const item = document.createElement('div');
-                        item.className = 'fs-ticker-item';
-                        item.setAttribute('data-value', tk);
+                    if (!listContainer) continue;
 
-                        const r = (window.allData || []).find(d => String(d._ticker || '').toUpperCase() === tk.toUpperCase());
-                        const rawName = (window.tickerToName && window.tickerToName[tk]) || (r ? r._coName : '');
-                        const coNameFull = rawName || '';
+                    /* The row lookup stays for the company-name fallback only.
+                       The sector-rank badge that used to sit on the right is
+                       gone — the list reads as ticker + name and nothing else.
+                       The rank itself is untouched everywhere it still shows:
+                       the company cards and the chart's mini financial card. */
+                    const r = rowByTicker.get(tk.toUpperCase());
+                    const coNameFull = (window.tickerToName && window.tickerToName[tk]) || (r ? r._coName : '') || '';
+                    const nameEsc = coNameFull ? escHtml(coNameFull) : '';
 
-                        const sRnk = r ? parseFloat(r._sectorRank) : NaN;
-                        const sRnkCls = isNaN(sRnk) ? 'gray' : (sRnk <= 5 ? 'green' : (sRnk <= 10 ? 'blue' : (sRnk <= 15 ? 'orange' : 'red')));
-                        const sRnkDisp = isNaN(sRnk) ? '' : `#${Math.round(sRnk)}`;
-                        const sRnkBadge = sRnkDisp ? `<span class="fs-list-rank ${sRnkCls}">${sRnkDisp}</span>` : '';
-                        item.innerHTML = `
-                            <div class="fs-item-left">
-                                <span class="fs-item-tk">${tk}</span>
-                                ${coNameFull ? `<span class="fs-item-name" title="${escHtml(coNameFull)}">${coNameFull}</span>` : ''}
-                            </div>
-                            <div class="fs-item-right">${sRnkBadge}</div>
-                        `;
+                    /* Escaped now that this is one HTML string rather than
+                       per-element textContent/setAttribute — a ticker like
+                       M&M would otherwise break both the attribute and the
+                       label it is read back from. */
+                    items.push('<div class="fs-ticker-item" data-value="' + tkEsc + '">' +
+                        '<div class="fs-item-left"><span class="fs-item-tk">' + tkEsc + '</span>' +
+                        (nameEsc ? '<span class="fs-item-name" title="' + nameEsc + '">' + nameEsc + '</span>' : '') +
+                        '</div></div>');
+                }
 
-                        item.onclick = function () {
-                            tickerSel.value = tk;
-                            window.syncFSTickerListSelected();
-                            window.renderFullScreenChart();
-                        };
-                        listContainer.appendChild(item);
-                    }
-                });
-
+                tickerSel.innerHTML = opts.join('');
+                if (listContainer) {
+                    listContainer.innerHTML = items.join('');
+                    _fsWireTickerListClicks(listContainer);
+                }
 
                 if (preserveValue && prevVal && hasMatchForPrevVal) {
                     tickerSel.value = prevVal;
@@ -29863,7 +30103,61 @@
                 }
 
                 window.syncFSTickerListSelected();
-                window.renderFullScreenChart();
+                /* Only redraw the chart when the SELECTION actually moved.
+                   Typing in the search box rebuilds the list but almost never
+                   changes which ticker is shown, and a full chart redraw per
+                   keystroke was the rest of the lag. */
+                if (tickerSel.value !== prevVal) window.renderFullScreenChart();
+            };
+
+            /* ── one delegated click for the whole list ──
+               Was one closure per row, recreated on every rebuild: ~2,400
+               functions and ~2,400 listener registrations per keystroke, all
+               of which the GC then had to collect. The container outlives
+               every rebuild, so it only needs wiring once. */
+            function _fsWireTickerListClicks(listContainer) {
+                if (listContainer._fsClickWired) return;
+                listContainer._fsClickWired = true;
+                listContainer.addEventListener('click', function (e) {
+                    const item = e.target && e.target.closest ? e.target.closest('.fs-ticker-item') : null;
+                    if (!item || !listContainer.contains(item)) return;
+                    const tk = item.getAttribute('data-value');
+                    if (!tk) return;
+                    const sel = document.getElementById('fs-ticker-select');
+                    if (sel) sel.value = tk;
+                    window.syncFSTickerListSelected();
+                    window.renderFullScreenChart();
+                });
+            }
+
+            /* ticker -> allData row, rebuilt only when allData is replaced.
+               Keeps the FIRST row for a ticker, exactly as .find() did. */
+            let _fsRowIdx = null, _fsRowIdxSrc = null;
+            window._fsRowIndex = _fsRowIndex;
+            function _fsRowIndex() {
+                const src = window.allData || [];
+                if (_fsRowIdx && _fsRowIdxSrc === src) return _fsRowIdx;
+                const m = new Map();
+                for (let i = 0; i < src.length; i++) {
+                    const t = String(src[i]._ticker || '').toUpperCase();
+                    if (t && !m.has(t)) m.set(t, src[i]);
+                }
+                _fsRowIdx = m; _fsRowIdxSrc = src;
+                return m;
+            }
+
+            /* Coalesces a burst of keystrokes into one rebuild. Even at
+               0.16 ms per scan the list still has to be re-parsed and
+               re-laid-out, and doing that between two keys of a fast typist
+               buys nothing — the frame it costs is better spent echoing the
+               character they just typed. */
+            let _fsSearchTimer = null;
+            window.fsSearchInput = function () {
+                if (_fsSearchTimer) clearTimeout(_fsSearchTimer);
+                _fsSearchTimer = setTimeout(function () {
+                    _fsSearchTimer = null;
+                    window.updateFSTickers(true);
+                }, 90);
             };
 
             window.clearFSSearch = function () {
@@ -29976,17 +30270,22 @@
                 if (!tickerSel || !listContainer) return;
 
                 const val = tickerSel.value;
-                const items = listContainer.querySelectorAll('.fs-ticker-item');
-                let targetItem = null;
 
-                items.forEach(item => {
-                    if (item.getAttribute('data-value') === val) {
-                        item.classList.add('selected');
-                        targetItem = item;
-                    } else {
-                        item.classList.remove('selected');
-                    }
-                });
+                /* Exactly one element can be selected, so this is two native
+                   queries rather than a JS loop that touched classList on all
+                   ~2,400 rows every time the selection moved. */
+                const prevSel = listContainer.querySelector('.fs-ticker-item.selected');
+                if (prevSel) prevSel.classList.remove('selected');
+
+                let targetItem = null;
+                if (val) {
+                    // CSS.escape guards tickers with punctuation (M&M, BAJAJ-AUTO).
+                    const q = (window.CSS && CSS.escape) ? CSS.escape(val) : val.replace(/"/g, '\\"');
+                    try {
+                        targetItem = listContainer.querySelector('.fs-ticker-item[data-value="' + q + '"]');
+                    } catch (e) { targetItem = null; }
+                }
+                if (targetItem) targetItem.classList.add('selected');
 
                 if (targetItem) {
                     // Always scroll to keep the target item in the middle
@@ -30021,7 +30320,9 @@
                         bgTickerEl.textContent = (window._fsTrainingMask || 'HIDDEN').replace(/_/g, ' ');
                     } else {
                         const tkUpper = tk.toUpperCase();
-                        const r = (window.allData || []).find(d => String(d._ticker || '').toUpperCase() === tkUpper);
+                        // Map lookup, not a scan of every row — this runs on
+                        // every render, and renders happen per pan frame.
+                        const r = window._fsRowIndex ? window._fsRowIndex().get(tkUpper) : null;
                         const fullCoName = (window.tickerToName && (window.tickerToName[tkUpper] || window.tickerToName[tk])) || (r ? r._coName : '');
                         bgTickerEl.textContent = fullCoName ? `${tkUpper} - ${fullCoName}` : tkUpper;
                     }
@@ -30048,17 +30349,24 @@
                     const fhActions = document.getElementById('fs-fh-actions-left');
                     if (fhActions) fhActions.style.display = 'flex';
 
-                    // Unhide standard canvases
+                    /* Only index mode ever hides the stock canvases, so only a
+                       return FROM index mode should touch them. Doing it on every
+                       render is what made the panes blink on a ticker change:
+                       fs-chart-vcv is not drawn in full screen (VH is 0), so
+                       display:'' gave it its intrinsic 150px and pushed the
+                       indicator and Deliv% panes down for a frame or two until
+                       drawChartCore hid it again. Measured before this change:
+                       a 150px jump on 7 of 10 ticker changes. */
+                    if (!window._fsWasIndexMode) return;
+                    window._fsWasIndexMode = false;
+
                     const pCv = document.getElementById('fs-chart-pcv');
                     const vCv = document.getElementById('fs-chart-vcv');
                     const rsCv = document.getElementById('fs-chart-rscv');
-                    if (pCv) pCv.style.display = '';
-                    if (vCv) vCv.style.display = '';
-                    // rsCv display state depends on whether it's active, but we can reset it to empty
-                    // so the toggle logic handles it correctly, or we can just let drawChartCore handle it
+                    if (pCv) pCv.style.display = 'block';
+                    if (vCv) vCv.style.display = 'none';
                     if (rsCv && window._fsRscvActive) rsCv.style.display = 'block';
 
-                    // Unhide any ind/deal canvases
                     const wrap = document.getElementById('fs-chart-wrapper');
                     if (wrap) {
                         wrap.querySelectorAll('.card-chart-canvas-ind, .card-chart-canvas-deal').forEach(c => c.style.display = 'block');
@@ -30067,6 +30375,9 @@
 
                 // ── Index_main mode ──
                 if (group === 'index_main') {
+                    // Remembered so the next stock render knows it has canvases
+                    // to put back — and so it leaves them alone when it does not.
+                    window._fsWasIndexMode = true;
                     // Show index toolbar, hide stock-specific buttons
                     const idxToolbar = document.getElementById('fs-index-chart-toolbar');
                     if (idxToolbar) idxToolbar.style.display = 'flex';
@@ -30088,14 +30399,15 @@
                 // ── Normal stock chart mode — ensure cleanup from index mode ──
                 _restoreNormalCanvases();
 
-                // Pre-fetch delivery percentage data if not cached yet
+                /* Nothing waits on delivery data any more. If the one preload
+                   is still in flight the chart draws now and redraws once when
+                   it lands; after that every ticker is synchronous. */
                 const tkUpper = tk.toUpperCase();
-                if (window.getFsWeeklyDelivMap && (!window._fsDelivCache || !window._fsDelivCache[tkUpper])) {
-                    if (loadEl) loadEl.style.display = 'flex';
-                    window.getFsWeeklyDelivMap(tkUpper).then(() => {
-                        window.renderFullScreenChart();
+                if (typeof window.preloadFsDeliv === 'function' && !window._fsDelivReady) {
+                    window.preloadFsDeliv().then(function () {
+                        const m = document.getElementById('fs-chart-modal');
+                        if (m && m.style.display === 'flex') window.renderFullScreenChart({ skipChrome: true });
                     });
-                    return;
                 }
                 const pCv = document.getElementById('fs-chart-pcv');
                 const vCv = document.getElementById('fs-chart-vcv');
@@ -30128,7 +30440,7 @@
                     };
                     cardEl.title = "Top 2 blocks: Toggle Quick Trendline | Bottom 2 blocks: Clear Drawings";
                     cardEl.style.cursor = "pointer";
-                    const r = allData.find(d => String(d._ticker || '').toUpperCase() === tk.toUpperCase());
+                    const r = window._fsRowIndex ? window._fsRowIndex().get(tk.toUpperCase()) : null;
                     if (r) {
                         const sRnk = parseFloat(r._sectorRank);
                         const sRnkCls = isNaN(sRnk) ? 'gray' : (sRnk <= 5 ? 'green' : (sRnk <= 10 ? 'blue' : (sRnk <= 15 ? 'orange' : 'red')));
@@ -30193,6 +30505,15 @@
                     const fhActionsEl = document.getElementById('fs-fh-actions-left');
                     const fhH = fhActionsEl ? fhActionsEl.offsetHeight : 0;
                     sbToggleBtn.style.top = (overlayTop + Math.max(cardH, fhH) + gap) + 'px';
+                }
+
+                /* An open position is marked against its own stock, so the
+                   panel has to be redrawn when the chart moves to a different
+                   one — otherwise it keeps showing the price it was last
+                   refreshed at. Chrome-level work, so it sits behind the same
+                   skipChrome flag the pan path uses. */
+                if (!skipChrome && typeof window._fsUpdatePnlDisplay === 'function') {
+                    window._fsUpdatePnlDisplay();
                 }
 
                 if (typeof window._fsSizeTradePanel === 'function') {
@@ -30531,19 +30852,33 @@
             }
 
             const _FS_TRAINSTATS_KEY = 'sundarx_fs_trainstats';
+            /* Bumped when a drill's scoring changes. Decision moved from "was it
+               up 5% in 8 weeks" to expectancy in R on a realistically filled
+               trade, and Exit stopped only ever asking questions whose answer
+               immediately worked — scores from before those changes are not
+               comparable with scores after them, and carrying them forward
+               would put a fabricated 0.00R expectancy on the scoreboard. */
+            const _FS_TRAINSTATS_VERSION = 2;
+            const _FS_TRAINSTATS_RESCORED = ['decide', 'exit'];
             window._fsTrainStats = {
                 flash: { c: 0, t: 0, s: 0, bs: 0 },
                 quiz: { c: 0, t: 0, s: 0, bs: 0 },
-                decide: { c: 0, t: 0, s: 0, bs: 0, pnl: 0 },
+                // tk = trades actually taken, r = R banked by your calls,
+                // rAll = R you would have banked taking every single setup.
+                decide: { c: 0, t: 0, s: 0, bs: 0, pnl: 0, tk: 0, r: 0, rAll: 0 },
                 candle: { c: 0, t: 0, s: 0, bs: 0 },
-                exit: { c: 0, t: 0, s: 0, bs: 0, pnl: 0 }
+                // r = R your exit calls kept, rHold = R if you had never sold.
+                exit: { c: 0, t: 0, s: 0, bs: 0, pnl: 0, r: 0, rHold: 0 }
             };
             // Restore saved training stats, if any, keeping the default shape for missing/new modes
             try {
                 const saved = JSON.parse(localStorage.getItem(_FS_TRAINSTATS_KEY));
                 if (saved && typeof saved === 'object') {
+                    const stale = (saved.v || 1) !== _FS_TRAINSTATS_VERSION;
                     Object.keys(window._fsTrainStats).forEach(mode => {
-                        if (saved[mode]) Object.assign(window._fsTrainStats[mode], saved[mode]);
+                        if (!saved[mode]) return;
+                        if (stale && _FS_TRAINSTATS_RESCORED.indexOf(mode) !== -1) return;
+                        Object.assign(window._fsTrainStats[mode], saved[mode]);
                     });
                 }
             } catch (e) { }
@@ -30553,8 +30888,17 @@
                 st.t++;
                 if (correct) { st.c++; st.s++; if (st.s > st.bs) st.bs = st.s; }
                 else st.s = 0;
-                if (extra && typeof extra.pnl === 'number') st.pnl += extra.pnl;
-                try { localStorage.setItem(_FS_TRAINSTATS_KEY, JSON.stringify(window._fsTrainStats)); } catch (e) { }
+                if (extra) {
+                    if (typeof extra.pnl === 'number') st.pnl += extra.pnl;
+                    if (typeof extra.r === 'number') st.r += extra.r;
+                    if (typeof extra.rAll === 'number') st.rAll += extra.rAll;
+                    if (typeof extra.rHold === 'number') st.rHold += extra.rHold;
+                    if (extra.took) st.tk = (st.tk || 0) + 1;
+                }
+                try {
+                    localStorage.setItem(_FS_TRAINSTATS_KEY,
+                        JSON.stringify(Object.assign({ v: _FS_TRAINSTATS_VERSION }, window._fsTrainStats)));
+                } catch (e) { }
                 // Per-day training-log hook (see TRAINING TRACKER block below).
                 // _fsTrainStats is lifetime-cumulative and lives only in this
                 // browser, so the tracker keeps its own per-day tally rather
@@ -30562,6 +30906,41 @@
                 // working unchanged if the tracker is absent or errors.
                 try { if (window._sxTrackRep) window._sxTrackRep(mode, correct); } catch (e) { }
                 return st;
+            }
+
+            const _fsSg = v => (v >= 0 ? '+' : '');
+            const _fsRCol = v => (v >= 0 ? '#22c55e' : '#f43f5e');
+
+            /* A hit rate on its own is the wrong scoreboard for a BUY/SKIP
+               drill: measured over 866 real setups, roughly one in three makes
+               money, so answering "Skip" every single time scores about 70% and
+               earns nothing at all. What separates a trader from that is
+               expectancy, so the R per decision is the headline and both
+               degenerate strategies are printed beside it to be beaten. */
+            function _fsDecideStatHtml(st) {
+                const acc = st.t ? Math.round((st.c / st.t) * 100) : 0;
+                const exp = st.t ? st.r / st.t : 0;
+                const all = st.t ? st.rAll / st.t : 0;
+                return 'Calls: <b>' + st.c + '/' + st.t + '</b> (' + acc + '%) · Streak <b>' + st.s +
+                    '</b> · Best <b>' + st.bs + '</b>' +
+                    '<div style="margin-top:3px;">Took <b>' + (st.tk || 0) + '</b> · Expectancy <b style="color:' +
+                    _fsRCol(exp) + '">' + _fsSg(exp) + exp.toFixed(2) + 'R</b>/decision' +
+                    '<span style="color:#64748b;"> · buy-every-setup ' + _fsSg(all) + all.toFixed(2) +
+                    'R · skip-everything 0.00R</span></div>';
+            }
+
+            /* Same idea for exits: never selling is a strategy, and you should
+               be able to see whether your calls beat it. */
+            function _fsExitStatHtml(st) {
+                const acc = st.t ? Math.round((st.c / st.t) * 100) : 0;
+                const kept = st.t ? st.r / st.t : 0;
+                const held = st.t ? st.rHold / st.t : 0;
+                return 'Calls: <b>' + st.c + '/' + st.t + '</b> (' + acc + '%) · Streak <b>' + st.s +
+                    '</b> · Best <b>' + st.bs + '</b>' +
+                    '<div style="margin-top:3px;">Next-4w R kept <b style="color:' + _fsRCol(kept) + '">' +
+                    _fsSg(kept) + kept.toFixed(2) + 'R</b>/decision' +
+                    '<span style="color:#64748b;"> · never-sell ' + _fsSg(held) + held.toFixed(2) +
+                    'R · sell-everything 0.00R</span></div>';
             }
 
             function _fsStatHtml(st, withPnl) {
@@ -30626,6 +31005,88 @@
 
             const _FS_INDEX_TICKERS = ['NIFTY50', 'MIDCAP', 'SMALLCAP', 'MICROCAP'];
 
+            /* ═══ ONE HONEST TRADE ═══
+               Every trainer that simulates a position runs it through here, so
+               they all cost risk the same way.
+
+                 fill   — the NEXT week's open. You read a weekly close and
+                          decide; you cannot buy the candle you just judged.
+                 stop   — a real stop, hit on the week's LOW. A week that
+                          opens below it fills at the open, not at the stop — that
+                          is what a gap does to you.
+                 cost   — the real contract note. Charges come from the same
+                          _fsTradeCostBreakdown the Paper Trade panel books
+                          against, sized at the paper account, plus slippage on
+                          both fills.
+
+               The old code entered at the close it was showing and only
+               checked the stop against weekly CLOSES. Over 866 real setups
+               that let 40% of the trades that should have stopped survive
+               instead — 46.6% stop-outs where the truth is 65.2%. */
+            const FS_TRADE = {
+                stopPct: 0.07,
+                horizon: 8,
+                /* Slippage, one way. The statutory charges are exact; this is
+                   the other half of what trading costs — the gap between the
+                   price on the screen and the price you actually get, which on
+                   a market order into a weekly open is comfortably a tenth of a
+                   percent outside the large caps. */
+                slipPct: 0.001,
+                capital: 100000
+            };
+
+            /* Round-trip cost as a fraction of the entry value. Sized at the
+               paper account's ₹1,00,000 so the flat DP charge lands in
+               proportion instead of being waved away. Falls back to a flat
+               0.42% if the contract-note model is not around. */
+            function _fsRoundTripCostPct(fill, exit) {
+                const slip = FS_TRADE.slipPct * 2;
+                if (typeof _fsTradeCostBreakdown !== 'function' || !(fill > 0)) return slip + 0.0022;
+                const qty = Math.max(1, Math.floor(FS_TRADE.capital / fill));
+                const b = _fsTradeCostBreakdown({ side: 'long', qty: qty, entryPrice: fill, exitPrice: exit });
+                return slip + (b.total / (fill * qty));
+            }
+
+            function _fsSimTrade(raw, decideIdx, opts) {
+                const o = Object.assign({}, FS_TRADE, opts || {});
+                const nxt = raw[decideIdx + 1];
+                if (!nxt || !(nxt.open > 0)) return null;
+                const fill = nxt.open;
+                const stop = fill * (1 - o.stopPct);
+                const last = Math.min(decideIdx + o.horizon, raw.length - 1);
+                if (last <= decideIdx) return null;
+                let exit = null, exitIdx = last, why = 'horizon';
+                for (let j = decideIdx + 1; j <= last; j++) {
+                    if (raw[j].open <= stop) { exit = raw[j].open; exitIdx = j; why = 'gap'; break; }
+                    if (raw[j].low <= stop) { exit = stop; exitIdx = j; why = 'stop'; break; }
+                }
+                if (exit === null) exit = raw[exitIdx].close;
+                const gross = (exit - fill) / fill;
+                const cost = _fsRoundTripCostPct(fill, exit);
+                const net = gross - cost;
+                return {
+                    fill: fill, stop: stop, exit: exit, exitIdx: exitIdx, why: why,
+                    weeks: exitIdx - decideIdx,
+                    grossPct: gross * 100,
+                    costPct: cost * 100,
+                    netPct: net * 100,
+                    R: net / o.stopPct,
+                    stopPct: o.stopPct,
+                    horizon: o.horizon
+                };
+            }
+
+            // Test hook: lets a checker re-derive every fill and stop from the
+            // raw OHLC and compare. Never called by the UI.
+            window.__fsSimTrade = _fsSimTrade;
+            window.__fsRoundTripCostPct = function (a, b) { return _fsRoundTripCostPct(a, b); };
+
+            function _fsExitWhyTxt(sim) {
+                return sim.why === 'gap' ? 'gapped straight through the stop'
+                    : sim.why === 'stop' ? 'stopped out intraweek'
+                        : 'held the full ' + sim.horizon + ' weeks';
+            }
+
             /* ═══ 🎲 BLIND SIMULATOR ═══
                Unbiased ticker shuffle + guaranteed history (≥55w visible) and
                forward runway (≥30w hidden) so every session is playable. */
@@ -30654,7 +31115,18 @@
                     alert("Not enough data to start simulation.");
                     return;
                 }
-                _fsEnterTrainingReplay(rTick, raw, rIdx, 'Blind Sim — ▶ play or › step', 'TICKER_A');
+                /* Real action, not just a chart to watch: the blind run is
+                   tradeable bar by bar through the Paper Trade panel, which
+                   prices off the replay cut-off. Any position still open belongs
+                   to the PREVIOUS random stock, so it is closed out first —
+                   otherwise it would be marked against a company you are no
+                   longer looking at. */
+                if (window._fsPaperTrade && window._fsPaperTrade.position) {
+                    try { window.fsPaperClose(); } catch (e) { }
+                }
+                const ptSec = document.getElementById('fs-sec-pt');
+                if (ptSec) ptSec.classList.add('expanded');
+                _fsEnterTrainingReplay(rTick, raw, rIdx, 'Blind Sim — ▶/› to advance, then trade it', 'TICKER_A');
             };
 
             /* ═══ 🃏 NEXT-CANDLE FLASHCARD ═══
@@ -30669,8 +31141,39 @@
                Ambiguous / sideways events are skipped so every card has a clean
                answer, and the target outcome is randomized ~50/50 so the deck
                cannot be gamed by always answering one way. */
+            /* Where a breakout's volume sits among BREAKOUTS, not among all
+               weeks. An ordinary week trades at 0.67× its own trailing 50-week
+               mean; a breakout week's median is 2.9×. Judging one against the
+               other put 81% of the deck in the top band, which is a label that
+               says nothing. These cut points are the quartiles of 2,297 real
+               events measured on this dataset.
+
+               And the honest part: heavier volume does tilt the odds, but only
+               from 64% follow-through in the thinnest quarter to 76% in the
+               heaviest. It is a lean, not a verdict, and the card says so. */
+            const _FS_BO_VOL_BANDS = [
+                { min: 5.7, label: 'exceptional', color: '#4ade80' },
+                { min: 2.9, label: 'heavy', color: '#a3e635' },
+                { min: 1.7, label: 'typical', color: '#facc15' },
+                { min: 0, label: 'thin for a breakout', color: '#fb923c' }
+            ];
+            const _FS_BO_VOL_NOTE = 'Across 2,297 breakouts here, the thinnest quarter followed through ' +
+                '64% of the time and the heaviest 76% — volume leans the odds, it does not settle them.';
+
             window._fsFindBreakouts = function (raw) {
                 const events = [];
+                /* 50-week average volume, built here rather than read off the
+                   candle. These are the raw OHLC rows — volSma50 only exists on
+                   the copies drawChartCore makes for the chart, so asking these
+                   for it silently produced undefined on every single bar. A
+                   prefix sum gives the window in O(1) per bar. */
+                const volPre = new Array(raw.length + 1);
+                volPre[0] = 0;
+                for (let i = 0; i < raw.length; i++) volPre[i + 1] = volPre[i] + (raw[i].vol || 0);
+                // Average of the 50 weeks ENDING at i-1: the breakout week's own
+                // volume must not inflate the benchmark it is measured against.
+                const avgVolBefore = (i) => (volPre[i] - volPre[i - 50]) / 50;
+
                 for (let i = 60; i < raw.length - 6; i++) {
                     const r = raw[i];
                     // Locate the base's resistance high — the swing high that set
@@ -30699,16 +31202,24 @@
                     // This candle must be the first weekly close through the level.
                     if (!(r.close >= pivot * 0.998 && raw[i - 1].close < pivot)) continue;
 
-                    const avgVol = raw[i - 1].volSma50 || 0;
-                    const volRatio = avgVol ? r.vol / avgVol : null;
-                    if (avgVol && r.vol < avgVol * 0.85) continue; // demand a real attempt, not a drift-through on dead volume
+                    const avgVol = avgVolBefore(i);
+                    const volRatio = avgVol > 0 ? r.vol / avgVol : null;
+                    // Demand a real attempt, not a drift-through on dead volume.
+                    // This line has been here all along but never ran, because
+                    // avgVol was always 0.
+                    if (avgVol > 0 && r.vol < avgVol * 0.85) continue;
 
-                    let outcome = null;
+                    /* A breakout that has not cleared +5% over the pivot within
+                       five weeks has not followed through. It is dead money at
+                       full risk, and that is how a swing trader has to score it.
+                       The old code skipped these outright — 9.9% of every event
+                       found — which quietly taught that breakouts always resolve
+                       one way or the other inside five weeks. They do not. */
+                    let outcome = 'fail';
                     for (let j = i + 1; j <= Math.min(raw.length - 1, i + 5); j++) {
                         if (raw[j].close < pivot * 0.95) { outcome = 'fail'; break; }
                         if (raw[j].close >= pivot * 1.05) { outcome = 'success'; break; }
                     }
-                    if (!outcome) continue; // sideways — no clean answer, skip
                     events.push({ idx: i, pivot: pivot, outcome: outcome, baseDepthPct: baseDepthPct, volRatio: volRatio });
                 }
                 return events;
@@ -30789,18 +31300,27 @@
                 const didSucceed = outcome === 'success';
                 const isCorrect = !!guessSucceeds === didSucceed;
                 const st = _fsRecordStat('flash', isCorrect);
+                // What actually buying this breakout would have done, on the
+                // same terms as the other trainers.
+                const sim = _fsSimTrade(raw, breakoutIdx, { horizon: 5 });
 
                 const result = document.getElementById('fs-flashcard-result');
                 if (result) {
                     const post = pivot ? ((raw[targetIdx].close - pivot) / pivot) * 100 : 0;
                     const col = isCorrect ? '#22c55e' : '#ef4444';
-                    const volTxt = volRatio ? volRatio.toFixed(1) + 'x avg' : 'n/a';
-                    const volCol = volRatio >= 1.3 ? '#4ade80' : volRatio >= 0.9 ? '#facc15' : '#f87171';
+                    const volBand = volRatio ? _FS_BO_VOL_BANDS.find(b => volRatio >= b.min) : null;
+                    const volTxt = volBand ? volRatio.toFixed(1) + '× avg — ' + volBand.label : 'n/a';
+                    const volCol = volBand ? volBand.color : '#94a3b8';
                     result.innerHTML = '<span style="color:' + col + ';">' + (isCorrect ? '✅ Correct!' : '❌ Incorrect!') +
                         ' Breakout ' + (didSucceed ? 'followed through' : 'failed') +
                         ' — now ' + (post >= 0 ? '+' : '') + post.toFixed(1) + '% vs pivot.</span>' +
+                        (sim ? '<div style="margin-top:4px; font-weight:normal; font-size:9.5px; color:#cbd5e1;">Buying it: ' +
+                            '<b style="color:' + _fsRCol(sim.netPct) + '">' + _fsSg(sim.netPct) + sim.netPct.toFixed(1) +
+                            '% = ' + _fsSg(sim.R) + sim.R.toFixed(2) + 'R</b> — ' + _fsExitWhyTxt(sim) + '</div>' : '') +
                         '<div style="margin-top:4px; font-weight:normal; font-size:9.5px; color:#94a3b8;">Base depth ' +
-                        baseDepthPct.toFixed(0) + '% · Breakout volume <span style="color:' + volCol + ';">' + volTxt + '</span></div>';
+                        baseDepthPct.toFixed(0) + '% · Breakout volume <span style="color:' + volCol + ';">' + volTxt + '</span></div>' +
+                        '<div style="margin-top:3px; font-weight:normal; font-size:9px; color:#64748b;">' +
+                        _FS_BO_VOL_NOTE + '</div>';
                 }
                 const statsEl = document.getElementById('fs-flashcard-stats');
                 if (statsEl) statsEl.innerHTML = _fsStatHtml(st);
@@ -30899,7 +31419,12 @@
                     if (!data || data.length < 90) continue;
                     scanned++;
                     for (let attempt = 0; attempt < 25; attempt++) {
-                        const rIdx = 70 + Math.floor(Math.random() * (data.length - 70));
+                        // Leave 8 weeks of runway so the reveal can show what the
+                        // pattern went on to do. Without this the question could
+                        // land on the very last bar and resolve into nothing.
+                        const room = data.length - 78;
+                        if (room <= 0) break;
+                        const rIdx = 70 + Math.floor(Math.random() * room);
                         const snippet = data.slice(0, rIdx + 1);
                         if (!window._fsBuildPriceActionAnalysis) break outer;
                         const analysis = window._fsBuildPriceActionAnalysis(snippet);
@@ -30958,10 +31483,26 @@
             window.fsPatternQuizGuess = function (guessKey) {
                 if (!window._fsPatternQuizState || window._fsPatternQuizState.answered) return; // one answer per question — no stat double-counting
                 window._fsPatternQuizState.answered = true;
-                const { truePattern, trueKey, ticker, detail, others } = window._fsPatternQuizState;
+                const { truePattern, trueKey, ticker, detail, others, raw, idx } = window._fsPatternQuizState;
 
                 const isCorrect = guessKey === trueKey;
                 const st = _fsRecordStat('quiz', isCorrect);
+
+                /* Naming the pattern is only half the skill. Reveal what it went
+                   on to do, so the drill also teaches that a textbook shape is
+                   an edge and not a promise. */
+                let fwdTxt = '';
+                if (raw && typeof idx === 'number') {
+                    const fwdIdx = Math.min(idx + 8, raw.length - 1);
+                    if (fwdIdx > idx) {
+                        window._fsReplay.currentMaxDate = raw[fwdIdx].date.getTime();
+                        const fwd = ((raw[fwdIdx].close - raw[idx].close) / raw[idx].close) * 100;
+                        fwdTxt = '<div style="color:#cbd5e1; font-weight:normal; margin-top:4px;">Next ' +
+                            (fwdIdx - idx) + 'w: <b style="color:' + _fsRCol(fwd) + '">' + _fsSg(fwd) +
+                            fwd.toFixed(1) + '%</b> <span style="color:#64748b;">— now revealed on the chart. ' +
+                            'A pattern is odds, not a promise.</span></div>';
+                    }
+                }
                 const trueDef = _FS_CHART_PATTERNS.find(g => g.key === trueKey);
                 const trueLabel = trueDef ? trueDef.label : trueKey;
 
@@ -30972,7 +31513,8 @@
                         (isCorrect ? '✅ Correct!' : '❌ Incorrect — answer: ' + trueLabel) + '</div>' +
                         '<div style="color:#e2e8f0; margin-top:3px;">' + truePattern + '</div>' +
                         (detail ? '<div style="color:#94a3b8; font-weight:normal; margin-top:2px;">' + detail + '</div>' : '') +
-                        (others && others.length ? '<div style="color:#64748b; font-weight:normal; margin-top:2px;">Also present: ' + others.join(', ') + '</div>' : '');
+                        (others && others.length ? '<div style="color:#64748b; font-weight:normal; margin-top:2px;">Also present: ' + others.join(', ') + '</div>' : '') +
+                        fwdTxt;
                 }
                 const statsEl = document.getElementById('fs-pattern-quiz-stats');
                 if (statsEl) statsEl.innerHTML = _fsStatHtml(st);
@@ -31004,7 +31546,7 @@
                 const result = document.getElementById('fs-decision-result');
                 if (result) result.textContent = 'Searching for a decision point…';
                 const statsEl = document.getElementById('fs-decision-stats');
-                if (statsEl) statsEl.innerHTML = _fsStatHtml(window._fsTrainStats.decide, true);
+                if (statsEl) statsEl.innerHTML = _fsDecideStatHtml(window._fsTrainStats.decide);
 
                 let found = null, scanned = 0;
                 const keys = _fsShuffleArr(Array.from(window._ohlcvTickers.keys()))
@@ -31037,32 +31579,20 @@
                     return;
                 }
 
-                // Pre-simulate the 8-week forward trade with a −7% weekly-close stop
+                // Run the trade the way it would actually have filled.
                 const raw = found.raw;
                 const idx = found.idx;
-                const entry = raw[idx].close;
-                const stopLevel = entry * 0.93;
-                let exitIdx = Math.min(idx + 8, raw.length - 1);
-                let exitPrice = raw[exitIdx].close;
-                let stopped = false;
-                for (let j = idx + 1; j <= Math.min(idx + 8, raw.length - 1); j++) {
-                    if (raw[j].close < stopLevel) {
-                        exitIdx = j;
-                        exitPrice = raw[j].close;
-                        stopped = true;
-                        break;
-                    }
+                const sim = _fsSimTrade(raw, idx);
+                if (!sim) {
+                    if (result) result.textContent = 'No tradable setup found. Try again.';
+                    return;
                 }
-                const pnl = entry ? ((exitPrice - entry) / entry) * 100 : 0;
 
                 window._fsDecisionState = {
                     ticker: found.ticker,
                     idx: idx,
                     raw: raw,
-                    entry: entry,
-                    pnl: pnl,
-                    stopped: stopped,
-                    exitIdx: exitIdx,
+                    sim: sim,
                     action: found.analysis.action,
                     score: found.analysis.score,
                     setup: found.analysis.setup,
@@ -31075,27 +31605,42 @@
             window.fsDecisionGuess = function (buys) {
                 if (!window._fsDecisionState || window._fsDecisionState.answered) return; // one answer per question — no stat double-counting
                 window._fsDecisionState.answered = true;
-                const { ticker, idx, raw, pnl, stopped, action, score, setup } = window._fsDecisionState;
+                const { ticker, idx, raw, sim, action, score, setup } = window._fsDecisionState;
 
-                // Reveal the full 8-week outcome window
-                window._fsReplay.currentMaxDate = raw[Math.min(idx + 8, raw.length - 1)].date.getTime();
+                // Reveal exactly as far as the trade ran, so the chart shows the
+                // bar the stop was hit on rather than a tidy 8-week window.
+                window._fsReplay.currentMaxDate = raw[Math.min(sim.exitIdx + 1, raw.length - 1)].date.getTime();
 
-                const goodTrade = pnl >= 5; // worth taking
-                const isCorrect = buys ? goodTrade : !goodTrade;
-                const st = _fsRecordStat('decide', isCorrect, { pnl: buys ? pnl : 0 });
+                /* Worth taking = it made money after costs. No arbitrary
+                   percentage: the old +5% bar marked 9% of profitable trades
+                   wrong, including a trade that returned +4.9%. */
+                const worthTaking = sim.R > 0;
+                const isCorrect = buys === worthTaking;
+                const st = _fsRecordStat('decide', isCorrect, {
+                    pnl: buys ? sim.netPct : 0,
+                    r: buys ? sim.R : 0,
+                    rAll: sim.R,
+                    took: buys
+                });
 
                 const result = document.getElementById('fs-decision-result');
                 if (result) {
-                    const pcol = pnl >= 0 ? '#22c55e' : '#f43f5e';
+                    const pcol = _fsRCol(sim.netPct);
                     result.innerHTML =
-                        '<div style="color:' + (isCorrect ? '#22c55e' : '#ef4444') + ';">' + (isCorrect ? '✅ Good decision!' : '❌ Wrong call.') + '</div>' +
-                        '<div style="color:#e2e8f0; margin-top:3px;">8-week result: <b style="color:' + pcol + '">' +
-                        (pnl >= 0 ? '+' : '') + pnl.toFixed(1) + '%</b>' + (stopped ? ' (stopped out)' : '') + '</div>' +
+                        '<div style="color:' + (isCorrect ? '#22c55e' : '#ef4444') + ';">' +
+                        (isCorrect ? '✅ Good decision!' : '❌ Wrong call.') + '</div>' +
+                        '<div style="color:#e2e8f0; margin-top:3px;">Result: <b style="color:' + pcol + '">' +
+                        _fsSg(sim.netPct) + sim.netPct.toFixed(1) + '% = ' + _fsSg(sim.R) + sim.R.toFixed(2) +
+                        'R</b> <span style="color:#64748b;font-weight:normal;">after ' +
+                        sim.costPct.toFixed(2) + '% costs</span></div>' +
+                        '<div style="color:#94a3b8; font-weight:normal; margin-top:3px;">Filled next open ₹' +
+                        sim.fill.toFixed(2) + ' · stop ₹' + sim.stop.toFixed(2) + ' (−7%) · out at ₹' +
+                        sim.exit.toFixed(2) + ' after ' + sim.weeks + 'w — ' + _fsExitWhyTxt(sim) + '</div>' +
                         '<div style="color:#64748b; font-weight:normal; margin-top:2px;">Analyzer said: ' + action + ' (' + score + '/100)</div>' +
                         (setup ? '<div style="color:#94a3b8; font-weight:normal; margin-top:2px;">' + setup + '</div>' : '');
                 }
                 const statsEl = document.getElementById('fs-decision-stats');
-                if (statsEl) statsEl.innerHTML = _fsStatHtml(st, true);
+                if (statsEl) statsEl.innerHTML = _fsDecideStatHtml(st);
 
                 const tickerSearch = document.getElementById('fs-ticker-search');
                 if (tickerSearch) tickerSearch.value = ticker;
@@ -31290,7 +31835,7 @@
                 const keys = _fsShuffleArr(Array.from(window._ohlcvTickers.keys()))
                     .filter(k => _FS_INDEX_TICKERS.indexOf(k) === -1);
 
-                let chosen = null, fallback = null, scanned = 0;
+                let chosen = null, fallback = null, fbSeen = 0, scanned = 0;
                 for (const k of keys) {
                     const data = window._ohlcvTickers.get(k);
                     if (!data || data.length < 40) continue;
@@ -31300,7 +31845,17 @@
                         const res = window._fsClassifyCandlePattern(data, i);
                         if (!res) continue;
                         if (res.key === want) matches.push(res);
-                        else if (!fallback) fallback = { ticker: k, raw: data, key: res.key, span: res.span, feats: res.feats };
+                        else {
+                            /* Reservoir sample. This used to keep the FIRST
+                               non-matching pattern it ever saw, so whenever the
+                               wanted pattern could not be found the drill fell
+                               back to the same early example from the same
+                               first-scanned stock. */
+                            fbSeen++;
+                            if (Math.random() < 1 / fbSeen) {
+                                fallback = { ticker: k, raw: data, key: res.key, span: res.span, feats: res.feats };
+                            }
+                        }
                     }
                     if (matches.length) {
                         const pick = matches[Math.floor(Math.random() * matches.length)];
@@ -31403,11 +31958,42 @@
                Hold, Trim into strength, or Sell All? Only clean, unambiguous
                cases are asked — and every one is forward-confirmed over the next
                4 weeks — so the "correct" call is defensible, never a coin flip. */
-            const _FS_EXIT_HOLD_ACTIONS = ['BUY', 'BUY WATCH', 'HOLD / WATCH', 'HOLD (Extended)', 'ADD-ON / BUY WATCH', 'LOW-RISK WATCH'];
+            /* Every analyzer verdict that means "nothing here says get out".
+               Plain WATCH and REVERSAL WATCH used to be missing, and WATCH alone
+               is 48% of all real outcomes — so roughly half of every position
+               examined was thrown away unlabelled, and the deck that survived
+               was 65% Sell. */
+            const _FS_EXIT_HOLD_ACTIONS = ['BUY', 'BUY WATCH', 'WATCH', 'HOLD / WATCH', 'HOLD (Extended)',
+                'ADD-ON / BUY WATCH', 'LOW-RISK WATCH', 'REVERSAL WATCH'];
             const _FS_EXIT_LABELS = { hold: 'Hold', trim: 'Trim', sell: 'Sell All' };
+            const _FS_EXIT_CHOICES = ['hold', 'trim', 'sell'];
+            // The stop that defined the risk when the position was opened. One R.
+            const _FS_EXIT_RISK_PCT = 7;
             // Easy toggle: treat Trim and Sell All as interchangeable "reduce risk"
             // calls. Left strict by default per the trainer's grading philosophy.
             const _FS_EXIT_RELAX_TRIM_SELL = false;
+
+            /* How far the last close sits above its own 10-week mean — the
+               textbook "too far, too fast" measure a trim is made on. */
+            function _fsExtensionPct(raw, i) {
+                let sum = 0, n = 0;
+                for (let j = Math.max(0, i - 9); j <= i; j++) { sum += raw[j].close; n++; }
+                const ma = n ? sum / n : 0;
+                return ma > 0 ? ((raw[i].close - ma) / ma) * 100 : 0;
+            }
+
+            /* What a disciplined trader does with this position RIGHT NOW, read
+               off the current chart only. The order is the order the decision is
+               really made in: a stop that has already been broken settles the
+               question before any opinion about the pattern gets a say. */
+            function _fsExitLabelFor(analysisNow, runningPnL, extPct) {
+                const climax = !!(analysisNow.lines || []).some(l => l.text === 'Climax Top / Exhaustion');
+                if (runningPnL <= -_FS_EXIT_RISK_PCT) return { label: 'sell', why: 'stop' };
+                if (analysisNow.action === 'SELL / AVOID') return { label: 'sell', why: 'distribution' };
+                if (climax || (runningPnL >= 20 && extPct >= 15)) return { label: 'trim', why: climax ? 'climax' : 'extended' };
+                if (_FS_EXIT_HOLD_ACTIONS.indexOf(analysisNow.action) !== -1) return { label: 'hold', why: 'intact' };
+                return null;
+            }
 
             window.fsExitTraining = function () {
                 if (!window._ohlcvTickers || window._ohlcvTickers.size === 0) {
@@ -31426,9 +32012,14 @@
                 const banner = document.getElementById('fs-exit-banner');
                 if (banner) banner.innerHTML = '';
                 const statsEl = document.getElementById('fs-exit-stats');
-                if (statsEl) statsEl.innerHTML = _fsStatHtml(window._fsTrainStats.exit, true);
+                if (statsEl) statsEl.innerHTML = _fsExitStatHtml(window._fsTrainStats.exit);
 
-                let found = null, scanned = 0;
+                /* Balanced deck: aim for one of the three answers at random and
+                   search for it, the way the other trainers do. Left to the
+                   natural distribution the drill served 65% Sell and no Trim at
+                   all, which trains a reflex rather than a judgement. */
+                const wantLabel = _FS_EXIT_CHOICES[Math.floor(Math.random() * _FS_EXIT_CHOICES.length)];
+                let found = null, fallback = null, examined = 0;
                 const keys = _fsShuffleArr(Array.from(window._ohlcvTickers.keys()))
                     .filter(k => _FS_INDEX_TICKERS.indexOf(k) === -1);
 
@@ -31436,7 +32027,6 @@
                 for (const k of keys) {
                     const data = window._ohlcvTickers.get(k);
                     if (!data || data.length < 130) continue;
-                    scanned++;
                     for (let attempt = 0; attempt < 25; attempt++) {
                         const idx0 = 60 + Math.floor(Math.random() * (data.length - 90));
                         const entrySnippet = data.slice(0, idx0 + 1);
@@ -31456,27 +32046,35 @@
                         if (!analysisNow) continue;
 
                         const entry = data[idx0].close;
-                        const runningPnL = entry ? ((data[idx1].close - entry) / entry) * 100 : 0;
+                        if (!(entry > 0)) continue;
+                        const runningPnL = ((data[idx1].close - entry) / entry) * 100;
+                        const extPct = _fsExtensionPct(data, idx1);
+                        const verdict = _fsExitLabelFor(analysisNow, runningPnL, extPct);
+                        if (!verdict) continue;
 
-                        // Classify into a clean, unambiguous label — reject anything murkier
-                        const climaxLine = analysisNow.lines.find(l => l.text === 'Climax Top / Exhaustion');
-                        let label = null;
-                        if (climaxLine && runningPnL >= 15) label = 'trim';
-                        else if (analysisNow.action === 'SELL / AVOID') label = 'sell';
-                        else if (_FS_EXIT_HOLD_ACTIONS.indexOf(analysisNow.action) !== -1 && runningPnL > -8) label = 'hold';
-                        if (!label) continue;
-
-                        // Forward-confirm: the "correct" answer must actually have played out
+                        /* No forward filter. The old code refused to ask any
+                           question whose answer did not immediately work, so the
+                           market "confirmed" the read every single time — the
+                           one thing real trading never promises. Whatever
+                           happened next is now simply reported. */
                         const idx2 = Math.min(idx1 + 4, data.length - 1);
                         const confirmMove = (data[idx2].close - data[idx1].close) / data[idx1].close;
-                        if ((label === 'trim' || label === 'sell') && confirmMove > -0.03) continue;
-                        if (label === 'hold' && confirmMove < -0.02) continue;
 
-                        found = { ticker: k, raw: data, idx0, idx1, idx2, entry, holdWeeks, runningPnL, label, analysisNow, confirmMove };
-                        break outer;
+                        const cand = {
+                            ticker: k, raw: data, idx0: idx0, idx1: idx1, idx2: idx2,
+                            entry: entry, holdWeeks: holdWeeks, runningPnL: runningPnL,
+                            extPct: extPct, label: verdict.label, why: verdict.why,
+                            analysisNow: analysisNow, confirmMove: confirmMove
+                        };
+                        examined++;
+                        if (cand.label === wantLabel) { found = cand; break outer; }
+                        // Reservoir sample so the fallback is drawn uniformly from
+                        // everything seen, not fixed to whatever came up first.
+                        if (Math.random() < 1 / examined) fallback = cand;
+                        if (examined >= 500) break outer;
                     }
-                    if (scanned >= 40) break; // safety cap — avoid scanning the entire ticker universe
                 }
+                if (!found) found = fallback;
                 if (!found) {
                     if (result) result.textContent = 'No clean position found. Try again.';
                     return;
@@ -31485,15 +32083,22 @@
                 window._fsExitState = {
                     ticker: found.ticker, raw: found.raw, idx0: found.idx0, idx1: found.idx1, idx2: found.idx2,
                     entry: found.entry, holdWeeks: found.holdWeeks, runningPnL: found.runningPnL,
-                    label: found.label, analysisNow: found.analysisNow, confirmMove: found.confirmMove,
+                    extPct: found.extPct, label: found.label, why: found.why,
+                    analysisNow: found.analysisNow, confirmMove: found.confirmMove,
                     answered: false
                 };
 
                 if (banner) {
-                    const pcol = found.runningPnL >= 0 ? '#22c55e' : '#f43f5e';
+                    const pcol = _fsRCol(found.runningPnL);
+                    const stopPx = found.entry * (1 - _FS_EXIT_RISK_PCT / 100);
+                    const runR = found.runningPnL / _FS_EXIT_RISK_PCT;
+                    // A real exit decision is read against the risk that was
+                    // taken, so the stop and the running R are on the table.
                     banner.innerHTML = 'Entered <b>' + found.holdWeeks + 'w</b> ago at ₹' + found.entry.toFixed(2) +
-                        ' · Running: <b style="color:' + pcol + '">' + (found.runningPnL >= 0 ? '+' : '') +
-                        found.runningPnL.toFixed(1) + '%</b>';
+                        ' · stop ₹' + stopPx.toFixed(2) + ' (−' + _FS_EXIT_RISK_PCT + '%)' +
+                        '<br>Running: <b style="color:' + pcol + '">' + _fsSg(found.runningPnL) +
+                        found.runningPnL.toFixed(1) + '% = ' + _fsSg(runR) + runR.toFixed(2) + 'R</b>' +
+                        ' · ' + _fsSg(found.extPct) + found.extPct.toFixed(0) + '% vs its 10w mean';
                 }
 
                 _fsEnterTrainingReplay(found.ticker, found.raw, found.idx1, 'Exit Discipline — bought ' + found.holdWeeks + 'w ago', 'TICKER_A');
@@ -31506,13 +32111,24 @@
                 state.answered = true;
                 const { ticker, raw, idx2, label, analysisNow, confirmMove } = state;
 
-                // Reveal the 4-week confirmation window on the chart
+                // Reveal the next four weeks on the chart
                 window._fsReplay.currentMaxDate = raw[idx2].date.getTime();
 
                 const correct = choice === label ||
                     (_FS_EXIT_RELAX_TRIM_SELL && ((label === 'trim' && choice === 'sell') || (label === 'sell' && choice === 'trim')));
-                const pnlImpact = choice === 'hold' ? confirmMove * 100 : 0;
-                const st = _fsRecordStat('exit', correct, { pnl: pnlImpact });
+
+                /* What your call actually cost or saved: holding keeps the whole
+                   next-4-week move, trimming keeps half of it, selling keeps
+                   none. Expressed in R against the −7% the position was risking,
+                   so "never sell" shows up as a strategy you can be measured
+                   against instead of an invisible default. */
+                const movePct = confirmMove * 100;
+                const keptPct = choice === 'hold' ? movePct : choice === 'trim' ? movePct / 2 : 0;
+                const st = _fsRecordStat('exit', correct, {
+                    pnl: keptPct,
+                    r: keptPct / _FS_EXIT_RISK_PCT,
+                    rHold: movePct / _FS_EXIT_RISK_PCT
+                });
 
                 const result = document.getElementById('fs-exit-result');
                 if (result) {
@@ -31535,9 +32151,24 @@
                     lines.push('<div style="' + row + '"><span style="' + key + '">Flagged</span><span>' +
                         climaxLine.text + ' — ' + climaxLine.detail + '</span></div>');
                 }
+                /* Say plainly whether the market went along with the call.
+                   It very often does not, and pretending otherwise — which the
+                   old forward filter did, by only ever asking questions that
+                   worked — teaches that a good decision always pays inside a
+                   month. It does not. */
+                const agreed = label === 'hold' ? confirmMove >= -0.02 : confirmMove < 0;
                 lines.push('<div style="' + row + '"><span style="' + key + '">Next 4w</span><span><b style="color:' +
                     (confirmPct >= 0 ? '#4ade80' : '#f87171') + ';">' + sg(confirmPct) + confirmPct.toFixed(1) +
-                    '%</b> — the market confirmed this read (now revealed on the chart)</span></div>');
+                    '%</b> — ' + (agreed
+                        ? 'the market went with this read'
+                        : 'the market went the other way. The call was still the disciplined one on the evidence available; a right decision can lose over four weeks') +
+                    '</span></div>');
+                lines.push('<div style="' + row + '"><span style="' + key + '">You kept</span><span><b style="color:' +
+                    _fsRCol(keptPct) + '">' + _fsSg(keptPct) + keptPct.toFixed(1) + '% = ' +
+                    _fsSg(keptPct / _FS_EXIT_RISK_PCT) + (keptPct / _FS_EXIT_RISK_PCT).toFixed(2) +
+                    'R</b> <span style="color:#64748b;">by ' +
+                    (choice === 'hold' ? 'holding the full position' : choice === 'trim' ? 'holding half' : 'being flat') +
+                    '</span></span></div>');
                 const principle = label === 'trim'
                     ? 'A parabolic run this stretched from its moving averages, showing churn or a reversal wick at the highs, is often the last gasp of a move. Selling into that strength — instead of waiting for the reversal to prove itself — locks in the gain.'
                     : label === 'sell'
@@ -31550,7 +32181,7 @@
                 if (explain) explain.innerHTML = lines.join('');
 
                 const statsEl = document.getElementById('fs-exit-stats');
-                if (statsEl) statsEl.innerHTML = _fsStatHtml(st, true);
+                if (statsEl) statsEl.innerHTML = _fsExitStatHtml(st);
 
                 const tickerSearch = document.getElementById('fs-ticker-search');
                 if (tickerSearch) tickerSearch.value = ticker; // reveal ticker
@@ -31677,23 +32308,58 @@
                 totalPnl: 0
             };
 
-            function _fsCurrentClose() {
-                const tk = document.getElementById('fs-ticker-select')?.value?.toUpperCase();
-                if (!tk || !window._chartCalcCache) return null;
-                for (const [, cached] of window._chartCalcCache) {
-                    if (cached.ticker !== tk) continue;
-                    if (!cached.fullProcessed) continue;
-                    const arr = cached.fullProcessed;
-                    const maxTs = window._fsReplay.active ? window._fsReplay.currentMaxDate : Infinity;
-                    for (let i = arr.length - 1; i >= 0; i--) {
-                        if (arr[i].date.getTime() <= maxTs) {
-                            return { close: arr[i].close, date: arr[i].date };
-                        }
+            /* Latest close for ONE named stock, respecting the replay cut-off.
+               Falls back to the raw OHLC series when that stock is not the one
+               currently drawn — a position has to be markable even while
+               you are looking at a different chart. */
+            function _fsCloseFor(ticker) {
+                const tk = String(ticker || '').trim().toUpperCase();
+                if (!tk) return null;
+                let arr = null;
+                if (window._chartCalcCache) {
+                    for (const [, cached] of window._chartCalcCache) {
+                        if (cached.ticker === tk && cached.fullProcessed) { arr = cached.fullProcessed; break; }
                     }
+                }
+                if (!arr && window._ohlcvTickers) arr = window._ohlcvTickers.get(tk);
+                if (!arr || !arr.length) return null;
+                const maxTs = window._fsReplay.active ? window._fsReplay.currentMaxDate : Infinity;
+                for (let i = arr.length - 1; i >= 0; i--) {
+                    if (arr[i].date.getTime() <= maxTs) return { close: arr[i].close, date: arr[i].date };
                 }
                 return null;
             }
 
+            function _fsSelectedTicker() {
+                return String(document.getElementById('fs-ticker-select')?.value || '').toUpperCase();
+            }
+
+            function _fsCurrentClose() {
+                return _fsCloseFor(_fsSelectedTicker());
+            }
+
+            /* The engine holds one position at a time, so an order for a
+               different stock is a mistake, not an instruction. It used to be
+               accepted silently: the open position was marked, added to and
+               ultimately CLOSED at whatever chart happened to be on screen.
+               Buying 10 of a ₹44 stock and pressing Close while a ₹35,000
+               stock was displayed booked a ₹3.5 lakh profit on a ₹1 lakh account. */
+            function _fsPositionTickerBlocks(verb) {
+                const pt = window._fsPaperTrade;
+                if (!pt.position) return false;
+                const held = String(pt.position.ticker || '').toUpperCase();
+                const shown = _fsSelectedTicker();
+                if (!held || !shown || held === shown) return false;
+                if (window._sxToast) {
+                    window._sxToast('You are holding ' + held + '. Close that position before you ' +
+                        verb + ' ' + shown + ' — this account runs one position at a time.', 'err');
+                }
+                return true;
+            }
+
+            /* Exposed because the replay step buttons call it through window
+               — they were guarded with typeof, so while it was missing they
+               just did nothing and the P&L sat frozen at the entry price. */
             function _fsUpdatePnlDisplay() {
                 const pnlEl = document.getElementById('fs-pt-pnl');
                 if (!pnlEl) return;
@@ -31705,16 +32371,20 @@
                         : 'No position';
                     return;
                 }
-                const curr = _fsCurrentClose();
+                const { side, qty, entryPrice, ticker } = pt.position;
+                // Mark against the stock the position is IN, not whatever the
+                // chart is showing.
+                const curr = _fsCloseFor(ticker) || _fsCurrentClose();
                 if (!curr) { pnlEl.textContent = '…'; return; }
-                const { side, qty, entryPrice } = pt.position;
                 const diff = side === 'long' ? curr.close - entryPrice : entryPrice - curr.close;
                 const unreal = diff * qty;
                 const pct = (diff / entryPrice * 100).toFixed(2);
                 const color = unreal >= 0 ? '#22c55e' : '#f43f5e';
+                const away = ticker && _fsSelectedTicker() && ticker !== _fsSelectedTicker();
                 pnlEl.style.color = color;
                 pnlEl.innerHTML = (side === 'long' ? 'Long' : 'Short') + ' ' + qty
                     + ' @ ' + entryPrice.toFixed(2)
+                    + (away ? ' <span style="color:#fbbf24;">(' + ticker + ')</span>' : '')
                     + '<br>' + (unreal >= 0 ? '+' : '') + unreal.toFixed(2)
                     + ' (' + (unreal >= 0 ? '+' : '') + pct + '%)';
 
@@ -31722,6 +32392,7 @@
                     window._fsUpdateFloatingPaperTradeUI();
                 }
             }
+            window._fsUpdatePnlDisplay = _fsUpdatePnlDisplay;
 
             /* ═══ VIRTUAL BALANCE ═══
                Paper trading runs on a fixed ₹1,00,000 (matching the training
@@ -31819,6 +32490,7 @@
             }
 
             window.fsPaperBuy = function () {
+                if (_fsPositionTickerBlocks('buy')) return;
                 const curr = _fsCurrentClose();
                 if (!curr) return;
                 let qty = window._fsReadQty();
@@ -31846,6 +32518,7 @@
             };
 
             window.fsPaperSell = function () {
+                if (_fsPositionTickerBlocks('short')) return;
                 const curr = _fsCurrentClose();
                 if (!curr) return;
                 let qty = window._fsReadQty();
@@ -31871,11 +32544,12 @@
             };
 
             window.fsPaperClose = function () {
-                const curr = _fsCurrentClose();
-                if (!curr) return;
                 const pt = window._fsPaperTrade;
                 if (!pt.position) return;
                 const { side, qty, entryPrice, entryDate, ticker } = pt.position;
+                // Always exit at the held stock's own price, whatever is on screen.
+                const curr = _fsCloseFor(ticker) || _fsCurrentClose();
+                if (!curr) return;
                 const exitPrice = curr.close;
                 const diff = side === 'long' ? exitPrice - entryPrice : entryPrice - exitPrice;
                 const pnl = diff * qty;
@@ -32854,7 +33528,12 @@
                 pCv._hoverIdx = null;
                 pCv._hoverCanvas = null;
 
-                window.renderFullScreenChart();
+                /* skipChrome: panning cannot change the ticker, so the
+                   watermark and the mini financial card are already correct.
+                   Rebuilding them per pan frame meant two full scans of
+                   allData plus an innerHTML rebuild on every frame of a drag —
+                   exactly the waste the flag was introduced for. */
+                window.renderFullScreenChart({ skipChrome: true });
                 requestAnimationFrame(_fsPaintDrawings);
                 return true;
             }
@@ -32879,18 +33558,44 @@
                     e.preventDefault();
                     const barStep = Math.max(6, state.barStep || 8);
                     const candles = Math.sign(horizontalDelta) * Math.max(1, Math.round(Math.abs(horizontalDelta) / barStep));
-                    _fsPanChart(candles);
+                    _queuePan(candles);
                 }, { passive: false });
 
                 let dragActive = false;
                 let lastX = 0;
                 let carryPx = 0;
+                let dragRect = null;
 
+                /* ── pan renders are coalesced to one per frame ──
+                   pointermove fires up to 120 times a second on an iPad, and
+                   every crossing of a bar width used to call _fsPanChart ->
+                   renderFullScreenChart -> a complete chart redraw, several
+                   times inside a single frame that only ever gets painted
+                   once. The candle deltas are accumulated instead and spent in
+                   one redraw per frame, which is the most the screen can show
+                   anyway — the drag stays exactly as responsive and stops
+                   doing work nobody sees. */
+                let panPending = 0, panRaf = 0;
+                function _flushPan() {
+                    panRaf = 0;
+                    const n = panPending;
+                    panPending = 0;
+                    if (n) _fsPanChart(n);
+                }
+                function _queuePan(candles) {
+                    if (!candles) return;
+                    panPending += candles;
+                    if (!panRaf) panRaf = requestAnimationFrame(_flushPan);
+                }
+
+                /* The canvas cannot move or resize mid-drag, so its rect is
+                   read once at pointerdown instead of on every move. Each
+                   getBoundingClientRect() during a drag is a forced layout,
+                   and the drag itself is what keeps dirtying layout. */
                 const getChartX = function (e) {
-                    const coords = window._getRotatedCoords ? window._getRotatedCoords(e, pCv) : (() => {
-                        const rect = pCv.getBoundingClientRect();
-                        return { mx: e.clientX - rect.left, my: e.clientY - rect.top };
-                    })();
+                    const coords = window._getRotatedCoords
+                        ? window._getRotatedCoords(e, pCv, dragRect)
+                        : { mx: e.clientX - (dragRect || (dragRect = pCv.getBoundingClientRect())).left };
                     return coords.mx;
                 };
 
@@ -32905,6 +33610,7 @@
 
                     dragActive = true;
                     carryPx = 0;
+                    dragRect = pCv.getBoundingClientRect();
                     lastX = getChartX(e);
                     wrap.classList.add('fs-panning');
                     // Removed setPointerCapture to allow events to reach canvases for crosshair
@@ -32924,7 +33630,7 @@
                     if (Math.abs(carryPx) >= barStep) {
                         const candles = Math.trunc(carryPx / barStep);
                         carryPx -= candles * barStep;
-                        _fsPanChart(candles);
+                        _queuePan(candles);
                     }
                     e.preventDefault();
                 });
@@ -32933,6 +33639,7 @@
                     if (!dragActive) return;
                     dragActive = false;
                     carryPx = 0;
+                    dragRect = null;
                     wrap.classList.remove('fs-panning');
                     // Removed releasePointerCapture
                 };
@@ -32949,8 +33656,12 @@
             }
 
             // Global helper to extract coordinates, accounting for CSS rotation on mobile
-            window._getRotatedCoords = function (e, canvas) {
-                const rect = canvas.getBoundingClientRect();
+            window._getRotatedCoords = function (e, canvas, cachedRect) {
+                /* cachedRect is optional and used only by callers that know
+                   the canvas cannot move between events — a drag. Every
+                   getBoundingClientRect() is a forced synchronous layout, and
+                   on the pan path that was one per pointermove. */
+                const rect = cachedRect || canvas.getBoundingClientRect();
                 let clientX = e.clientX, clientY = e.clientY;
                 if (e.changedTouches && e.changedTouches.length > 0) {
                     clientX = e.changedTouches[0].clientX;
@@ -33232,8 +33943,10 @@
 
                     // Hide index canvas, show normal canvases
                     if (idxCv) { idxCv.style.display = 'none'; idxCv.width = 0; }
-                    if (pCv) pCv.style.display = '';
-                    if (vCv) vCv.style.display = '';
+                    // Explicit values, never '': an unsized canvas falls back to
+                    // its intrinsic 300x150 and visibly shoves the panes around.
+                    if (pCv) pCv.style.display = 'block';
+                    if (vCv) vCv.style.display = 'none';
                     if (rsCv) rsCv.style.display = 'none';
                     if (wrap) {
                         wrap.querySelectorAll('.card-chart-canvas-ind, .card-chart-canvas-deal').forEach(c => c.style.display = 'block');
@@ -35713,8 +36426,12 @@
             setInterval(() => {
                 if (!SX_TRACK.ENDPOINT) return;
                 hydrate();   // pick up other devices' progress during a long session
-                const p = buildPayload(buf);
-                const waiting = pendingCount() || p.training.length || p.paper;
+                /* buildPayload() never existed — this line threw a ReferenceError
+                   on EVERY tick, which killed the rest of the callback, so the
+                   one-minute retry that is supposed to drain the outbox has never
+                   actually run. hasPendingLocalWork(buf) is the same question
+                   flush() itself asks, so the two now agree by construction. */
+                const waiting = pendingCount() || hasPendingLocalWork(buf);
                 if (waiting && !inFlight) flush(false);
             }, 60000);
 
