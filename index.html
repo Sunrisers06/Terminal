@@ -15796,6 +15796,18 @@
                     canvas.addEventListener('pointerdown', onPointerMove, { passive: true });
                     canvas.addEventListener('pointerleave', onPointerLeave, { passive: true });
                     canvas.addEventListener('pointercancel', onPointerLeave, { passive: true });
+                    /* Touch has no hover state — lifting the finger is the only
+                       "I'm done looking" signal it gives, and it has to clear
+                       the crosshair or the last-touched value is stuck on
+                       screen forever. pointerleave alone isn't enough: for a
+                       touch pointer it fires only if the UA synthesizes it on
+                       release, which is inconsistent across mobile browsers,
+                       especially once a sibling handler (chart panning, on the
+                       wrapping element) has called preventDefault() on the same
+                       gesture. pointerup is the one event guaranteed by the
+                       spec to fire on release for every pointer type, so it is
+                       the actual "stop showing data" signal here. */
+                    canvas.addEventListener('pointerup', onPointerLeave, { passive: true });
 
                     canvas._hasCrosshairEvent = true;
                 };
@@ -37583,15 +37595,13 @@
 
             /* ── the chart brings its own spark ── */
             function syncSparkVisibility() {
-                const sb = document.getElementById('fs-sidebar');
-                const collapsed = !!(sb && sb.classList.contains('fs-sidebar-collapsed'));
-                /* Stood down over the full-screen chart, where the fixed spark
-                   beside the watchlist picker does this job — two of the same
-                   control on one screen is one too many. The exception is a
-                   collapsed sidebar, which takes that button off screen with it:
-                   without this the chart would have no visible way into search
-                   at all. Ctrl+K still works either way. */
-                const hide = chartOpen() && !collapsed;
+                /* Stood down over the full-screen chart, always — no exception
+                   for a collapsed sidebar. The fixed spark beside the watchlist
+                   picker (#fs-gem-search) is the chart's only way into search;
+                   when the sidebar is collapsed that button goes with it, and
+                   that is by design — expand the sidebar to search again, or
+                   use Ctrl+K, which still works either way. */
+                const hide = chartOpen();
                 const was = spark.classList.contains('gsx-away');
                 spark.classList.toggle('gsx-away', hide);
                 /* Coming back out of hiding: the window may have been resized
@@ -37606,12 +37616,9 @@
             (function watchChartForSpark() {
                 if (typeof MutationObserver !== 'function') return;
                 const modal = document.getElementById('fs-chart-modal');
-                const sb = document.getElementById('fs-sidebar');
                 const obs = new MutationObserver(syncSparkVisibility);
-                // The chart is opened by writing style.display and the sidebar
-                // collapses by class — watch the attribute each one moves.
+                // The chart is opened by writing style.display — watch that.
                 if (modal) obs.observe(modal, { attributes: true, attributeFilter: ['style'] });
-                if (sb) obs.observe(sb, { attributes: true, attributeFilter: ['class'] });
             })();
 
             /* ── suggestions ──
