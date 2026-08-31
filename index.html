@@ -37374,13 +37374,23 @@
 
             /* ── open / close, with the spark thrown at the bar ── */
             let lastFocus = null;
+            // When the panel last opened — see the scrim's click handler.
+            let openedAt = 0;
 
             function open(forceId) {
                 if (!panel.hidden) return;
                 lastFocus = document.activeElement;
                 select(forceId || openTarget(), false);
                 panel.hidden = false;
+                openedAt = Date.now();
                 spark.setAttribute('aria-expanded', 'true');
+                /* Focus is taken NOW, not in the rAF below. iOS only raises the
+                   keyboard for a focus() that happens inside the gesture's own
+                   task; deferring it by a frame left the bar focused on a phone
+                   with the keyboard still down, so the panel opened and there
+                   was nothing to type with. */
+                input.focus();
+                input.select();
                 // Both rects have to be real before the delta means anything,
                 // so the throw is armed one frame after the panel paints.
                 requestAnimationFrame(function () {
@@ -37389,8 +37399,6 @@
                     spark.style.setProperty('--gsx-dx', ((b.left + b.width / 2) - (a.left + a.width / 2)) + 'px');
                     spark.style.setProperty('--gsx-dy', ((b.top + b.height / 2) - (a.top + a.height / 2)) + 'px');
                     spark.classList.add('gsx-launched');
-                    input.focus();
-                    input.select();
                 });
             }
 
@@ -37404,7 +37412,15 @@
                 else spark.focus();
             }
 
-            scrim.addEventListener('click', close);
+            scrim.addEventListener('click', function () {
+                /* Backstop for the ghost click described on the spark's
+                   touchend handler, in case a browser delivers it despite the
+                   preventDefault there. A click landing on the backdrop within
+                   a couple of frames of the panel opening is that ghost, not
+                   somebody deliberately tapping to dismiss. */
+                if (Date.now() - openedAt < 350) return;
+                close();
+            });
             dialog.addEventListener('click', function (ev) { ev.stopPropagation(); });
 
             /* ── drag ──
@@ -37415,6 +37431,9 @@
                spot is remembered for next time. */
             const PAD = 12, SLOP = 4;
             let dragging = false, moved = false, sx = 0, sy = 0, ox = 0, oy = 0;
+            // Set when this gesture's pointerup opened the panel, so the
+            // compatibility click that follows a touch tap can be cancelled.
+            let tapOpened = false;
 
             function place(x, y) {
                 const w = spark.offsetWidth || 46, h = spark.offsetHeight || 46;
@@ -37431,7 +37450,7 @@
 
             spark.addEventListener('pointerdown', function (ev) {
                 if (ev.button !== undefined && ev.button !== 0) return;
-                dragging = true; moved = false;
+                dragging = true; moved = false; tapOpened = false;
                 sx = ev.clientX; sy = ev.clientY;
                 const r = spark.getBoundingClientRect();
                 ox = sx - r.left; oy = sy - r.top;
@@ -37445,23 +37464,54 @@
                 place(ev.clientX - ox, ev.clientY - oy);
             });
 
-            function endDrag(ev) {
+            function endDrag(ev, cancelled) {
                 if (!dragging) return;
                 dragging = false;
                 try { spark.releasePointerCapture(ev.pointerId); } catch (e) { /* already released */ }
-                if (!moved) { open(); return; }
+                /* A cancelled pointer is the browser taking the gesture away,
+                   not a finger lifting — it must not read as a tap. */
+                if (cancelled) { spark.classList.remove('gsx-dragging'); return; }
+                if (!moved) { tapOpened = true; open(); return; }
                 spark.classList.remove('gsx-dragging');
                 const r = spark.getBoundingClientRect();
                 const toLeft = (r.left + r.width / 2) < window.innerWidth / 2;
                 save(place(toLeft ? PAD : window.innerWidth - r.width - PAD, r.top));
             }
 
-            spark.addEventListener('pointerup', endDrag);
-            spark.addEventListener('pointercancel', endDrag);
-            // A drag that happens to end over the spark would otherwise also
-            // fire a click, opening the panel the user was only repositioning.
+            spark.addEventListener('pointerup', function (ev) { endDrag(ev, false); });
+            spark.addEventListener('pointercancel', function (ev) { endDrag(ev, true); });
+
+            /* ── why a tap did nothing on a phone ──
+               A touch tap ends in a compatibility `click`, and that click is
+               hit-tested AFRESH at dispatch time — unlike a mouse click, which
+               goes to the element that got mousedown. By then pointerup has
+               already opened the panel, and .gsx-launched has made the spark
+               pointer-events:none, so the click fell straight through onto the
+               scrim and closed what the tap had just opened. Press, nothing
+               happens; on a desktop mouse the same code worked perfectly.
+
+               touchend is the last event that still targets the spark (touch
+               targets are sticky for the life of a gesture), so it is the only
+               place left to cancel that click. preventDefault here suppresses
+               the whole compatibility sequence, ghost click included. */
+            spark.addEventListener('touchend', function (ev) {
+                if (!tapOpened && !moved) return;
+                ev.preventDefault();
+                // preventDefault also cancels the browser's own focus handling;
+                // re-assert ours, still inside the gesture, so iOS keeps the
+                // keyboard up.
+                if (tapOpened && !panel.hidden) input.focus();
+            }, { passive: false });
+
             spark.addEventListener('click', function (ev) {
-                if (moved) { ev.preventDefault(); ev.stopPropagation(); }
+                // A drag that happens to end over the spark would otherwise
+                // also fire a click, opening the panel the user was only
+                // repositioning.
+                if (moved) { ev.preventDefault(); ev.stopPropagation(); return; }
+                // Fallback for anything that never delivered a usable
+                // pointerup. open() no-ops when the panel is already up, so
+                // the normal path costs nothing here.
+                if (!tapOpened) open();
             });
             spark.addEventListener('keydown', function (ev) {
                 if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(); }
