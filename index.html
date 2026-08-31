@@ -6720,7 +6720,33 @@
                                 <span class="da-date-sep">→</span>
                                 <input type="date" class="da-date" id="da-date-to" title="To date">
                             </div>
-                            <input class="da-search" id="da-search" placeholder="Search ticker…">
+                            <!-- The board has no search box of its own. It
+                                 mirrors #deal-search, so one query drives
+                                 Insider/Bulk/Block/SAST *and* this board
+                                 rather than two inputs that could disagree —
+                                 and that input is itself off screen now,
+                                 typed into by the floating Gemini spark (see
+                                 the GEMINI SPARK block at the end of the
+                                 file). Clicking this one opens that panel
+                                 already on Deals, and it lights up while a
+                                 query is live, so a filtered row count on
+                                 this board is never silently filtered. -->
+                            <button class="da-gem-search" id="da-gem-search" type="button"
+                                title="Search deals" aria-label="Search deals"
+                                onclick="window._daFocusSearch()">
+                                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <linearGradient id="daGemGrad" x1="0" y1="24" x2="24" y2="0"
+                                        gradientUnits="userSpaceOnUse">
+                                        <stop offset="0" stop-color="#4285F4" />
+                                        <stop offset=".45" stop-color="#9B72CB" />
+                                        <stop offset=".8" stop-color="#D96570" />
+                                        <stop offset="1" stop-color="#F9AB00" />
+                                    </linearGradient>
+                                    <path fill="url(#daGemGrad)"
+                                        d="M12 0c0 6.627 5.373 12 12 12-6.627 0-12 5.373-12 12 0-6.627-5.373-12-12-12C6.627 12 12 6.627 12 0z" />
+                                </svg>
+                                <span class="da-gem-dot" aria-hidden="true"></span>
+                            </button>
                             <!-- Phone-only. The column headers are still
                                  there and still sort, but reaching one can
                                  mean scrolling the board sideways first;
@@ -19300,8 +19326,7 @@
         }
 
         .da-select,
-        .da-date,
-        .da-search {
+        .da-date {
             background: rgba(255, 255, 255, 0.05);
             border: 1px solid var(--border);
             color: #f8fafc;
@@ -19312,8 +19337,65 @@
             outline: none;
         }
 
-        .da-search {
-            width: 130px;
+        /* The spark that replaced this board's search input. A 26px square
+           where a 130px box used to sit -- the filter row gets those pixels
+           back, which is what keeps the segments, pills and date range on
+           one line at widths where they used to wrap. */
+        .da-gem-search {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 26px;
+            height: 26px;
+            padding: 0;
+            flex-shrink: 0;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s;
+        }
+
+        .da-gem-search svg {
+            width: 14px;
+            height: 14px;
+            display: block;
+        }
+
+        .da-gem-search:hover {
+            background: rgba(255, 255, 255, 0.12);
+            border-color: rgba(155, 114, 203, 0.7);
+        }
+
+        .da-gem-search:focus-visible {
+            outline: 2px solid #9B72CB;
+            outline-offset: 1px;
+        }
+
+        /* A live query is the one board state with no other tell: the row
+           count just drops. The dot (and the lit border) says the number
+           you are reading is a filtered one, and the button's title carries
+           the term itself -- see syncGemSearch. */
+        .da-gem-dot {
+            display: none;
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #D96570;
+            box-shadow: 0 0 0 1.5px var(--bg, #0b0f17);
+        }
+
+        .da-gem-search.da-gem-on {
+            background: rgba(155, 114, 203, 0.18);
+            border-color: rgba(155, 114, 203, 0.75);
+        }
+
+        .da-gem-search.da-gem-on .da-gem-dot {
+            display: block;
         }
 
         .da-date {
@@ -20031,10 +20113,9 @@
                 padding: 4px 6px;
             }
 
-            .da-search {
-                width: 88px;
-                font-size: 9.5px;
-                padding: 4px 6px;
+            .da-gem-search {
+                width: 24px;
+                height: 24px;
             }
 
             .da-tiles {
@@ -20194,6 +20275,13 @@
                 min-height: 28px;
             }
 
+            /* Square, not just tall: the 1400px block already narrowed it,
+               and min-height alone would stretch that narrow box. */
+            .da-gem-search {
+                width: 28px;
+                height: 28px;
+            }
+
             .da-table th.da-sortable {
                 /* Headers are the sort control on a tablet; give them a real
                    tap area rather than the desktop's 5px. */
@@ -20234,12 +20322,6 @@
             .da-filters {
                 gap: 4px;
                 padding: 5px 6px;
-            }
-
-            .da-search {
-                flex: 1 1 90px;
-                min-width: 72px;
-                width: auto;
             }
 
             /* Tighter floor than the 1400px one: the phone's smaller
@@ -20376,8 +20458,23 @@
             function daNormType(raw) {
                 const t = String(raw || '').trim();
                 if (!t) return null;
+                /* NSE writes the buy-sell indicator on a Bulk/Block print as a
+                   bare "B" or "S". Both the raw Deals tables
+                   (normalizeDealType) and the chart's deal markers (_normType)
+                   have always read them; this reader did not, and returned null
+                   — which meant daNormalizeRows threw the row away before the
+                   board ever saw it. That is 35,573 rows, 12.6% of the feed, and
+                   in the Block segment the coded rows outnumber the spelled-out
+                   ones. RUBICON showed 8 transactions out of 44 prints because
+                   26 of them were coded this way. */
+                if (/^b$/i.test(t)) return 'BUY';
+                if (/^s$/i.test(t)) return 'SELL';
                 if (/buy|bought|acq|purchas/i.test(t)) return 'BUY';
                 if (/sell|sold|sale|divest/i.test(t)) return 'SELL';
+                /* Everything else really is undirected and stays out: ESOP/ESOS
+                   allotments, pledge creation/release/invocation, gifts,
+                   inter-se transfers and off-market moves are not somebody
+                   buying or selling on the exchange. */
                 return null;
             }
             /* Identity key for the intraday test. Filings spell one party
@@ -20808,9 +20905,23 @@
                 if (opts.indexSet) rows = rows.filter(function (r) { return opts.indexSet.has(r.ticker); });
                 if (opts.from) rows = rows.filter(function (r) { return r.date >= opts.from; });
                 if (opts.to) rows = rows.filter(function (r) { return r.date <= opts.to; });
+                /* The query is the Deal section's shared bar, whose
+                   placeholder promises "ticker, person" -- and the tables
+                   next door honour both. Matching ticker only would leave a
+                   person search showing a full set of rows over there and an
+                   empty board here, which reads as the board being broken
+                   rather than as a query it declined to understand. The
+                   upper-cased person is memoised onto the row the same way
+                   the tables memoise row._tok: normalizedRows hands back
+                   cached row objects, so the cost is paid once per row, not
+                   once per keystroke. */
                 if (opts.tickerQuery) {
                     const q = opts.tickerQuery.trim().toUpperCase();
-                    if (q) rows = rows.filter(function (r) { return r.ticker.indexOf(q) !== -1; });
+                    if (q) rows = rows.filter(function (r) {
+                        if (r.ticker.indexOf(q) !== -1) return true;
+                        if (r._pu === undefined) r._pu = String(r.person || '').toUpperCase();
+                        return r._pu.indexOf(q) !== -1;
+                    });
                 }
                 if (opts.supermanOnly) rows = rows.filter(function (r) { return r.superman; });
 
@@ -21171,6 +21282,15 @@
             let _indexPopulated = false;
             let _pollTimer = null;
             let _selectedTicker = null;
+            /* The board's copy of the Deal section's search bar (#deal-search)
+               — this tab has no input of its own any more. Mirrored rather
+               than read live because one write to that bar must NOT reach the
+               board: selecting a row here echoes its ticker into the bar to
+               narrow the company cards, and a board that filtered itself down
+               to the row just clicked would leave arrow-key navigation with a
+               one-row list. See the filterDealBlock wrapper. */
+            let _query = '';
+            let _echoingSelection = false;
             // The exact ticker order the summary table last rendered in —
             // what Up/Down arrow navigation walks through.
             let _lastRenderedTickers = [];
@@ -21212,10 +21332,9 @@
                 const toEl = document.getElementById('da-date-to');
                 const from = fromEl && fromEl.value ? new Date(fromEl.value + 'T00:00:00') : null;
                 const to = toEl && toEl.value ? new Date(toEl.value + 'T23:59:59') : null;
-                const searchEl = document.getElementById('da-search');
                 return {
                     subs: subs, indexSet: indexSet, from: from, to: to,
-                    tickerQuery: searchEl ? searchEl.value : '', supermanOnly: _supermanActive
+                    tickerQuery: _query, supermanOnly: _supermanActive
                 };
             }
 
@@ -21664,8 +21783,22 @@
                     b.classList.toggle('active', b.dataset.days === '0');
                 });
 
-                const searchEl = document.getElementById('da-search');
-                if (searchEl) searchEl.value = '';
+                /* The search this tab filters by now lives in the Deal
+                   section's toolbar, so clearing it here clears it for the
+                   Insider/Bulk/Block/SAST tables too -- that is the point of
+                   sharing one bar, and leaving it set would make the tab's
+                   own ⟳ lie about having reset "search". The tables are
+                   re-filtered so they don't sit on a query the bar no longer
+                   shows. */
+                const searchEl = document.getElementById('deal-search');
+                if (searchEl && searchEl.value) {
+                    searchEl.value = '';
+                    if (window._dealData && typeof window.filterDealBlock === 'function') {
+                        window.filterDealBlock();
+                    }
+                }
+                _query = '';
+                syncGemSearch();
 
                 _sortKey = 'total'; _sortDir = 'desc';
                 _txnSortKey = 'date'; _txnSortDir = 'desc';
@@ -21681,6 +21814,7 @@
                    clearing filters across the whole app, not asking this one
                    tab to redo ~40k rows of parsing it already has correct. */
                 if (hard) clearCaches();
+                cancelSearchRender();
                 render();
             }
             window._daRefresh = function () { resetAnalysisTab(true); };
@@ -21725,7 +21859,16 @@
             }
             function selectRow(ticker, scrollIntoView) {
                 _selectedTicker = ticker;
-                if (typeof window.setDealTickerFilter === 'function') window.setDealTickerFilter(ticker);
+                if (typeof window.setDealTickerFilter === 'function') {
+                    /* setDealTickerFilter writes the ticker into the shared
+                       search bar. Flagged so the board's own mirror ignores
+                       that one write -- this is the board reporting a
+                       selection outward, not the user asking it to filter
+                       itself down to a single row. */
+                    _echoingSelection = true;
+                    try { window.setDealTickerFilter(ticker); }
+                    finally { _echoingSelection = false; }
+                }
                 applyRowHighlight();
                 if (scrollIntoView) {
                     const el = findSummaryRow(ticker);
@@ -21848,19 +21991,87 @@
                 });
             }
 
-            /* A full recompute per keystroke is wasted work: typing
+            /* ── shared search: the Deal section's toolbar bar ──
+               This board used to carry its own #da-search next to the date
+               range. Two inputs over the same data meant two answers to
+               "what am I looking at": the tables filtered by one, the board
+               by the other, and moving between sub-tabs silently changed
+               which query was in force. There is one bar for the whole
+               section now; the board mirrors it into _query, and the spark
+               in the filter row is all that is left of the input.
+
+               A full recompute per keystroke is wasted work: typing
                "RELIANCE" fired eight of them and only the last one was ever
                seen. Coalesced into one render a beat after typing stops --
                short enough to still feel immediate, long enough that a
                normal typing cadence produces a single pass. */
             let _searchTimer = null;
-            const searchEl = document.getElementById('da-search');
-            if (searchEl) {
-                searchEl.addEventListener('input', function () {
-                    if (_searchTimer) clearTimeout(_searchTimer);
-                    _searchTimer = setTimeout(function () { _searchTimer = null; render(); }, 140);
-                });
+
+            function cancelSearchRender() {
+                if (_searchTimer) { clearTimeout(_searchTimer); _searchTimer = null; }
             }
+
+            function scheduleSearchRender() {
+                cancelSearchRender();
+                _searchTimer = setTimeout(function () {
+                    _searchTimer = null;
+                    render();
+                }, 140);
+            }
+
+            /* The spark carries the state the input used to show on its
+               face: lit, with a dot, while a query is narrowing the board,
+               and the term itself in the tooltip -- so a shrunken row count
+               always has a visible cause. */
+            function syncGemSearch() {
+                const btn = document.getElementById('da-gem-search');
+                if (!btn) return;
+                btn.classList.toggle('da-gem-on', !!_query);
+                btn.title = _query
+                    ? 'Filtering by \u201c' + _query + '\u201d \u2014 click to edit'
+                    : 'Search deals';
+            }
+
+            /* Mirror the bar. Wrapping filterDealBlock rather than listening
+               for `input` on it: the bar is also written to in code -- a
+               ticker badge calls setDealTickerFilter, which assigns .value
+               and calls this -- and an assignment fires no input event.
+               Every path that changes the shared query passes through here,
+               so it is the one hook that cannot be bypassed. */
+            const _prevFilterDealBlock = window.filterDealBlock;
+            window.filterDealBlock = function () {
+                const out = (typeof _prevFilterDealBlock === 'function')
+                    ? _prevFilterDealBlock.apply(this, arguments) : undefined;
+                if (!_echoingSelection) {
+                    const el = document.getElementById('deal-search');
+                    const next = el ? el.value.trim() : '';
+                    if (next !== _query) {
+                        _query = next;
+                        syncGemSearch();
+                        // Only the visible tab needs repainting; switching
+                        // into Analysis renders from _query on arrival.
+                        if (_onAnalysisTab) scheduleSearchRender();
+                    }
+                }
+                return out;
+            };
+
+            /* The spark's whole job: hand the caret to the bar that now owns
+               this tab's search. An existing term is pre-selected so typing
+               replaces it, which is what the in-place input did. */
+            window._daFocusSearch = function () {
+                const el = document.getElementById('deal-search');
+                if (!el) return;
+                if (el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+                el.focus();
+                if (el.value) el.select();
+            };
+
+            // Pick up whatever the bar already holds, so the spark and the
+            // board agree with it from the first paint.
+            const _initSearchEl = document.getElementById('deal-search');
+            _query = _initSearchEl ? _initSearchEl.value.trim() : '';
+            syncGemSearch();
 
             /* Phone-sized screens get the card layout, which has no column
                headers to click -- this select is how sorting stays reachable
@@ -28715,7 +28926,7 @@
             </div>
 
             <!-- Search bar at top -->
-            <div class="fs-section" style="padding: 10px 14px 4px 14px; border-bottom: none;">
+            <div class="fs-section" id="fs-search-section" style="padding: 10px 14px 4px 14px; border-bottom: none;">
                 <div style="position: relative; width: 100%;">
                     <span class="fs-search-ico">🔍</span>
                     <input type="text" id="fs-ticker-search" class="fs-search-input" placeholder="Search Ticker..."
@@ -36469,6 +36680,849 @@
             if (SX_TRACK.ENDPOINT) setTimeout(() => hydrate(), 1800);
             console.log('[SundarX] Training tracker ready' +
                 (SX_TRACK.ENDPOINT ? '' : ' (local only — set SX_TRACK.ENDPOINT to sync)'));
+        })();
+    </script>
+
+
+    <!-- ══════════════════════════════════════════════════════════════════
+     GEMINI SPARK — the app's single search surface
+     ═══════════════════════════════════════════════════════════════════
+     Every pane used to carry its own bar: the stock grid, Insights, News,
+     NSE News, Deals, SuperStar, Tech Screener and the full-screen chart's
+     sidebar — eight inputs, each eating a row of toolbar on a screen that
+     is mostly table. They are all gone from view now. One draggable spark
+     opens one glowing bar, and that bar types into whichever of the eight
+     the context calls for.
+
+     The <input> elements themselves stay in the DOM, hidden. They are what
+     doFilter / filterPaneSearch / filterDealBlock / filterSuperstarBlock /
+     tsFilterChange / fsSearchInput all read, and every one of those
+     pipelines (plus resetAllAppFilters, the F/H filter, the deal ticker
+     badges, the Analysis board's mirror) writes to them. Keeping them as
+     the state carriers makes this a change of surface, not a rewrite of
+     eight filter engines — and anything that sets .value from code keeps
+     working untouched.
+
+     The one thing a hidden bar costs is the sight of its own contents, so
+     the spark carries that instead: it lights up and counts while any
+     target holds a query, and each chip shows a dot for its own.
+    ══════════════════════════════════════════════════════════════════ -->
+    <style>
+        /* ── the eight bars, off screen ── */
+        .pane-search-wrap,              /* Insights, News, Deals */
+        #nsenews-search,
+        #superstar-search,
+        #ts-search,
+        #search-wrap,                   /* main stock search + its ⌕ and ✕ */
+        #fs-search-section {            /* full-screen chart sidebar */
+            display: none !important;
+        }
+
+        /* Those bars were the flexible filler in their toolbars. Without one
+           the buttons collapse to the left, jumping away from the corner
+           they have always sat in; this puts each row back the way it read. */
+        .pane-toolbar > .font-size-controls,
+        .deal-global-toolbar > .font-size-controls,
+        #ss-investors-content #superstar-inv-filter,
+        .ts-toolbar > #ts-group-sel {
+            margin-left: auto;
+        }
+
+        /* ── the spark ── */
+        #gsx-spark {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 46px;
+            height: 46px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 25%, #21212b, #0b0b12 70%);
+            box-shadow: 0 6px 22px rgba(0, 0, 0, 0.55);
+            cursor: grab;
+            z-index: 2000000;
+            touch-action: none;   /* the drag owns the gesture, not the scroller */
+            -webkit-user-select: none;
+            user-select: none;
+            transition: transform .38s cubic-bezier(.34, 1.3, .5, 1), opacity .26s ease,
+                        box-shadow .3s ease, border-color .3s ease;
+        }
+
+        #gsx-spark:active {
+            cursor: grabbing;
+        }
+
+        #gsx-spark.gsx-dragging {
+            transition: none;     /* follow the finger exactly */
+            transform: scale(1.12);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.65);
+        }
+
+        #gsx-spark svg {
+            width: 22px;
+            height: 22px;
+            display: block;
+            animation: gsx-breathe 5.5s ease-in-out infinite;
+        }
+
+        /* Parked with a query live somewhere: the spark is the only thing
+           left that can say so, since the bars that used to show it are gone. */
+        #gsx-spark.gsx-active {
+            border-color: rgba(155, 114, 203, 0.85);
+            box-shadow: 0 6px 22px rgba(0, 0, 0, 0.55), 0 0 18px 2px rgba(155, 114, 203, 0.35);
+        }
+
+        #gsx-count {
+            position: absolute;
+            top: -3px;
+            right: -3px;
+            min-width: 16px;
+            height: 16px;
+            padding: 0 4px;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            border-radius: 999px;
+            background: #D96570;
+            color: #fff;
+            font: 700 9.5px/1 'Lexend', sans-serif;
+            box-shadow: 0 0 0 2px var(--bg, #06060a);
+        }
+
+        #gsx-spark.gsx-active #gsx-count {
+            display: flex;
+        }
+
+        /* Opening the bar throws the spark at it: --gsx-dx/dy are measured
+           from the parked spark to the mark inside the bar, so it lands on
+           its own reflection rather than merely fading out. Closing plays
+           the same transform backwards, back to wherever it was parked. */
+        #gsx-spark.gsx-launched {
+            transform: translate(var(--gsx-dx, 0px), var(--gsx-dy, 0px)) scale(.34) rotate(180deg);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* ── the panel ── */
+        #gsx-panel {
+            position: fixed;
+            inset: 0;
+            z-index: 2000001;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: min(18vh, 150px) 16px 16px;
+        }
+
+        #gsx-panel[hidden] {
+            display: none;
+        }
+
+        #gsx-scrim {
+            position: absolute;
+            inset: 0;
+            background: rgba(4, 4, 8, 0.62);
+            backdrop-filter: blur(7px);
+            -webkit-backdrop-filter: blur(7px);
+            animation: gsx-fade .22s ease both;
+        }
+
+        #gsx-dialog {
+            position: relative;
+            width: min(660px, 100%);
+            animation: gsx-rise .3s cubic-bezier(.2, .9, .3, 1) both;
+        }
+
+        /* The glow is a conic gradient larger than the bar, spinning behind
+           it; 2px of padding is all of it that shows, so the border itself
+           appears to travel. A gradient on the border shorthand cannot be
+           animated, and border-image cannot follow a border-radius. */
+        #gsx-bar {
+            position: relative;
+            padding: 2px;
+            border-radius: 999px;
+            overflow: hidden;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, .55), 0 0 34px rgba(155, 114, 203, .28);
+        }
+
+        #gsx-glow {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 190%;
+            aspect-ratio: 1;
+            transform: translate(-50%, -50%);
+            background: conic-gradient(from 0deg, #4285F4, #9B72CB, #D96570, #F9AB00, #4285F4);
+            animation: gsx-spin 4.5s linear infinite;
+        }
+
+        #gsx-bar.gsx-busy #gsx-glow {
+            animation-duration: 1.15s;
+        }
+
+        #gsx-bar-inner {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 14px;
+            border-radius: 999px;
+            background: #101018;
+        }
+
+        #gsx-bar-spark {
+            display: flex;
+            flex-shrink: 0;
+        }
+
+        #gsx-bar-spark svg {
+            width: 20px;
+            height: 20px;
+            display: block;
+        }
+
+        /* "Moving during search": the mark spins while a query is being
+           applied and settles the moment the results are on screen. */
+        #gsx-bar.gsx-busy #gsx-bar-spark svg {
+            animation: gsx-work 1.05s cubic-bezier(.5, 0, .5, 1) infinite;
+        }
+
+        #gsx-input {
+            flex: 1;
+            min-width: 0;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #f4f4f8;
+            font: 400 15px/1.35 'Lexend', sans-serif;
+        }
+
+        #gsx-input::placeholder {
+            color: rgba(255, 255, 255, 0.33);
+        }
+
+        #gsx-clear {
+            flex-shrink: 0;
+            display: none;
+            padding: 4px 9px;
+            background: rgba(255, 255, 255, 0.07);
+            border: none;
+            border-radius: 999px;
+            color: rgba(255, 255, 255, 0.6);
+            font: 600 10.5px/1.6 'Lexend', sans-serif;
+            cursor: pointer;
+        }
+
+        #gsx-clear:hover {
+            background: rgba(255, 255, 255, 0.14);
+            color: #fff;
+        }
+
+        #gsx-clear.gsx-on {
+            display: block;
+        }
+
+        /* ── target chips ── */
+        #gsx-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 14px;
+        }
+
+        .gsx-chip {
+            position: relative;
+            padding: 6px 12px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.05);
+            color: rgba(255, 255, 255, 0.62);
+            font: 600 11px/1 'Lexend', sans-serif;
+            cursor: pointer;
+            transition: background .15s, border-color .15s, color .15s;
+        }
+
+        .gsx-chip:hover {
+            background: rgba(255, 255, 255, 0.11);
+            color: #fff;
+        }
+
+        .gsx-chip.gsx-sel {
+            background: rgba(155, 114, 203, 0.22);
+            border-color: rgba(155, 114, 203, 0.8);
+            color: #fff;
+        }
+
+        /* One dot per target still holding a query — the filtered state that
+           eight visible bars used to show at a glance. */
+        .gsx-chip.gsx-has::after {
+            content: '';
+            position: absolute;
+            top: 3px;
+            right: 4px;
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: #D96570;
+        }
+
+        #gsx-foot {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 12px;
+            color: rgba(255, 255, 255, 0.34);
+            font: 400 10.5px/1.6 'Lexend', sans-serif;
+        }
+
+        #gsx-foot kbd {
+            padding: 1px 5px;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.05);
+            font: inherit;
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        #gsx-clearall {
+            margin-left: auto;
+            padding: 4px 10px;
+            border: 1px solid rgba(217, 101, 112, 0.4);
+            border-radius: 999px;
+            background: rgba(217, 101, 112, 0.12);
+            color: #ffb4ba;
+            font: 600 10.5px/1.6 'Lexend', sans-serif;
+            cursor: pointer;
+            display: none;
+        }
+
+        #gsx-clearall.gsx-on {
+            display: block;
+        }
+
+        @keyframes gsx-spin {
+            to { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+
+        @keyframes gsx-work {
+            0%   { transform: rotate(0) scale(1); }
+            50%  { transform: rotate(180deg) scale(.78); }
+            100% { transform: rotate(360deg) scale(1); }
+        }
+
+        @keyframes gsx-breathe {
+            0%, 100% { transform: scale(1);   opacity: .92; }
+            50%      { transform: scale(1.1); opacity: 1; }
+        }
+
+        @keyframes gsx-fade {
+            from { opacity: 0; }
+        }
+
+        @keyframes gsx-rise {
+            from { opacity: 0; transform: translateY(14px) scale(.97); }
+        }
+
+        @media (max-width: 600px) {
+            #gsx-spark {
+                width: 42px;
+                height: 42px;
+            }
+
+            #gsx-panel {
+                padding-top: 10vh;
+            }
+
+            #gsx-input {
+                font-size: 16px;   /* anything smaller and iOS zooms on focus */
+            }
+        }
+
+        /* Every motion here is decoration over a search box; none of it
+           carries meaning the static state does not already show. */
+        @media (prefers-reduced-motion: reduce) {
+            #gsx-spark,
+            #gsx-spark svg,
+            #gsx-glow,
+            #gsx-bar-spark svg,
+            #gsx-scrim,
+            #gsx-dialog {
+                animation: none !important;
+                transition: none !important;
+            }
+        }
+    </style>
+
+    <button id="gsx-spark" type="button" aria-haspopup="dialog" aria-expanded="false"
+        title="Search (Ctrl+K) — drag to move">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <linearGradient id="gsxGradA" x1="0" y1="24" x2="24" y2="0" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stop-color="#4285F4" />
+                <stop offset=".45" stop-color="#9B72CB" />
+                <stop offset=".8" stop-color="#D96570" />
+                <stop offset="1" stop-color="#F9AB00" />
+            </linearGradient>
+            <path fill="url(#gsxGradA)"
+                d="M12 0c0 6.627 5.373 12 12 12-6.627 0-12 5.373-12 12 0-6.627-5.373-12-12-12C6.627 12 12 6.627 12 0z" />
+        </svg>
+        <span id="gsx-count" aria-hidden="true"></span>
+    </button>
+
+    <div id="gsx-panel" hidden>
+        <div id="gsx-scrim"></div>
+        <div id="gsx-dialog" role="dialog" aria-modal="true" aria-label="Search">
+            <div id="gsx-bar">
+                <span id="gsx-glow" aria-hidden="true"></span>
+                <div id="gsx-bar-inner">
+                    <span id="gsx-bar-spark" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" focusable="false">
+                            <linearGradient id="gsxGradB" x1="0" y1="24" x2="24" y2="0" gradientUnits="userSpaceOnUse">
+                                <stop offset="0" stop-color="#4285F4" />
+                                <stop offset=".45" stop-color="#9B72CB" />
+                                <stop offset=".8" stop-color="#D96570" />
+                                <stop offset="1" stop-color="#F9AB00" />
+                            </linearGradient>
+                            <path fill="url(#gsxGradB)"
+                                d="M12 0c0 6.627 5.373 12 12 12-6.627 0-12 5.373-12 12 0-6.627-5.373-12-12-12C6.627 12 12 6.627 12 0z" />
+                        </svg>
+                    </span>
+                    <input id="gsx-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off"
+                        spellcheck="false" placeholder="Search…">
+                    <button id="gsx-clear" type="button" title="Clear this search">Clear</button>
+                </div>
+            </div>
+            <div id="gsx-chips" role="tablist" aria-label="What to search"></div>
+            <div id="gsx-foot">
+                <span><kbd>Tab</kbd> next · <kbd>Enter</kbd> apply · <kbd>Esc</kbd> close</span>
+                <button id="gsx-clearall" type="button">Clear all</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            'use strict';
+
+            /* ── the eight things a query can mean ──
+               `input` is the hidden element that still holds the value, and
+               `apply` is that pane's own existing handler — called, never
+               reimplemented, so each pane keeps its own debounce, its own
+               matcher and its own idea of what a match is. `tab`/`ssMode`
+               say where the results will appear; without them a chip could
+               filter a pane sitting behind another one. */
+            const TARGETS = [
+                {
+                    id: 'stocks', label: 'Stocks', input: 'search-input',
+                    ph: 'Search stocks — ticker or name, | for OR…',
+                    apply: function () { if (typeof onSearchInput === 'function') onSearchInput(); },
+                    go: function () {
+                        if (document.body.classList.contains('news-open-mobile') &&
+                            typeof closeMobileNews === 'function') closeMobileNews();
+                    }
+                },
+                {
+                    id: 'insights', label: 'Insights', input: 'insights-search', tab: 'insights',
+                    ph: 'Filter insights by ticker…',
+                    apply: function () { if (typeof filterPaneSearch === 'function') filterPaneSearch('insights'); }
+                },
+                {
+                    id: 'news', label: 'News', input: 'news-search', tab: 'news',
+                    ph: 'Filter news…',
+                    apply: function () { if (typeof filterPaneSearch === 'function') filterPaneSearch('news'); }
+                },
+                {
+                    id: 'nsenews', label: 'NSE News', input: 'nsenews-search', tab: 'nsenews',
+                    ph: 'Search NSE announcements — ticker or keyword…',
+                    apply: function () { if (typeof filterPaneSearch === 'function') filterPaneSearch('nsenews'); }
+                },
+                {
+                    id: 'deals', label: 'Deals', input: 'deal-search', tab: 'deals',
+                    ph: 'Search deals — ticker or person…',
+                    apply: function () { if (typeof window.filterDealBlock === 'function') window.filterDealBlock(); }
+                },
+                {
+                    id: 'superstar', label: 'SuperStar', input: 'superstar-search', tab: 'superstar', ssMode: 'inv',
+                    ph: 'Search investor or ticker…',
+                    apply: function () { if (typeof filterSuperstarBlock === 'function') filterSuperstarBlock(); }
+                },
+                {
+                    id: 'screener', label: 'Screener', input: 'ts-search', tab: 'superstar', ssMode: 'tech',
+                    ph: 'Search ticker or company…',
+                    apply: function () { if (typeof window.tsFilterChange === 'function') window.tsFilterChange(); }
+                },
+                {
+                    id: 'chart', label: 'Chart', input: 'fs-ticker-search', chartOnly: true,
+                    ph: 'Search ticker in the chart sidebar…',
+                    apply: function () { if (typeof window.fsSearchInput === 'function') window.fsSearchInput(); }
+                }
+            ];
+            const BY_ID = {};
+            TARGETS.forEach(function (t) { BY_ID[t.id] = t; });
+
+            const spark = document.getElementById('gsx-spark');
+            const countEl = document.getElementById('gsx-count');
+            const panel = document.getElementById('gsx-panel');
+            const dialog = document.getElementById('gsx-dialog');
+            const scrim = document.getElementById('gsx-scrim');
+            const bar = document.getElementById('gsx-bar');
+            const barSpark = document.getElementById('gsx-bar-spark');
+            const input = document.getElementById('gsx-input');
+            const clearBtn = document.getElementById('gsx-clear');
+            const clearAllBtn = document.getElementById('gsx-clearall');
+            const chipsEl = document.getElementById('gsx-chips');
+            if (!spark || !panel || !input) return;
+
+            let current = 'stocks';
+            let busyTimer = null;
+
+            function el(t) { return t ? document.getElementById(t.input) : null; }
+            function valueOf(t) { const e = el(t); return e ? e.value : ''; }
+
+            function chartOpen() {
+                const m = document.getElementById('fs-chart-modal');
+                return !!m && m.style.display === 'flex';
+            }
+
+            /* A target is offered only where its pane can actually be reached:
+               the chart sidebar exists only while the chart is up. */
+            function available() {
+                return TARGETS.filter(function (t) {
+                    if (t.chartOnly) return chartOpen();
+                    return !!el(t);
+                });
+            }
+
+            /* ── which pane is the user actually looking at ──
+               Anything covering the screen wins outright. Below 1400px the
+               sidebar and the grid are separate screens, so whichever is up
+               is the answer; above it both are visible at once and the grid
+               is the app's primary surface, with every pane one chip away. */
+            function detect() {
+                if (chartOpen()) return { id: 'chart', strong: true };
+                const fsPane = document.querySelector('.news-half.fs-active');
+                if (fsPane) {
+                    const id = paneToId(fsPane.id);
+                    if (id) return { id: id, strong: true };
+                }
+                if (window.innerWidth <= 1400 && document.body.classList.contains('news-open-mobile')) {
+                    const id = tabToId(window._sidebarTab);
+                    if (id) return { id: id, strong: true };
+                }
+                return { id: 'stocks', strong: false };
+            }
+
+            function paneToId(sectionId) {
+                switch (sectionId) {
+                    case 'insights-section': return 'insights';
+                    case 'general-news-section': return 'news';
+                    case 'nsenews-section': return 'nsenews';
+                    case 'deal-block-section': return 'deals';
+                    case 'superstar-block-section': return window._ssMode === 'tech' ? 'screener' : 'superstar';
+                    default: return null;   // Breadth has no search of its own
+                }
+            }
+
+            function tabToId(tab) {
+                if (tab === 'superstar') return window._ssMode === 'tech' ? 'screener' : 'superstar';
+                return BY_ID[tab] ? tab : null;
+            }
+
+            /* Where the bar lands when it opens. Detection alone would send a
+               user who just filtered Deals back to Stocks, leaving the query
+               they are still looking at reachable only by spotting its dotted
+               chip. So: a pane actually covering the screen wins outright,
+               then the pane in front if it has a query of its own, then any
+               query already running, and only a clean slate falls through to
+               plain context. */
+            function openTarget() {
+                const d = detect();
+                // Something filling the screen is not a hint, it is the answer.
+                if (d.strong) return d.id;
+                if (valueOf(BY_ID[d.id]).trim()) return d.id;
+                const last = BY_ID[current];
+                if (last && el(last) && valueOf(last).trim()) return current;
+                return d.id;
+            }
+
+            /* ── spark badge: the only remaining sight of a live query ── */
+            function activeCount() {
+                let n = 0;
+                TARGETS.forEach(function (t) { if (valueOf(t).trim()) n++; });
+                return n;
+            }
+
+            function syncSpark() {
+                const n = activeCount();
+                spark.classList.toggle('gsx-active', n > 0);
+                countEl.textContent = n > 9 ? '9+' : String(n);
+                spark.title = n
+                    ? n + (n === 1 ? ' search active' : ' searches active') + ' — click to edit, drag to move'
+                    : 'Search (Ctrl+K) — drag to move';
+                clearAllBtn.classList.toggle('gsx-on', n > 0);
+            }
+
+            function renderChips() {
+                chipsEl.innerHTML = '';
+                available().forEach(function (t) {
+                    const b = document.createElement('button');
+                    b.type = 'button';
+                    b.className = 'gsx-chip' + (t.id === current ? ' gsx-sel' : '') +
+                        (valueOf(t).trim() ? ' gsx-has' : '');
+                    b.textContent = t.label;
+                    b.setAttribute('role', 'tab');
+                    b.setAttribute('aria-selected', t.id === current ? 'true' : 'false');
+                    b.addEventListener('click', function () { select(t.id, true); input.focus(); });
+                    chipsEl.appendChild(b);
+                });
+            }
+
+            /* Switching target also navigates to it: a chip that filtered a
+               pane the user cannot see would look like it did nothing. */
+            function select(id, navigate) {
+                const t = BY_ID[id];
+                if (!t || !el(t)) return;
+                current = id;
+                if (navigate) {
+                    if (t.tab && typeof switchSidebarTab === 'function' && window._sidebarTab !== t.tab) {
+                        switchSidebarTab(t.tab);
+                    }
+                    if (t.ssMode && typeof window.switchSuperstarMode === 'function' && window._ssMode !== t.ssMode) {
+                        window.switchSuperstarMode(t.ssMode);
+                    }
+                    // Below 1400px the sidebar is a separate screen; a Deals
+                    // chip has to open it or the results land out of sight.
+                    if (t.tab && window.innerWidth <= 1400 &&
+                        !document.body.classList.contains('news-open-mobile') &&
+                        typeof toggleNewsPanel === 'function') {
+                        toggleNewsPanel();
+                    }
+                    if (typeof t.go === 'function') t.go();
+                }
+                input.placeholder = t.ph || 'Search…';
+                input.value = valueOf(t);
+                clearBtn.classList.toggle('gsx-on', !!input.value);
+                renderChips();
+            }
+
+            /* The mark spins while the pane re-filters. Each pane debounces on
+               its own clock (60–150ms) and none of them report back, so this is
+               a fixed beat rather than a true progress signal — long enough to
+               read as work, short enough never to outlast it. */
+            function pulse() {
+                bar.classList.add('gsx-busy');
+                if (busyTimer) clearTimeout(busyTimer);
+                busyTimer = setTimeout(function () {
+                    busyTimer = null;
+                    bar.classList.remove('gsx-busy');
+                }, 420);
+            }
+
+            function push() {
+                const t = BY_ID[current];
+                const e = el(t);
+                if (!e) return;
+                e.value = input.value;
+                clearBtn.classList.toggle('gsx-on', !!input.value);
+                try { t.apply(); } catch (err) { console.warn('[gsx] apply failed for ' + current, err); }
+                pulse();
+                syncSpark();
+                renderChips();
+            }
+
+            input.addEventListener('input', push);
+
+            clearBtn.addEventListener('click', function () {
+                input.value = '';
+                push();
+                input.focus();
+            });
+
+            clearAllBtn.addEventListener('click', function () {
+                TARGETS.forEach(function (t) {
+                    const e = el(t);
+                    if (!e || !e.value) return;
+                    e.value = '';
+                    try { t.apply(); } catch (err) { console.warn('[gsx] clear failed for ' + t.id, err); }
+                });
+                input.value = '';
+                pulse();
+                syncSpark();
+                renderChips();
+                input.focus();
+            });
+
+            /* Keys are handled on the input and stopped there: the full-screen
+               chart binds Escape/Delete/Backspace on window, and this bar opens
+               on top of it. */
+            input.addEventListener('keydown', function (ev) {
+                if (ev.key === 'Escape') { ev.stopPropagation(); close(); return; }
+                if (ev.key === 'Enter') { ev.stopPropagation(); ev.preventDefault(); push(); close(); return; }
+                if (ev.key === 'Tab') {
+                    const list = available();
+                    if (list.length < 2) return;
+                    ev.preventDefault(); ev.stopPropagation();
+                    let i = -1;
+                    for (let k = 0; k < list.length; k++) { if (list[k].id === current) { i = k; break; } }
+                    i = (i + (ev.shiftKey ? -1 : 1) + list.length) % list.length;
+                    select(list[i].id, true);
+                }
+            });
+
+            /* ── open / close, with the spark thrown at the bar ── */
+            let lastFocus = null;
+
+            function open(forceId) {
+                if (!panel.hidden) return;
+                lastFocus = document.activeElement;
+                select(forceId || openTarget(), false);
+                panel.hidden = false;
+                spark.setAttribute('aria-expanded', 'true');
+                // Both rects have to be real before the delta means anything,
+                // so the throw is armed one frame after the panel paints.
+                requestAnimationFrame(function () {
+                    const a = spark.getBoundingClientRect();
+                    const b = barSpark.getBoundingClientRect();
+                    spark.style.setProperty('--gsx-dx', ((b.left + b.width / 2) - (a.left + a.width / 2)) + 'px');
+                    spark.style.setProperty('--gsx-dy', ((b.top + b.height / 2) - (a.top + a.height / 2)) + 'px');
+                    spark.classList.add('gsx-launched');
+                    input.focus();
+                    input.select();
+                });
+            }
+
+            function close() {
+                if (panel.hidden) return;
+                panel.hidden = true;
+                spark.classList.remove('gsx-launched');   // flies back to where it was parked
+                spark.setAttribute('aria-expanded', 'false');
+                syncSpark();
+                if (lastFocus && lastFocus.focus && document.contains(lastFocus)) lastFocus.focus();
+                else spark.focus();
+            }
+
+            scrim.addEventListener('click', close);
+            dialog.addEventListener('click', function (ev) { ev.stopPropagation(); });
+
+            /* ── drag ──
+               A press that never moves is a click; anything past the slop
+               threshold is a drag and must not also open the panel when the
+               finger lifts. On release the spark snaps to the nearer side, the
+               way a floating control is expected to behave, and the resting
+               spot is remembered for next time. */
+            const PAD = 12, SLOP = 4;
+            let dragging = false, moved = false, sx = 0, sy = 0, ox = 0, oy = 0;
+
+            function place(x, y) {
+                const w = spark.offsetWidth || 46, h = spark.offsetHeight || 46;
+                x = Math.max(PAD, Math.min(x, window.innerWidth - w - PAD));
+                y = Math.max(PAD, Math.min(y, window.innerHeight - h - PAD));
+                spark.style.left = x + 'px';
+                spark.style.top = y + 'px';
+                return { x: x, y: y };
+            }
+
+            function save(p) {
+                try { localStorage.setItem('gsxSparkPos', JSON.stringify(p)); } catch (e) { /* private mode */ }
+            }
+
+            spark.addEventListener('pointerdown', function (ev) {
+                if (ev.button !== undefined && ev.button !== 0) return;
+                dragging = true; moved = false;
+                sx = ev.clientX; sy = ev.clientY;
+                const r = spark.getBoundingClientRect();
+                ox = sx - r.left; oy = sy - r.top;
+                try { spark.setPointerCapture(ev.pointerId); } catch (e) { /* no capture, move still tracks */ }
+            });
+
+            spark.addEventListener('pointermove', function (ev) {
+                if (!dragging) return;
+                if (!moved && Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) < SLOP) return;
+                if (!moved) { moved = true; spark.classList.add('gsx-dragging'); }
+                place(ev.clientX - ox, ev.clientY - oy);
+            });
+
+            function endDrag(ev) {
+                if (!dragging) return;
+                dragging = false;
+                try { spark.releasePointerCapture(ev.pointerId); } catch (e) { /* already released */ }
+                if (!moved) { open(); return; }
+                spark.classList.remove('gsx-dragging');
+                const r = spark.getBoundingClientRect();
+                const toLeft = (r.left + r.width / 2) < window.innerWidth / 2;
+                save(place(toLeft ? PAD : window.innerWidth - r.width - PAD, r.top));
+            }
+
+            spark.addEventListener('pointerup', endDrag);
+            spark.addEventListener('pointercancel', endDrag);
+            // A drag that happens to end over the spark would otherwise also
+            // fire a click, opening the panel the user was only repositioning.
+            spark.addEventListener('click', function (ev) {
+                if (moved) { ev.preventDefault(); ev.stopPropagation(); }
+            });
+            spark.addEventListener('keydown', function (ev) {
+                if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(); }
+            });
+
+            /* Restore the parked spot, clamped: the window it was saved in may
+               have been larger than the one it is restored into. */
+            (function restore() {
+                let p = null;
+                try { p = JSON.parse(localStorage.getItem('gsxSparkPos') || 'null'); } catch (e) { p = null; }
+                if (!p || typeof p.x !== 'number' || typeof p.y !== 'number') {
+                    p = { x: window.innerWidth - 64, y: window.innerHeight - 134 };
+                }
+                place(p.x, p.y);
+            })();
+
+            window.addEventListener('resize', function () {
+                const r = spark.getBoundingClientRect();
+                place(r.left, r.top);
+            });
+
+            /* ── global shortcuts ──
+               `/` is the convention for "search" and costs nothing while the
+               user is not already typing; Ctrl/Cmd-K is the other one people
+               reach for. Both are ignored inside any field, this app's own
+               included. */
+            document.addEventListener('keydown', function (ev) {
+                if (!panel.hidden) return;
+                if ((ev.key === 'k' || ev.key === 'K') && (ev.ctrlKey || ev.metaKey)) {
+                    ev.preventDefault(); open(); return;
+                }
+                const tag = ((ev.target && ev.target.tagName) || '').toLowerCase();
+                const typing = tag === 'input' || tag === 'textarea' || tag === 'select' ||
+                    !!(ev.target && ev.target.isContentEditable);
+                if (ev.key === '/' && !typing && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+                    ev.preventDefault(); open();
+                }
+            });
+
+            /* Everything else in the app that changes a search — the logo
+               reset, the Deal tab's ⟳, a ticker badge writing into the deal
+               bar, the F/H filter — moves values this spark is now the only
+               readout for. Hooking every caller would mean touching each of
+               those features; re-reading after the app settles does not. */
+            const _prevResetAll = window.resetAllAppFilters;
+            window.resetAllAppFilters = function () {
+                const out = (typeof _prevResetAll === 'function') ? _prevResetAll.apply(this, arguments) : undefined;
+                syncSpark();
+                if (!panel.hidden) { input.value = valueOf(BY_ID[current]); renderChips(); }
+                return out;
+            };
+            document.addEventListener('click', function () { setTimeout(syncSpark, 80); }, true);
+
+            /* The Deal Analysis board keeps its own inline spark as that
+               board's "you are filtered" light. It used to focus the Deal
+               search bar, which is no longer on screen — point it at this
+               panel, already on the Deals target, so the two are one control. */
+            window._daFocusSearch = function () { open('deals'); };
+
+            syncSpark();
+            renderChips();
         })();
     </script>
 
