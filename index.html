@@ -26972,6 +26972,77 @@
             border-color: rgba(255, 255, 255, 0.14);
         }
 
+        /* Watchlist picker + its fixed search spark, on one line. The picker
+           takes what is left after the 30px button rather than a fixed width,
+           so this row survives the 140px sidebar on a phone. */
+        .fs-group-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+        }
+
+        .fs-group-row .fs-sel-wrap {
+            flex: 1 1 auto;
+            min-width: 0;   /* a flex item will not shrink under its content without this */
+        }
+
+        #fs-gem-search {
+            position: relative;
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 30px;
+            padding: 0;
+            background: rgba(118, 118, 128, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 7px;
+            cursor: pointer;
+            transition: background-color 0.15s, border-color 0.15s;
+        }
+
+        #fs-gem-search svg {
+            width: 15px;
+            height: 15px;
+            display: block;
+        }
+
+        #fs-gem-search:hover {
+            background: rgba(118, 118, 128, 0.3);
+            border-color: rgba(155, 114, 203, 0.7);
+        }
+
+        #fs-gem-search:focus-visible {
+            outline: 2px solid #9B72CB;
+            outline-offset: 1px;
+        }
+
+        /* A filtered ticker list has no other tell now that its bar is hidden:
+           the list simply gets shorter. Lit border + dot say the count you are
+           reading is a filtered one — see syncSpark. */
+        .fs-gem-dot {
+            display: none;
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #D96570;
+            box-shadow: 0 0 0 1.5px #1e1e20;
+        }
+
+        #fs-gem-search.gsx-on {
+            background: rgba(155, 114, 203, 0.18);
+            border-color: rgba(155, 114, 203, 0.75);
+        }
+
+        #fs-gem-search.gsx-on .fs-gem-dot {
+            display: block;
+        }
+
         /* Ticker listbox replacement */
         #fs-ticker-list {
             position: relative;
@@ -28602,6 +28673,25 @@
             font-variant-numeric: tabular-nums;
         }
 
+        /* WITHOUT THIS the panels blow apart. Only `.sx-canvas-wrap canvas`
+           carried width:100%, and these sit in `.sx-spark`, not that wrapper —
+           so they kept a canvas's intrinsic 300px, and prepCanvas then set
+           `cv.width = clientWidth * dpr`, which on any 2× display doubled that
+           intrinsic width again. Each sparkline rendered ~600px wide inside a
+           ~190px card. */
+        .sx-spark-cv {
+            display: block;
+            width: 100%;
+            height: 34px;
+        }
+
+        .sx-sec-lbl .sx-sec-note {
+            font-weight: 600;
+            text-transform: none;
+            letter-spacing: 0;
+            opacity: .75;
+        }
+
         /* Table view — identity is never color-alone */
         .sx-table-toggle {
             margin-top: 10px;
@@ -28788,6 +28878,16 @@
                 padding: 4px 18px 4px 6px !important;
             }
 
+            #fs-gem-search {
+                width: 26px;
+                height: 26px;
+            }
+
+            #fs-gem-search svg {
+                width: 13px;
+                height: 13px;
+            }
+
             .fs-pill {
                 padding: 3px 6px !important;
                 font-size: 9px !important;
@@ -28939,8 +29039,31 @@
             <!-- Group & Period filters -->
             <div class="fs-section"
                 style="display: flex; flex-direction: column; gap: 8px; padding: 6px 14px 10px 14px;">
-                <div class="fs-sel-wrap" style="width: 100%;">
-                    <select id="fs-group-select" class="fs-sel" onchange="updateFSTickers(false)"></select>
+                <!-- The sidebar's own search bar is off screen (see the GEMINI
+                     SPARK block at the end of the file), so the only way into the
+                     ticker filter was the floating spark — which is wherever it
+                     was last parked. This one is fixed beside the watchlist
+                     picker and opens that panel already on the Chart target; the
+                     picker gives up the width it needs. -->
+                <div class="fs-group-row">
+                    <div class="fs-sel-wrap">
+                        <select id="fs-group-select" class="fs-sel" onchange="updateFSTickers(false)"></select>
+                    </div>
+                    <button id="fs-gem-search" type="button" title="Search tickers"
+                        aria-label="Search tickers" onclick="window.gsxOpen('chart')">
+                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                            <linearGradient id="gsxGradFs" x1="0" y1="24" x2="24" y2="0"
+                                gradientUnits="userSpaceOnUse">
+                                <stop offset="0" stop-color="#4285F4" />
+                                <stop offset=".45" stop-color="#9B72CB" />
+                                <stop offset=".8" stop-color="#D96570" />
+                                <stop offset="1" stop-color="#F9AB00" />
+                            </linearGradient>
+                            <path fill="url(#gsxGradFs)"
+                                d="M12 0c0 6.627 5.373 12 12 12-6.627 0-12 5.373-12 12 0-6.627-5.373-12-12-12C6.627 12 12 6.627 12 0z" />
+                        </svg>
+                        <span class="fs-gem-dot" aria-hidden="true"></span>
+                    </button>
                 </div>
                 <div class="fs-period-pills">
                     <input type="hidden" id="fs-duration-select" value="3y">
@@ -36194,34 +36317,109 @@
                     opts.tipHtml, P, W, H, null, slot);
             }
 
-            /* Bare sparkline — single series, no axis, for small multiples. */
-            function drawSpark(cv, pts, color) {
-                const { ctx, W, H } = prepCanvas(cv, 26);
-                if (pts.length < 2) {
-                    if (pts.length === 1) {
-                        ctx.fillStyle = color;
-                        ctx.beginPath();
-                        ctx.arc(W / 2, H / 2, 2.5, 0, Math.PI * 2);
-                        ctx.fill();
-                    }
-                    return;
+            /* One accuracy domain shared by every small multiple. Snapped out
+               to tens so the heading can state a round scale, held to a 20-point
+               minimum span so a genuinely steady week is not magnified into
+               drama, and clamped to the 0–100 an accuracy can actually be. */
+            function sparkDomain(seriesList) {
+                let lo = Infinity, hi = -Infinity;
+                (seriesList || []).forEach(function (ser) {
+                    (ser || []).forEach(function (pt) {
+                        if (pt.v < lo) lo = pt.v;
+                        if (pt.v > hi) hi = pt.v;
+                    });
+                });
+                if (!isFinite(lo) || !isFinite(hi)) return { lo: 0, hi: 100 };
+                lo = Math.max(0, Math.floor((lo - 4) / 10) * 10);
+                hi = Math.min(100, Math.ceil((hi + 4) / 10) * 10);
+                if (hi - lo < 20) {
+                    hi = Math.min(100, lo + 20);
+                    lo = Math.max(0, hi - 20);
                 }
-                const vals = pts.map(p => p.v);
-                let lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
-                if (lo === hi) { lo -= 5; hi += 5; }
-                const toX = i => 1 + (i / (pts.length - 1)) * (W - 2);
-                const toY = v => 3 + (1 - (v - lo) / (hi - lo)) * (H - 6);
+                return { lo: lo, hi: hi };
+            }
+
+            /* Bare sparkline — single series, no axis, for small multiples.
+
+               `dom` is the domain SHARED by every panel in the group, and it is
+               what makes these small multiples mean anything. Each panel used to
+               auto-scale to its own min/max, so a run of 90→92% drew exactly the
+               same shape as one of 10→90% — destroying the one comparison this
+               section exists to support. One scale, stated in the heading, plus a
+               50% guide: above it you are right more often than not. */
+            function drawSpark(cv, pts, color, dom) {
+                const { ctx, W, H } = prepCanvas(cv, 34);
+                const P = { l: 3, r: 4, t: 4, b: 4 };
+                const lo = dom ? dom.lo : 0;
+                const hi = dom ? dom.hi : 100;
+                const span = (hi - lo) || 1;
+                const plotW = Math.max(1, W - P.l - P.r);
+                const plotH = Math.max(1, H - P.t - P.b);
+                // A single observation sits mid-panel, but still at its own
+                // height on the shared scale — so it reads against a neighbour
+                // that has a full run of days.
+                const toX = i => P.l + (pts.length < 2 ? plotW / 2 : (i / (pts.length - 1)) * plotW);
+                const toY = v => P.t + (1 - (Math.max(lo, Math.min(hi, v)) - lo) / span) * plotH;
+
+                if (50 > lo && 50 < hi) {
+                    const y = Math.round(toY(50)) + 0.5;
+                    ctx.strokeStyle = cssVar('--grid');
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(P.l, y);
+                    ctx.lineTo(W - P.r, y);
+                    ctx.stroke();
+                }
+                if (!pts.length) return;
+
+                if (pts.length > 1) {
+                    const g = ctx.createLinearGradient(0, P.t, 0, H - P.b);
+                    g.addColorStop(0, color);
+                    g.addColorStop(1, 'rgba(0,0,0,0)');
+                    ctx.save();
+                    ctx.globalAlpha = 0.16;
+                    ctx.beginPath();
+                    pts.forEach((pt, i) => i ? ctx.lineTo(toX(i), toY(pt.v)) : ctx.moveTo(toX(i), toY(pt.v)));
+                    ctx.lineTo(toX(pts.length - 1), H - P.b);
+                    ctx.lineTo(toX(0), H - P.b);
+                    ctx.closePath();
+                    ctx.fillStyle = g;
+                    ctx.fill();
+                    ctx.restore();
+
+                    ctx.beginPath();
+                    pts.forEach((pt, i) => i ? ctx.lineTo(toX(i), toY(pt.v)) : ctx.moveTo(toX(i), toY(pt.v)));
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 1.6;
+                    ctx.lineJoin = 'round';
+                    ctx.lineCap = 'round';
+                    ctx.stroke();
+                }
+
+                // While the days are still countable, show them: two sessions is
+                // two observations, not a trend, and a bare segment hides that.
+                if (pts.length <= 14) {
+                    ctx.save();
+                    ctx.globalAlpha = 0.5;
+                    ctx.fillStyle = color;
+                    pts.forEach((pt, i) => {
+                        ctx.beginPath();
+                        ctx.arc(toX(i), toY(pt.v), 1.6, 0, Math.PI * 2);
+                        ctx.fill();
+                    });
+                    ctx.restore();
+                }
+
+                const last = pts.length - 1;
                 ctx.beginPath();
-                pts.forEach((p, i) => i ? ctx.lineTo(toX(i), toY(p.v)) : ctx.moveTo(toX(i), toY(p.v)));
-                ctx.strokeStyle = color;
-                ctx.lineWidth = 1.6;
-                ctx.lineJoin = 'round';
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.arc(toX(pts.length - 1), toY(pts[pts.length - 1].v), 2.2, 0, Math.PI * 2);
+                ctx.arc(toX(last), toY(pts[last].v), 2.4, 0, Math.PI * 2);
                 ctx.fillStyle = color;
                 ctx.fill();
             }
+
+            /* Test hooks only — the suite drives these against the real source
+               with a recording 2D context. Never called by the UI. */
+            window._sxViz = { sparkDomain: sparkDomain, drawSpark: drawSpark, prepCanvas: prepCanvas };
 
             /* Shared crosshair/tooltip layer. Hit target is the full column,
                which is wider than the mark. */
@@ -36435,18 +36633,31 @@
 
                 /* ── per-activity small multiples ── */
                 const withData = GRADED.filter(a => s.perAct[a].reps > 0);
+                let sparkDom = { lo: 0, hi: 100 };
                 if (withData.length) {
-                    html += '<div class="sx-sec-lbl">Accuracy by activity</div><div class="sx-sparks">';
+                    // One domain for every panel — see sparkDomain / drawSpark.
+                    sparkDom = sparkDomain(withData.map(a => s.perAct[a].series));
+                    const dLo = sparkDom.lo, dHi = sparkDom.hi;
+
+                    html += '<div class="sx-sec-lbl">Accuracy by activity ' +
+                        '<span class="sx-sec-note">· shared ' + dLo + '–' + dHi +
+                        '% scale, line at 50%</span></div><div class="sx-sparks">';
                     withData.forEach(a => {
                         const p = s.perAct[a];
                         const acc = p.reps ? (p.correct / p.reps) * 100 : 0;
                         const rt = p.rtN ? (p.rtSum / p.rtN).toFixed(1) + 's' : '—';
+                        const ser = p.series;
+                        const trend = ser.length > 1
+                            ? ' · ' + ser[0].v.toFixed(0) + '% → ' + ser[ser.length - 1].v.toFixed(0) + '%'
+                            : '';
                         html += '<div class="sx-spark">' +
                             '<div class="sx-spark-hd">' +
                             '<span class="sx-swatch" style="background:var(' + ACT_SLOT[a] + ')"></span>' +
                             '<span class="sx-spark-name">' + LABELS[a] + '</span>' +
                             '<span class="sx-spark-val">' + acc.toFixed(0) + '%</span></div>' +
-                            '<canvas class="sx-spark-cv" data-act="' + a + '"></canvas>' +
+                            '<canvas class="sx-spark-cv" data-act="' + a + '" title="' +
+                            LABELS[a] + ' · accuracy over ' + ser.length +
+                            (ser.length === 1 ? ' day' : ' days') + trend + '"></canvas>' +
                             '<div class="sx-spark-sub">' + p.reps + ' reps · ' + rt + ' avg · target hit ' +
                             p.daysMet + '/' + p.days + ' days</div></div>';
                     });
@@ -36507,7 +36718,7 @@
                     }
                     document.querySelectorAll('#sx-dash-body .sx-spark-cv').forEach(cv => {
                         const a = cv.getAttribute('data-act');
-                        drawSpark(cv, s.perAct[a].series, cssVar(ACT_SLOT[a]));
+                        drawSpark(cv, s.perAct[a].series, cssVar(ACT_SLOT[a]), sparkDom);
                     });
                 });
             }
@@ -36926,6 +37137,88 @@
             display: block;
         }
 
+        /* ── suggestions ──
+           Absolutely positioned off the bar rather than sitting in the flow, so
+           the chips below do not jump down a row on the first keystroke. */
+        #gsx-bar-wrap {
+            position: relative;
+        }
+
+        #gsx-sugg {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            margin-top: 8px;
+            z-index: 3;
+            max-height: min(46vh, 340px);
+            overflow-y: auto;
+            padding: 5px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 16px;
+            background: #101018;
+            box-shadow: 0 18px 46px rgba(0, 0, 0, 0.62);
+            animation: gsx-rise .16s cubic-bezier(.2, .9, .3, 1) both;
+        }
+
+        /* An author `display` beats the UA sheet's [hidden] rule, so the
+           attribute needs saying again here or the list never closes. */
+        #gsx-sugg[hidden] {
+            display: none;
+        }
+
+        .gsx-sugg-row {
+            display: flex;
+            align-items: baseline;
+            gap: 9px;
+            padding: 8px 11px;
+            border-radius: 11px;
+            cursor: pointer;
+        }
+
+        .gsx-sugg-row:hover {
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .gsx-sugg-row.gsx-cur {
+            background: rgba(155, 114, 203, 0.24);
+        }
+
+        .gsx-sugg-tk {
+            flex: 0 0 auto;
+            font: 700 12.5px/1.3 'Lexend', sans-serif;
+            color: #f4f4f8;
+            letter-spacing: 0.02em;
+        }
+
+        .gsx-sugg-nm {
+            flex: 1 1 auto;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font: 400 11px/1.3 'Lexend', sans-serif;
+            color: rgba(255, 255, 255, 0.42);
+        }
+
+        /* A suggestion is an offer, not a requirement — this says the text you
+           actually typed is still what Enter will search for. */
+        .gsx-sugg-foot {
+            margin-top: 4px;
+            padding: 7px 11px 4px;
+            border-top: 1px solid rgba(255, 255, 255, 0.07);
+            font: 400 10px/1.5 'Lexend', sans-serif;
+            color: rgba(255, 255, 255, 0.3);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Stood down over the full-screen chart — see syncSparkVisibility. */
+        #gsx-spark.gsx-away {
+            display: none;
+        }
+
         /* ── target chips ── */
         #gsx-chips {
             display: flex;
@@ -37050,6 +37343,7 @@
             #gsx-glow,
             #gsx-bar-spark svg,
             #gsx-scrim,
+            #gsx-sugg,
             #gsx-dialog {
                 animation: none !important;
                 transition: none !important;
@@ -37075,29 +37369,39 @@
     <div id="gsx-panel" hidden>
         <div id="gsx-scrim"></div>
         <div id="gsx-dialog" role="dialog" aria-modal="true" aria-label="Search">
-            <div id="gsx-bar">
-                <span id="gsx-glow" aria-hidden="true"></span>
-                <div id="gsx-bar-inner">
-                    <span id="gsx-bar-spark" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" focusable="false">
-                            <linearGradient id="gsxGradB" x1="0" y1="24" x2="24" y2="0" gradientUnits="userSpaceOnUse">
-                                <stop offset="0" stop-color="#4285F4" />
-                                <stop offset=".45" stop-color="#9B72CB" />
-                                <stop offset=".8" stop-color="#D96570" />
-                                <stop offset="1" stop-color="#F9AB00" />
-                            </linearGradient>
-                            <path fill="url(#gsxGradB)"
-                                d="M12 0c0 6.627 5.373 12 12 12-6.627 0-12 5.373-12 12 0-6.627-5.373-12-12-12C6.627 12 12 6.627 12 0z" />
-                        </svg>
-                    </span>
-                    <input id="gsx-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off"
-                        spellcheck="false" placeholder="Search…">
-                    <button id="gsx-clear" type="button" title="Clear this search">Clear</button>
+            <div id="gsx-bar-wrap">
+                <div id="gsx-bar">
+                    <span id="gsx-glow" aria-hidden="true"></span>
+                    <div id="gsx-bar-inner">
+                        <span id="gsx-bar-spark" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" focusable="false">
+                                <linearGradient id="gsxGradB" x1="0" y1="24" x2="24" y2="0"
+                                    gradientUnits="userSpaceOnUse">
+                                    <stop offset="0" stop-color="#4285F4" />
+                                    <stop offset=".45" stop-color="#9B72CB" />
+                                    <stop offset=".8" stop-color="#D96570" />
+                                    <stop offset="1" stop-color="#F9AB00" />
+                                </linearGradient>
+                                <path fill="url(#gsxGradB)"
+                                    d="M12 0c0 6.627 5.373 12 12 12-6.627 0-12 5.373-12 12 0-6.627-5.373-12-12-12C6.627 12 12 6.627 12 0z" />
+                            </svg>
+                        </span>
+                        <input id="gsx-input" type="text" autocomplete="off" autocorrect="off"
+                            autocapitalize="off" spellcheck="false" placeholder="Search…"
+                            role="combobox" aria-controls="gsx-sugg" aria-expanded="false"
+                            aria-autocomplete="list">
+                        <button id="gsx-clear" type="button" title="Clear this search">Clear</button>
+                    </div>
                 </div>
+                <!-- What you are typing, matched against the app's own ticker
+                     universe — or, on the Chart target, against the watchlist
+                     the chart is actually showing. Filled by renderSuggest. -->
+                <div id="gsx-sugg" role="listbox" aria-label="Matching tickers" hidden></div>
             </div>
             <div id="gsx-chips" role="tablist" aria-label="What to search"></div>
             <div id="gsx-foot">
-                <span><kbd>Tab</kbd> next · <kbd>Enter</kbd> apply · <kbd>Esc</kbd> close</span>
+                <span><kbd>↑↓</kbd> pick · <kbd>Tab</kbd> next · <kbd>Enter</kbd> apply ·
+                    <kbd>Esc</kbd> close</span>
                 <button id="gsx-clearall" type="button">Clear all</button>
             </div>
         </div>
@@ -37174,6 +37478,7 @@
             const clearBtn = document.getElementById('gsx-clear');
             const clearAllBtn = document.getElementById('gsx-clearall');
             const chipsEl = document.getElementById('gsx-chips');
+            const suggEl = document.getElementById('gsx-sugg');
             if (!spark || !panel || !input) return;
 
             let current = 'stocks';
@@ -37263,7 +37568,223 @@
                     ? n + (n === 1 ? ' search active' : ' searches active') + ' — click to edit, drag to move'
                     : 'Search (Ctrl+K) — drag to move';
                 clearAllBtn.classList.toggle('gsx-on', n > 0);
+                /* The chart sidebar's fixed spark is the only readout for the
+                   ticker list's own filter, now that its bar is off screen. */
+                const fsGem = document.getElementById('fs-gem-search');
+                if (fsGem) {
+                    const q = valueOf(BY_ID.chart).trim();
+                    fsGem.classList.toggle('gsx-on', !!q);
+                    fsGem.title = q
+                        ? 'Filtering the ticker list by “' + q + '” — click to edit'
+                        : 'Search tickers';
+                }
+                syncSparkVisibility();
             }
+
+            /* ── the chart brings its own spark ── */
+            function syncSparkVisibility() {
+                const sb = document.getElementById('fs-sidebar');
+                const collapsed = !!(sb && sb.classList.contains('fs-sidebar-collapsed'));
+                /* Stood down over the full-screen chart, where the fixed spark
+                   beside the watchlist picker does this job — two of the same
+                   control on one screen is one too many. The exception is a
+                   collapsed sidebar, which takes that button off screen with it:
+                   without this the chart would have no visible way into search
+                   at all. Ctrl+K still works either way. */
+                const hide = chartOpen() && !collapsed;
+                const was = spark.classList.contains('gsx-away');
+                spark.classList.toggle('gsx-away', hide);
+                /* Coming back out of hiding: the window may have been resized
+                   while it was gone, so re-clamp from its own recorded spot
+                   (not a live rect, which reads zero while hidden) or it can
+                   return off screen. place() is idempotent. */
+                if (was && !hide) {
+                    place(parseFloat(spark.style.left) || 0, parseFloat(spark.style.top) || 0);
+                }
+            }
+
+            (function watchChartForSpark() {
+                if (typeof MutationObserver !== 'function') return;
+                const modal = document.getElementById('fs-chart-modal');
+                const sb = document.getElementById('fs-sidebar');
+                const obs = new MutationObserver(syncSparkVisibility);
+                // The chart is opened by writing style.display and the sidebar
+                // collapses by class — watch the attribute each one moves.
+                if (modal) obs.observe(modal, { attributes: true, attributeFilter: ['style'] });
+                if (sb) obs.observe(sb, { attributes: true, attributeFilter: ['class'] });
+            })();
+
+            /* ── suggestions ──
+               Every pane's search accepts a ticker, so the list offers tickers
+               (with their company names) whatever the target is. The Chart
+               target draws from the chart's OWN list, which is already narrowed
+               to the selected watchlist — suggesting something outside it would
+               point at a row that cannot appear. */
+            let suggested = [], suggIdx = -1, poolKey = null, pool = [];
+
+            function esc(t) {
+                return String(t == null ? '' : t)
+                    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            }
+
+            function buildPool() {
+                const nameOf = function (t) {
+                    return (window.tickerToName && window.tickerToName[t]) || '';
+                };
+                if (current === 'chart') {
+                    const sel = document.getElementById('fs-ticker-select');
+                    if (sel && sel.options.length) {
+                        return Array.prototype.map.call(sel.options, function (o) {
+                            const t = String(o.value || '').toUpperCase();
+                            return { tk: t, name: nameOf(t) };
+                        });
+                    }
+                }
+                const rows = window.allData;
+                if (rows && rows.length) {
+                    return rows.map(function (r) {
+                        return {
+                            tk: String(r._ticker || '').toUpperCase(),
+                            name: String(r._coName || '') || nameOf(String(r._ticker || '').toUpperCase())
+                        };
+                    });
+                }
+                const map = window.tickerToName || {};
+                return Object.keys(map).map(function (t) { return { tk: t, name: map[t] }; });
+            }
+
+            /* Rebuilt only when the universe behind it actually changes — the
+               stock list is ~4,600 rows and this is on the keystroke path. */
+            function pooled() {
+                const sel = document.getElementById('fs-ticker-select');
+                const key = current === 'chart'
+                    ? 'chart:' + (sel ? sel.options.length : 0) + ':' +
+                    (sel && sel.options.length ? sel.options[0].value : '')
+                    : 'all:' + ((window.allData && window.allData.length) || 0) + ':' +
+                    Object.keys(window.tickerToName || {}).length;
+                if (key !== poolKey) { poolKey = key; pool = buildPool(); }
+                return pool;
+            }
+
+            /* Ranked: an exact ticker, then a ticker that starts with what you
+               typed, then a company name that does, then anything containing it.
+               Bucketed rather than sorted so a one-letter query over the whole
+               universe stays O(n) with no 3,000-item sort behind it. */
+            function suggest(q) {
+                const s = String(q || '').trim().toUpperCase();
+                if (!s) return [];
+                const rows = pooled();
+                const CAP = 40;
+                const buckets = [[], [], [], [], []];
+                for (let i = 0; i < rows.length; i++) {
+                    const r = rows[i];
+                    if (!r.tk) continue;
+                    if (r._up === undefined) r._up = String(r.name || '').toUpperCase();
+                    let rank;
+                    if (r.tk === s) rank = 0;
+                    else if (r.tk.indexOf(s) === 0) rank = 1;
+                    else if (r._up && r._up.indexOf(s) === 0) rank = 2;
+                    else if (r.tk.indexOf(s) !== -1) rank = 3;
+                    else if (r._up && r._up.indexOf(s) !== -1) rank = 4;
+                    else continue;
+                    if (buckets[rank].length < CAP) buckets[rank].push(r);
+                }
+                const out = [];
+                for (let b = 0; b < buckets.length && out.length < 8; b++) {
+                    buckets[b].sort(function (x, y) { return x.tk < y.tk ? -1 : x.tk > y.tk ? 1 : 0; });
+                    for (let j = 0; j < buckets[b].length && out.length < 8; j++) out.push(buckets[b][j]);
+                }
+                return out;
+            }
+
+            function hideSuggest() {
+                suggested = [];
+                suggIdx = -1;
+                suggEl.hidden = true;
+                suggEl.innerHTML = '';
+                input.setAttribute('aria-expanded', 'false');
+                input.removeAttribute('aria-activedescendant');
+            }
+
+            function paintSugg() {
+                const rows = suggEl.querySelectorAll('.gsx-sugg-row');
+                for (let i = 0; i < rows.length; i++) {
+                    const on = i === suggIdx;
+                    rows[i].classList.toggle('gsx-cur', on);
+                    rows[i].setAttribute('aria-selected', on ? 'true' : 'false');
+                }
+                if (suggIdx >= 0 && rows[suggIdx]) {
+                    input.setAttribute('aria-activedescendant', rows[suggIdx].id);
+                    if (rows[suggIdx].scrollIntoView) rows[suggIdx].scrollIntoView({ block: 'nearest' });
+                } else {
+                    input.removeAttribute('aria-activedescendant');
+                }
+            }
+
+            function renderSuggest() {
+                const list = suggest(input.value);
+                if (!list.length) { hideSuggest(); return; }
+                suggested = list;
+                suggIdx = -1;
+                suggEl.innerHTML = list.map(function (r, i) {
+                    return '<div class="gsx-sugg-row" id="gsx-o' + i + '" role="option" ' +
+                        'aria-selected="false" data-i="' + i + '">' +
+                        '<span class="gsx-sugg-tk">' + esc(r.tk) + '</span>' +
+                        '<span class="gsx-sugg-nm">' + esc(r.name) + '</span></div>';
+                }).join('') +
+                    '<div class="gsx-sugg-foot">Enter searches \u201c' + esc(input.value.trim()) +
+                    '\u201d as typed</div>';
+                suggEl.hidden = false;
+                input.setAttribute('aria-expanded', 'true');
+                paintSugg();
+            }
+
+            // -1 is "none": arrowing past either end returns you to what you
+            // actually typed rather than trapping you in the list.
+            function moveSugg(d) {
+                if (!suggested.length) return false;
+                suggIdx += d;
+                if (suggIdx < -1) suggIdx = suggested.length - 1;
+                if (suggIdx >= suggested.length) suggIdx = -1;
+                paintSugg();
+                return true;
+            }
+
+            function accept(i) {
+                const r = suggested[i];
+                if (!r) return;
+                if (current === 'chart') {
+                    /* On the chart a pick is a jump-to, not a filter: it draws
+                       that stock and hands the sidebar list back whole, so the
+                       up/down keys still walk the watchlist afterwards. */
+                    input.value = '';
+                    push();
+                    const sel = document.getElementById('fs-ticker-select');
+                    let has = false;
+                    if (sel) {
+                        for (let k = 0; k < sel.options.length; k++) {
+                            if (sel.options[k].value === r.tk) { has = true; break; }
+                        }
+                    }
+                    if (has) {
+                        sel.value = r.tk;
+                        if (typeof window.syncFSTickerListSelected === 'function') window.syncFSTickerListSelected();
+                        if (typeof window.renderFullScreenChart === 'function') window.renderFullScreenChart();
+                    }
+                } else {
+                    input.value = r.tk;
+                    push();
+                }
+                hideSuggest();
+                close();
+            }
+
+            suggEl.addEventListener('click', function (ev) {
+                const row = ev.target.closest ? ev.target.closest('.gsx-sugg-row') : null;
+                if (!row) return;
+                accept(parseInt(row.getAttribute('data-i'), 10));
+            });
 
             function renderChips() {
                 chipsEl.innerHTML = '';
@@ -37306,6 +37827,9 @@
                 input.value = valueOf(t);
                 clearBtn.classList.toggle('gsx-on', !!input.value);
                 renderChips();
+                // The pool is per-target; anything on screen belongs to the
+                // target we just left.
+                hideSuggest();
             }
 
             /* The mark spins while the pane re-filters. Each pane debounces on
@@ -37333,11 +37857,15 @@
                 renderChips();
             }
 
-            input.addEventListener('input', push);
+            input.addEventListener('input', function () {
+                push();
+                renderSuggest();
+            });
 
             clearBtn.addEventListener('click', function () {
                 input.value = '';
                 push();
+                hideSuggest();
                 input.focus();
             });
 
@@ -37352,6 +37880,7 @@
                 pulse();
                 syncSpark();
                 renderChips();
+                hideSuggest();
                 input.focus();
             });
 
@@ -37359,8 +37888,27 @@
                chart binds Escape/Delete/Backspace on window, and this bar opens
                on top of it. */
             input.addEventListener('keydown', function (ev) {
-                if (ev.key === 'Escape') { ev.stopPropagation(); close(); return; }
-                if (ev.key === 'Enter') { ev.stopPropagation(); ev.preventDefault(); push(); close(); return; }
+                if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    moveSugg(ev.key === 'ArrowDown' ? 1 : -1);
+                    return;
+                }
+                if (ev.key === 'Escape') {
+                    ev.stopPropagation();
+                    // One layer at a time: dismiss the list, keep the panel.
+                    if (!suggEl.hidden) { hideSuggest(); return; }
+                    close();
+                    return;
+                }
+                if (ev.key === 'Enter') {
+                    ev.stopPropagation();
+                    ev.preventDefault();
+                    if (suggIdx >= 0) { accept(suggIdx); return; }
+                    push();
+                    close();
+                    return;
+                }
                 if (ev.key === 'Tab') {
                     const list = available();
                     if (list.length < 2) return;
@@ -37391,9 +37939,20 @@
                    was nothing to type with. */
                 input.focus();
                 input.select();
+                // Suggestions are for what you type next, not for the query you
+                // arrived with — opening onto a list would bury the chips.
+                hideSuggest();
                 // Both rects have to be real before the delta means anything,
                 // so the throw is armed one frame after the panel paints.
                 requestAnimationFrame(function () {
+                    /* The panel can be closed again inside this very frame — a
+                       fast Escape, or any programmatic open/close pair. close()
+                       has already removed .gsx-launched by then, so adding it
+                       here would park the spark invisible AND pointer-events:
+                       none, with nothing left to click to get it back. */
+                    if (panel.hidden) return;
+                    // Nothing to throw when the chart has stood the spark down.
+                    if (spark.classList.contains('gsx-away')) return;
                     const a = spark.getBoundingClientRect();
                     const b = barSpark.getBoundingClientRect();
                     spark.style.setProperty('--gsx-dx', ((b.left + b.width / 2) - (a.left + a.width / 2)) + 'px');
@@ -37404,6 +37963,7 @@
 
             function close() {
                 if (panel.hidden) return;
+                hideSuggest();
                 panel.hidden = true;
                 spark.classList.remove('gsx-launched');   // flies back to where it was parked
                 spark.setAttribute('aria-expanded', 'false');
@@ -37529,6 +38089,9 @@
             })();
 
             window.addEventListener('resize', function () {
+                // A hidden spark measures zero; re-placing from that rect would
+                // move it to the corner and lose where it was parked.
+                if (spark.classList.contains('gsx-away')) return;
                 const r = spark.getBoundingClientRect();
                 place(r.left, r.top);
             });
@@ -37571,8 +38134,15 @@
                panel, already on the Deals target, so the two are one control. */
             window._daFocusSearch = function () { open('deals'); };
 
+            /* The full-screen chart's own fixed spark, beside the watchlist
+               picker. Same panel, opened straight onto the Chart target — an
+               unknown id falls through to normal context detection rather than
+               opening on nothing. */
+            window.gsxOpen = function (id) { open(BY_ID[id] ? id : undefined); };
+
             syncSpark();
             renderChips();
+            syncSparkVisibility();
         })();
     </script>
 
