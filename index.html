@@ -17112,11 +17112,14 @@
                         });
                         rsc.stroke();
 
+                        // Both readouts below are crosshair-only: with no active
+                        // hover there is no "current" candle to report, so nothing
+                        // is drawn rather than quietly defaulting to the latest one.
                         const hoverIdx = pCv._hoverIdx;
-                        const lastR = raw[raw.length - 1];
-                        const displayIdx = (hoverIdx !== undefined && hoverIdx !== null) ? hoverIdx : raw.length - 1;
-                        const displayR = (hoverIdx !== undefined && hoverIdx !== null) ? raw[hoverIdx] : lastR;
-                        const rsVal = displayR && displayR.rsMansfield !== null ? displayR.rsMansfield : null;
+                        const hovering = hoverIdx !== undefined && hoverIdx !== null;
+                        const displayIdx = hovering ? hoverIdx : null;
+                        const displayR = hovering ? raw[hoverIdx] : null;
+                        const rsVal = hovering && displayR && displayR.rsMansfield !== null ? displayR.rsMansfield : null;
                         if (rsVal !== null) {
                             const rsStr = (rsVal >= 0 ? '+' : '') + rsVal.toFixed(2);
                             rsc.font = 'bold 9px "Lexend",monospace';
@@ -17127,9 +17130,9 @@
 
                         // MRS moving average (rsSma10, the yellow line) — its value pinned
                         // right at the crosshair's location (not a fixed right-axis badge),
-                        // colored green/red by sign, tracking the hovered candle (or the
-                        // latest candle when not hovering).
-                        const maVal = displayR && displayR.rsSma10 !== null && displayR.rsSma10 !== undefined ? displayR.rsSma10 : null;
+                        // colored green/red by sign, shown only while the crosshair is
+                        // actively engaged.
+                        const maVal = hovering && displayR && displayR.rsSma10 !== null && displayR.rsSma10 !== undefined ? displayR.rsSma10 : null;
                         if (maVal !== null) {
                             const maStr = (maVal >= 0 ? '+' : '') + maVal.toFixed(2);
                             const maY = toYRS(maVal);
