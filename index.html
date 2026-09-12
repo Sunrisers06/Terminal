@@ -1650,6 +1650,227 @@
             flex-shrink: 0;
         }
 
+
+        /* ── Read aloud (Insights / News / NSE) ── */
+        .speak-btn.on {
+            color: #22d3ee;
+            background: rgba(34, 211, 238, 0.12);
+        }
+
+        .pane-toolbar.speak-open {
+            flex-wrap: wrap;
+        }
+
+        .speak-bar {
+            flex-basis: 100%;
+            /* A <select> reports its widest option as min-content, which
+               would push the bar past the toolbar on a phone. */
+            min-width: 0;
+            width: 100%;
+            box-sizing: border-box;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px 8px;
+            padding-top: 6px;
+            margin-top: 2px;
+            border-top: 1px dashed var(--border2);
+        }
+
+        .speak-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex: 1 1 100%;
+            min-width: 0;
+        }
+
+        .speak-ctl {
+            background: rgba(34, 211, 238, 0.06);
+            border: 1px solid rgba(34, 211, 238, 0.30);
+            color: #22d3ee;
+            width: 30px;
+            height: 30px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            font-size: 12px;
+            line-height: 1;
+            padding: 0;
+            font-family: 'Lexend', sans-serif;
+            font-weight: 700;
+            transition: all 0.15s ease;
+        }
+
+        .speak-ctl:hover {
+            background: rgba(34, 211, 238, 0.16);
+            border-color: rgba(34, 211, 238, 0.6);
+        }
+
+        .speak-ctl:disabled {
+            opacity: 0.35;
+            cursor: default;
+        }
+
+        .speak-ctl.speak-play {
+            width: 38px;
+            font-size: 14px;
+            background: rgba(34, 211, 238, 0.16);
+            border-color: rgba(34, 211, 238, 0.55);
+        }
+
+        .speak-ctl.speak-stop {
+            color: #f87171;
+            border-color: rgba(248, 113, 113, 0.35);
+            background: rgba(248, 113, 113, 0.06);
+        }
+
+        .speak-ctl.speak-close {
+            color: var(--text3);
+            border-color: var(--border2);
+            background: transparent;
+            margin-left: auto;
+        }
+
+        .speak-status {
+            flex: 1;
+            min-width: 60px;
+            font-size: 11px;
+            font-family: 'Lexend', sans-serif;
+            color: var(--text3);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .speak-status.live {
+            color: #22d3ee;
+        }
+
+        .speak-status.err {
+            color: #f87171;
+        }
+
+        .speak-field {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            min-width: 0;
+        }
+
+        .speak-label {
+            font-size: 9px;
+            font-weight: 800;
+            font-family: 'Lexend', sans-serif;
+            letter-spacing: 0.07em;
+            text-transform: uppercase;
+            color: var(--text3);
+            flex-shrink: 0;
+        }
+
+        .speak-select {
+            background: var(--surface2);
+            border: 1px solid var(--border2);
+            border-radius: 5px;
+            padding: 4px 6px;
+            font-size: 11px;
+            font-family: 'Lexend', sans-serif;
+            color: var(--text);
+            outline: none;
+            max-width: 100%;
+            min-width: 0;
+        }
+
+        .speak-select:focus {
+            border-color: #22d3ee;
+        }
+
+        .speak-select.speak-date {
+            flex: 1 1 90px;
+            width: 100%;
+            color-scheme: dark;
+        }
+
+        .speak-count {
+            font-size: 10px;
+            font-weight: 700;
+            font-family: 'Lexend', sans-serif;
+            color: var(--text3);
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.09);
+            border-radius: 9px;
+            padding: 2px 7px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .speak-select.speak-voice {
+            flex: 1 1 150px;
+        }
+
+        .speak-rate {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            flex-shrink: 0;
+        }
+
+        .speak-rate .speak-ctl {
+            width: 26px;
+            height: 26px;
+            font-size: 14px;
+        }
+
+        .speak-rate-val {
+            min-width: 44px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: 700;
+            font-family: 'Lexend', sans-serif;
+            color: var(--text);
+        }
+
+        .news-item.speaking {
+            background: rgba(34, 211, 238, 0.10);
+            border-left-color: #22d3ee;
+            box-shadow: inset 0 1px 0 rgba(34, 211, 238, 0.15);
+        }
+
+        .news-list.speak-mode .news-item {
+            cursor: pointer;
+        }
+
+        @media (max-width: 1400px) {
+            .speak-ctl {
+                width: 36px;
+                height: 36px;
+                font-size: 14px;
+            }
+
+            .speak-ctl.speak-play {
+                width: 46px;
+                font-size: 16px;
+            }
+
+            .speak-rate .speak-ctl {
+                width: 32px;
+                height: 32px;
+                font-size: 17px;
+            }
+
+            .speak-select {
+                font-size: 13px;
+                padding: 6px 8px;
+            }
+
+            .speak-status {
+                font-size: 12px;
+            }
+        }
+
         /* Clickable ticker chip inside news items */
         .news-tick-chip {
             font-size: 9px;
@@ -6479,6 +6700,8 @@
                     </div>
                     <button class="deal-refresh-btn" onclick="refreshInsightsData(this)"
                         title="Refresh Insights">↻</button>
+                    <button class="fs-btn speak-btn" id="speak-btn-insights" onclick="toggleSpeakBar('insights')"
+                        title="Read aloud">🔊</button>
                     <button class="fs-btn" onclick="toggleNewsFS('insights-section', this)"
                         title="Fullscreen">⛶</button>
                 </div>
@@ -6498,6 +6721,8 @@
                             title="Increase font size">A</button>
                     </div>
                     <button class="deal-refresh-btn" onclick="refreshNewsData(this)" title="Refresh News">↻</button>
+                    <button class="fs-btn speak-btn" id="speak-btn-news" onclick="toggleSpeakBar('news')"
+                        title="Read aloud">🔊</button>
                     <button class="fs-btn" onclick="toggleNewsFS('general-news-section', this)"
                         title="Fullscreen">⛶</button>
                 </div>
@@ -6524,6 +6749,8 @@
                     </div>
                     <button class="deal-refresh-btn" onclick="refreshNSENewsData(this)"
                         title="Refresh NSE News">↻</button>
+                    <button class="fs-btn speak-btn" id="speak-btn-nsenews" onclick="toggleSpeakBar('nsenews')"
+                        title="Read aloud">🔊</button>
                     <button class="fs-btn" onclick="toggleNewsFS('nsenews-section', this)" title="Fullscreen">⛶</button>
                 </div>
 
@@ -8784,9 +9011,13 @@
                     st.lastKey = key;
                     html += _newsDaySepHtml(n, st.counts[key] || 0);
                 }
-                html += buildFn(n);
+                html += buildFn(n, i);
             }
             return html;
+        }
+        /* Index into the pane's data array, so read-aloud can find and highlight an item. */
+        function _newsItemAttr(i) {
+            return i === undefined ? '' : ` data-si="${i}"`;
         }
         function _newsTimeStr(ts) {
             if (!ts) return '';
@@ -8796,9 +9027,9 @@
             return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
 
-        function buildNewsItem(n) {
+        function buildNewsItem(n, i) {
             const t = _newsTimeStr(n.timestamp);
-            return `<div class="news-item">
+            return `<div class="news-item"${_newsItemAttr(i)}>
     ${t ? `<div class="news-date">${t}</div>` : ''}
     ${n.link ? `<a class="news-link" href="${n.link}" target="_blank" rel="noopener">${escHtml(n.text)}</a>` : `<span class="news-text">${escHtml(n.text)}</span>`}
   </div>`;
@@ -8807,38 +9038,41 @@
         function renderGeneralNews() {
             const container = document.getElementById('news-list');
             document.getElementById('news-count').textContent = filteredNewsData.length.toLocaleString();
-            if (!filteredNewsData.length) {
+            const data = _speakData('news', filteredNewsData);
+            if (!data.length) {
                 container.innerHTML = '<div class="news-empty"><div class="news-empty-icon">📰</div>No news found.</div>';
                 return;
             }
             _newsGroup.news.lastKey = null;
-            _newsGroup.news.counts = _newsDayCounts(filteredNewsData);
-            let html = _groupedSliceHtml(filteredNewsData, 0, currentNewsLimit, buildNewsItem, _newsGroup.news);
-            if (filteredNewsData.length > currentNewsLimit) {
-                const rem = filteredNewsData.length - currentNewsLimit;
+            _newsGroup.news.counts = _newsDayCounts(data);
+            let html = _groupedSliceHtml(data, 0, currentNewsLimit, buildNewsItem, _newsGroup.news);
+            if (data.length > currentNewsLimit) {
+                const rem = data.length - currentNewsLimit;
                 html += `<div id="news-more-wrap" class="news-more-wrap"><button class="news-more-btn" onclick="loadMoreGeneralNews()">Load next ${Math.min(NEWS_CHUNK, rem)} →</button></div>`;
             }
             container.innerHTML = html;
+            _speakAfterRender('news');
         }
 
         function loadMoreGeneralNews() {
             const oldWrap = document.getElementById('news-more-wrap');
             if (oldWrap) oldWrap.remove();
+            const data = _speakData('news', filteredNewsData);
             const start = currentNewsLimit;
             currentNewsLimit += NEWS_CHUNK;
-            let html = _groupedSliceHtml(filteredNewsData, start, currentNewsLimit, buildNewsItem, _newsGroup.news);
-            if (filteredNewsData.length > currentNewsLimit) {
-                const rem = filteredNewsData.length - currentNewsLimit;
+            let html = _groupedSliceHtml(data, start, currentNewsLimit, buildNewsItem, _newsGroup.news);
+            if (data.length > currentNewsLimit) {
+                const rem = data.length - currentNewsLimit;
                 html += `<div id="news-more-wrap" class="news-more-wrap"><button class="news-more-btn" onclick="loadMoreGeneralNews()">Load next ${Math.min(NEWS_CHUNK, rem)} →</button></div>`;
             }
             document.getElementById('news-list').insertAdjacentHTML('beforeend', html);
         }
 
-        function buildInsightItem(n) {
+        function buildInsightItem(n, i) {
             const tc = tagClass(n.tag);
             const t = _newsTimeStr(n.timestamp);
             const tick = String(n.ticker || '').trim();
-            return `<div class="news-item">
+            return `<div class="news-item"${_newsItemAttr(i)}>
     <div class="news-date">
       ${tick ? `<span class="news-tick-chip" onclick="searchStock('${escHtml(tick)}')">${escHtml(tick)}</span>` : ''}
       ${n.tag ? `<span class="insight-tag ${tc}">${escHtml(n.tag)}</span>` : ''}
@@ -8851,37 +9085,40 @@
         function renderInsights() {
             const container = document.getElementById('insights-list');
             document.getElementById('insights-count').textContent = filteredInsightsData.length.toLocaleString();
-            if (!filteredInsightsData.length) {
+            const data = _speakData('insights', filteredInsightsData);
+            if (!data.length) {
                 container.innerHTML = '<div class="news-empty"><div class="news-empty-icon">💡</div>No insights match.</div>';
                 return;
             }
             _newsGroup.ins.lastKey = null;
-            _newsGroup.ins.counts = _newsDayCounts(filteredInsightsData);
-            let html = _groupedSliceHtml(filteredInsightsData, 0, currentInsightsLimit, buildInsightItem, _newsGroup.ins);
-            if (filteredInsightsData.length > currentInsightsLimit) {
-                const rem = filteredInsightsData.length - currentInsightsLimit;
+            _newsGroup.ins.counts = _newsDayCounts(data);
+            let html = _groupedSliceHtml(data, 0, currentInsightsLimit, buildInsightItem, _newsGroup.ins);
+            if (data.length > currentInsightsLimit) {
+                const rem = data.length - currentInsightsLimit;
                 html += `<div id="insights-more-wrap" class="news-more-wrap"><button class="news-more-btn" onclick="loadMoreInsights()">Load next ${Math.min(NEWS_CHUNK, rem)} →</button></div>`;
             }
             container.innerHTML = html;
+            _speakAfterRender('insights');
         }
 
         function loadMoreInsights() {
             const oldWrap = document.getElementById('insights-more-wrap');
             if (oldWrap) oldWrap.remove();
+            const data = _speakData('insights', filteredInsightsData);
             const start = currentInsightsLimit;
             currentInsightsLimit += NEWS_CHUNK;
-            let html = _groupedSliceHtml(filteredInsightsData, start, currentInsightsLimit, buildInsightItem, _newsGroup.ins);
-            if (filteredInsightsData.length > currentInsightsLimit) {
-                const rem = filteredInsightsData.length - currentInsightsLimit;
+            let html = _groupedSliceHtml(data, start, currentInsightsLimit, buildInsightItem, _newsGroup.ins);
+            if (data.length > currentInsightsLimit) {
+                const rem = data.length - currentInsightsLimit;
                 html += `<div id="insights-more-wrap" class="news-more-wrap"><button class="news-more-btn" onclick="loadMoreInsights()">Load next ${Math.min(NEWS_CHUNK, rem)} →</button></div>`;
             }
             document.getElementById('insights-list').insertAdjacentHTML('beforeend', html);
         }
 
-        function buildNseNewsItem(n) {
+        function buildNseNewsItem(n, i) {
             const t = _newsTimeStr(n.timestamp);
             const content = n.summary || n.title;
-            return `<div class="news-item">
+            return `<div class="news-item"${_newsItemAttr(i)}>
     ${(n.ticker || t) ? `<div class="news-date">
       ${n.ticker ? `<span class="news-tick-chip" onclick="searchStock('${escHtml(n.ticker)}')">${escHtml(n.ticker)}</span>` : ''}
       ${t ? `<span>${t}</span>` : ''}
@@ -8915,18 +9152,20 @@
             const countEl = document.getElementById('nsenews-count');
             if (countEl) countEl.textContent = filteredNseNewsData.length.toLocaleString();
 
-            if (!filteredNseNewsData.length) {
+            const data = _speakData('nsenews', filteredNseNewsData);
+            if (!data.length) {
                 container.innerHTML = '<div class="news-empty"><div class="news-empty-icon">📰</div>No NSE news match.</div>';
                 return;
             }
             _newsGroup.nse.lastKey = null;
-            _newsGroup.nse.counts = _newsDayCounts(filteredNseNewsData);
-            let html = _groupedSliceHtml(filteredNseNewsData, 0, currentNseNewsLimit, buildNseNewsItem, _newsGroup.nse);
-            if (filteredNseNewsData.length > currentNseNewsLimit) {
-                const rem = filteredNseNewsData.length - currentNseNewsLimit;
+            _newsGroup.nse.counts = _newsDayCounts(data);
+            let html = _groupedSliceHtml(data, 0, currentNseNewsLimit, buildNseNewsItem, _newsGroup.nse);
+            if (data.length > currentNseNewsLimit) {
+                const rem = data.length - currentNseNewsLimit;
                 html += `<div id="nsenews-more-wrap" class="news-more-wrap"><button class="news-more-btn" onclick="loadMoreNseNews()">Load next ${Math.min(NEWS_CHUNK, rem)} →</button></div>`;
             }
             container.innerHTML = html;
+            _speakAfterRender('nsenews');
 
             computeNseNewsAnalytics();
         }
@@ -8934,11 +9173,12 @@
         function loadMoreNseNews() {
             const oldWrap = document.getElementById('nsenews-more-wrap');
             if (oldWrap) oldWrap.remove();
+            const data = _speakData('nsenews', filteredNseNewsData);
             const start = currentNseNewsLimit;
             currentNseNewsLimit += NEWS_CHUNK;
-            let html = _groupedSliceHtml(filteredNseNewsData, start, currentNseNewsLimit, buildNseNewsItem, _newsGroup.nse);
-            if (filteredNseNewsData.length > currentNseNewsLimit) {
-                const rem = filteredNseNewsData.length - currentNseNewsLimit;
+            let html = _groupedSliceHtml(data, start, currentNseNewsLimit, buildNseNewsItem, _newsGroup.nse);
+            if (data.length > currentNseNewsLimit) {
+                const rem = data.length - currentNseNewsLimit;
                 html += `<div id="nsenews-more-wrap" class="news-more-wrap"><button class="news-more-btn" onclick="loadMoreNseNews()">Load next ${Math.min(NEWS_CHUNK, rem)} →</button></div>`;
             }
             document.getElementById('nsenews-list').insertAdjacentHTML('beforeend', html);
@@ -9223,6 +9463,493 @@
                 renderGeneralNews();
             }
         }
+
+        /* ══════════════════════════════════════════════════════
+           READ ALOUD — Insights / News / NSE panes
+
+           Inside the SundarX app the text goes to window.SundarXSpeech,
+           an Android bridge into the PDF reader's media service (lock-screen
+           controls, Indian voices, the speed the user already set). In a
+           plain browser it falls back to the Web Speech API. The pane's
+           list is narrowed to the chosen date range (default: the latest
+           day) while the bar is open, the item being read is highlighted,
+           and tapping an item reads from there.
+           ══════════════════════════════════════════════════════ */
+        const SPEAK_PANES = {
+            insights: {
+                label: 'Insights', list: 'insights-list',
+                data: () => filteredInsightsData,
+                render: () => renderInsights(), more: () => loadMoreInsights(),
+                text: n => _speakJoin([n.ticker, n.tag, n.text])
+            },
+            news: {
+                label: 'News', list: 'news-list',
+                data: () => filteredNewsData,
+                render: () => renderGeneralNews(), more: () => loadMoreGeneralNews(),
+                text: n => _speakJoin([n.text])
+            },
+            nsenews: {
+                label: 'NSE', list: 'nsenews-list',
+                data: () => filteredNseNewsData,
+                render: () => renderNseNews(), more: () => loadMoreNseNews(),
+                text: n => _speakJoin([n.ticker, n.summary || n.title])
+            }
+        };
+        const SPEAK_MAX_ITEMS = 1000;   /* cap on one reading session */
+        const SPEAK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+
+        const _speak = {
+            pane: null,          /* pane whose bar is open */
+            range: {},           /* pane -> { from, to } day keys (YYYY-MM-DD); empty = everything */
+            title: '',           /* title of the script we started; status is matched on it */
+            started: false,      /* we have handed a script to the engine */
+            count: 0,
+            lastIndex: -1,
+            filterCache: {},     /* pane -> { src, key, out } */
+            voicesLoaded: false
+        };
+
+        function _speakJoin(parts) {
+            return parts.map(s => String(s || '').trim()).filter(Boolean).join('. ');
+        }
+
+        /* The pane's data narrowed to the selected date range. Identity
+           when the bar is closed or no range is set, so the renderers cost
+           nothing extra in the normal case. Day keys are YYYY-MM-DD, so
+           string comparison is date comparison; undated rows ("raw:…")
+           fall outside any range. */
+        function _speakData(pane, src) {
+            if (_speak.pane !== pane) return src;
+            const r = _speak.range[pane];
+            if (!r || (!r.from && !r.to)) return src;
+            const c = _speak.filterCache[pane];
+            if (c && c.src === src && c.from === r.from && c.to === r.to) return c.out;
+            const from = r.from || '0000', to = r.to || '9999';
+            const out = src.filter(n => { const k = _newsDayKey(n); return k >= from && k <= to && k.charAt(4) === '-'; });
+            _speak.filterCache[pane] = { src, from: r.from, to: r.to, out };
+            return out;
+        }
+
+        /* Newest and oldest dated day in the pane's data (sorted newest first). */
+        function _speakDayBounds(src) {
+            let latest = '', earliest = '';
+            for (let i = 0; i < src.length; i++) { const k = _newsDayKey(src[i]); if (k.charAt(4) === '-') { latest = k; break; } }
+            for (let i = src.length - 1; i >= 0; i--) { const k = _newsDayKey(src[i]); if (k.charAt(4) === '-') { earliest = k; break; } }
+            return { latest, earliest };
+        }
+
+        function _speakBarHtml(pane) {
+            const rateBtns = `<div class="speak-rate" title="Speed">
+                <button class="speak-ctl" onclick="speakRateStep('${pane}', -1)" title="Slower">−</button>
+                <span class="speak-rate-val" id="speak-rate-${pane}">1×</span>
+                <button class="speak-ctl" onclick="speakRateStep('${pane}', 1)" title="Faster">+</button>
+              </div>`;
+            return `<div class="speak-bar" id="speak-bar-${pane}">
+              <div class="speak-row">
+                <button class="speak-ctl" onclick="speakPrev('${pane}')" title="Previous">◀◀</button>
+                <button class="speak-ctl speak-play" id="speak-play-${pane}" onclick="speakPlay('${pane}')" title="Play">▶</button>
+                <button class="speak-ctl" onclick="speakNext('${pane}')" title="Next">▶▶</button>
+                <button class="speak-ctl speak-stop" onclick="speakStop('${pane}')" title="Stop">■</button>
+                <span class="speak-status" id="speak-status-${pane}"></span>
+                <button class="speak-ctl speak-close" onclick="toggleSpeakBar('${pane}')" title="Close">✕</button>
+              </div>
+              <div class="speak-row">
+                <div class="speak-field" style="flex:1 1 100px;">
+                  <span class="speak-label">From</span>
+                  <input type="date" class="speak-select speak-date" id="speak-from-${pane}" onchange="speakRangeChanged('${pane}')">
+                </div>
+                <div class="speak-field" style="flex:1 1 100px;">
+                  <span class="speak-label">To</span>
+                  <input type="date" class="speak-select speak-date" id="speak-to-${pane}" onchange="speakRangeChanged('${pane}')">
+                </div>
+                <span class="speak-count" id="speak-count-${pane}" title="Items in this range"></span>
+              </div>
+              <div class="speak-row">
+                <div class="speak-field" style="flex:1 1 120px;">
+                  <span class="speak-label">Voice</span>
+                  <select class="speak-select speak-voice" id="speak-voice-${pane}" onchange="speakVoiceChanged('${pane}')"></select>
+                </div>
+                ${rateBtns}
+              </div>
+            </div>`;
+        }
+
+        function toggleSpeakBar(pane) {
+            if (_speak.pane === pane) { _speakClose(); return; }
+            if (_speak.pane) _speakClose();
+            const p = SPEAK_PANES[pane];
+            const list = document.getElementById(p.list);
+            const btn = document.getElementById('speak-btn-' + pane);
+            const bar = btn ? btn.closest('.pane-toolbar') : null;
+            if (!list || !bar) return;
+
+            _speak.pane = pane;
+            _speak.filterCache[pane] = null;
+            bar.classList.add('speak-open');
+            bar.insertAdjacentHTML('beforeend', _speakBarHtml(pane));
+            btn.classList.add('on');
+            list.classList.add('speak-mode');
+            list.addEventListener('click', _speakListClick);
+
+            /* Default: the most recent day with anything in it. */
+            const b = _speakDayBounds(p.data());
+            if (!_speak.range[pane]) _speak.range[pane] = { from: b.latest, to: b.latest };
+            _speakFillRange(pane, b);
+            _speakFillVoices(pane, SpeakEngine.voices());
+            SpeakEngine.loadVoices();
+            _speakRenderRate(pane, SpeakEngine.rate());
+            _speakSetStatus(pane, '', '');
+            p.render();
+
+            /* Something already reading from this pane (e.g. bar closed via
+               the tab, speech carried on)? Pick it back up. */
+            const st = SpeakEngine.status();
+            if (st && st.active && st.title === _speakTitle(pane)) {
+                _speak.started = true; _speak.title = st.title;
+                _speakOnStatus(st);
+            }
+        }
+
+        function _speakClose() {
+            const pane = _speak.pane;
+            if (!pane) return;
+            if (_speak.started) SpeakEngine.stop();
+            _speak.started = false;
+            _speak.title = '';
+            _speak.lastIndex = -1;
+            const bar = document.getElementById('speak-bar-' + pane);
+            if (bar) {
+                bar.parentElement.classList.remove('speak-open');
+                bar.remove();
+            }
+            const btn = document.getElementById('speak-btn-' + pane);
+            if (btn) btn.classList.remove('on');
+            const list = document.getElementById(SPEAK_PANES[pane].list);
+            if (list) {
+                list.classList.remove('speak-mode');
+                list.removeEventListener('click', _speakListClick);
+            }
+            _speak.pane = null;
+            SPEAK_PANES[pane].render();
+        }
+
+        /* Pushes the range into the two date inputs (bounded to the days the
+           data actually covers) and shows how many items fall inside it. */
+        function _speakFillRange(pane, bounds) {
+            const r = _speak.range[pane] || { from: '', to: '' };
+            const b = bounds || _speakDayBounds(SPEAK_PANES[pane].data());
+            for (const [id, val] of [['speak-from-' + pane, r.from], ['speak-to-' + pane, r.to]]) {
+                const el = document.getElementById(id);
+                if (!el) continue;
+                if (b.earliest) el.min = b.earliest;
+                if (b.latest) el.max = b.latest;
+                if (el.value !== (val || '')) el.value = val || '';
+            }
+            const countEl = document.getElementById('speak-count-' + pane);
+            if (countEl) {
+                const n = _speakData(pane, SPEAK_PANES[pane].data()).length;
+                countEl.textContent = n.toLocaleString() + (n > SPEAK_MAX_ITEMS ? ' (reads ' + SPEAK_MAX_ITEMS.toLocaleString() + ')' : '');
+            }
+        }
+
+        function speakRangeChanged(pane) {
+            const fromEl = document.getElementById('speak-from-' + pane);
+            const toEl = document.getElementById('speak-to-' + pane);
+            if (!fromEl || !toEl) return;
+            let from = fromEl.value || '', to = toEl.value || '';
+            /* A range typed backwards is still a range. */
+            if (from && to && from > to) { const t = from; from = to; to = t; }
+            _speak.range[pane] = { from, to };
+            _speak.filterCache[pane] = null;
+            if (_speak.started) { SpeakEngine.stop(); _speakReset(pane); }
+            const p = SPEAK_PANES[pane];
+            if (pane === 'insights') currentInsightsLimit = NEWS_CHUNK;
+            else if (pane === 'news') currentNewsLimit = NEWS_CHUNK;
+            else currentNseNewsLimit = NEWS_CHUNK;
+            p.render();
+        }
+
+        /* Called by every renderer: keeps the range inputs and count in step
+           with the data (a search or company filter changes what's there)
+           and re-applies the highlight the re-render just wiped. */
+        function _speakAfterRender(pane) {
+            if (_speak.pane !== pane) return;
+            _speakFillRange(pane);
+            if (_speak.started && _speak.lastIndex >= 0) _speakHighlight(pane, _speak.lastIndex, false);
+        }
+
+        /* "12 Sep" / "10–12 Sep" / "28 Aug–3 Sep" / "All" */
+        function _speakRangeLabel(pane) {
+            const r = _speak.range[pane];
+            if (!r || (!r.from && !r.to)) return 'All';
+            const MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const fmt = k => { const p = k.split('-'); return parseInt(p[2], 10) + ' ' + MONS[parseInt(p[1], 10) - 1]; };
+            if (!r.from) return 'to ' + fmt(r.to);
+            if (!r.to) return 'from ' + fmt(r.from);
+            if (r.from === r.to) return fmt(r.from);
+            const a = r.from.split('-'), b = r.to.split('-');
+            if (a[0] === b[0] && a[1] === b[1]) return parseInt(a[2], 10) + '–' + fmt(r.to);
+            return fmt(r.from) + '–' + fmt(r.to);
+        }
+
+        function _speakTitle(pane) {
+            return 'Quantara · ' + SPEAK_PANES[pane].label + ' · ' + _speakRangeLabel(pane);
+        }
+
+        function _speakItems(pane) {
+            const p = SPEAK_PANES[pane];
+            return _speakData(pane, p.data()).slice(0, SPEAK_MAX_ITEMS).map(p.text);
+        }
+
+        function _speakStart(pane, index) {
+            const items = _speakItems(pane);
+            if (!items.length) { _speakSetStatus(pane, 'Nothing to read in this range.', 'err'); return; }
+            _speak.title = _speakTitle(pane);
+            _speak.count = items.length;
+            _speak.started = true;
+            _speak.lastIndex = -1;
+            _speakSetStatus(pane, 'Starting…', 'live');
+            if (!SpeakEngine.start(items, _speak.title, index)) {
+                _speak.started = false;
+                _speakSetStatus(pane, 'Speech is not available here.', 'err');
+            }
+        }
+
+        function speakPlay(pane) {
+            if (_speak.started) SpeakEngine.toggle();
+            else _speakStart(pane, 0);
+        }
+        function speakNext(pane) { if (_speak.started) SpeakEngine.next(); else _speakStart(pane, 0); }
+        function speakPrev(pane) { if (_speak.started) SpeakEngine.prev(); }
+        function speakStop(pane) {
+            if (_speak.started) SpeakEngine.stop();
+            _speakReset(pane);
+        }
+
+        function _speakReset(pane) {
+            _speak.started = false;
+            _speak.title = '';
+            _speakHighlight(pane, -1, false);
+            _speakRenderControls(pane, null);
+        }
+
+        /* Tap an item to read from there (links and ticker chips keep their own job). */
+        function _speakListClick(e) {
+            const pane = _speak.pane;
+            if (!pane) return;
+            if (e.target.closest('a, .news-tick-chip, button')) return;
+            const item = e.target.closest('.news-item[data-si]');
+            if (!item) return;
+            const idx = parseInt(item.getAttribute('data-si'), 10);
+            if (isNaN(idx) || idx >= SPEAK_MAX_ITEMS) return;
+            if (_speak.started) SpeakEngine.goTo(idx);
+            else _speakStart(pane, idx);
+        }
+
+        function speakRateStep(pane, dir) {
+            const cur = SpeakEngine.rate();
+            let i = 0, best = Infinity;
+            SPEAK_RATES.forEach((r, k) => { const d = Math.abs(r - cur); if (d < best) { best = d; i = k; } });
+            i = Math.max(0, Math.min(SPEAK_RATES.length - 1, i + dir));
+            SpeakEngine.setRate(SPEAK_RATES[i]);
+            _speakRenderRate(pane, SPEAK_RATES[i]);
+        }
+
+        function _speakRenderRate(pane, rate) {
+            const el = document.getElementById('speak-rate-' + pane);
+            if (el) el.textContent = (Math.round(rate * 100) / 100) + '×';
+        }
+
+        function _speakFillVoices(pane, info) {
+            const sel = document.getElementById('speak-voice-' + pane);
+            if (!sel || !info) return;
+            const groups = {};
+            const order = [];
+            for (const v of info.voices) {
+                const g = v.group || '';
+                if (!groups[g]) { groups[g] = []; order.push(g); }
+                groups[g].push(v);
+            }
+            let html = '';
+            for (const g of order) {
+                const opts = groups[g].map(v => `<option value="${escHtml(v.id)}"${v.id === info.voice ? ' selected' : ''}>${escHtml(v.label)}</option>`).join('');
+                html += g ? `<optgroup label="${escHtml(g)}">${opts}</optgroup>` : opts;
+            }
+            /* A saved installed voice arrives with the full list a moment
+               later; until then name it rather than show an empty box. */
+            if (info.voice && !info.voices.some(v => v.id === info.voice)) {
+                html += `<option value="${escHtml(info.voice)}" selected>Saved voice (loading list…)</option>`;
+            }
+            sel.innerHTML = html;
+            if (info.voice !== undefined) sel.value = info.voice;
+        }
+
+        function speakVoiceChanged(pane) {
+            const sel = document.getElementById('speak-voice-' + pane);
+            if (sel) SpeakEngine.setVoice(sel.value);
+        }
+
+        function _speakSetStatus(pane, text, cls) {
+            const el = document.getElementById('speak-status-' + pane);
+            if (!el) return;
+            el.textContent = text;
+            el.className = 'speak-status' + (cls ? ' ' + cls : '');
+        }
+
+        function _speakRenderControls(pane, st) {
+            const play = document.getElementById('speak-play-' + pane);
+            if (play) {
+                play.textContent = st && st.playing ? '❚❚' : '▶';
+                play.title = st && st.playing ? 'Pause' : 'Play';
+            }
+            if (!st) { _speakSetStatus(pane, '', ''); return; }
+            if (st.error) { _speakSetStatus(pane, st.error, 'err'); return; }
+            let text = (st.index + 1) + ' / ' + st.count + (st.playing ? '' : ' · paused');
+            if (st.voiceMatched === false) text += ' · voice not installed';
+            _speakSetStatus(pane, text, st.playing ? 'live' : '');
+            if (typeof st.rate === 'number') _speakRenderRate(pane, st.rate);
+        }
+
+        /* Highlight item `index`, loading more of the list if it isn't
+           rendered yet (the script holds the whole day, the list shows it
+           in chunks). */
+        function _speakHighlight(pane, index, scroll) {
+            const p = SPEAK_PANES[pane];
+            const list = document.getElementById(p.list);
+            if (!list) return;
+            list.querySelectorAll('.news-item.speaking').forEach(el => el.classList.remove('speaking'));
+            if (index < 0) return;
+            let el = list.querySelector(`.news-item[data-si="${index}"]`);
+            let guard = 0;
+            while (!el && guard++ < 20 && list.querySelector('.news-more-btn')) {
+                p.more();
+                el = list.querySelector(`.news-item[data-si="${index}"]`);
+            }
+            if (!el) return;
+            el.classList.add('speaking');
+            /* 'nearest' rather than 'center': on a phone the page itself
+               scrolls, and the smallest move keeps the controls in reach. */
+            if (scroll) {
+                try { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (_) { el.scrollIntoView(); }
+            }
+        }
+
+        function _speakOnStatus(st) {
+            const pane = _speak.pane;
+            if (!pane) return;
+            const mine = st && st.active && st.title === _speak.title;
+            if (!mine) {
+                /* Finished, stopped from the notification, or replaced by
+                   something else (a PDF in the reader). */
+                if (_speak.started) _speakReset(pane);
+                return;
+            }
+            _speak.count = st.count;
+            _speakRenderControls(pane, st);
+            if (st.index !== _speak.lastIndex) {
+                _speak.lastIndex = st.index;
+                _speakHighlight(pane, st.index, true);
+            }
+        }
+
+        /* ── Engine: Android bridge, or the browser's own speech ── */
+        const SpeakEngine = (function () {
+            const A = window.SundarXSpeech;
+            if (A) {
+                window.sundarxSpeechStatus = st => _speakOnStatus(st);
+                window.sundarxSpeechVoices = info => { if (_speak.pane) _speakFillVoices(_speak.pane, info); };
+                let _rate = null;
+                const _info = () => { try { return JSON.parse(A.getVoices()); } catch (_) { return { rate: 1, voice: '', voices: [] }; } };
+                return {
+                    kind: 'android',
+                    start: (items, title, index) => { try { return A.start(JSON.stringify(items), title, index); } catch (e) { console.warn('[speak]', e); return false; } },
+                    toggle: () => A.toggle(),
+                    next: () => A.next(),
+                    prev: () => A.prev(),
+                    goTo: i => A.goTo(i),
+                    stop: () => A.stop(),
+                    rate: () => { if (_rate === null) _rate = _info().rate || 1; return _rate; },
+                    setRate: r => { _rate = r; A.setRate(r); },
+                    setVoice: id => A.setVoice(id),
+                    voices: () => _info(),
+                    loadVoices: () => { if (!_speak.voicesLoaded) { _speak.voicesLoaded = true; A.loadVoices(); } },
+                    status: () => { try { return JSON.parse(A.getStatus()); } catch (_) { return null; } }
+                };
+            }
+
+            /* Web Speech fallback — desktop browsers. */
+            const synth = window.speechSynthesis;
+            let items = [], idx = 0, playing = false, active = false, title = '', utt = null;
+            let rate = parseFloat(localStorage.getItem('sxSpeakRate') || '1') || 1;
+            let voiceId = localStorage.getItem('sxSpeakVoice') || '';
+            const emit = () => _speakOnStatus({ active, playing, index: idx, count: items.length, rate, voice: voiceId, title, voiceMatched: true, voiceName: voiceId, error: null });
+            const voiceList = () => (synth ? synth.getVoices() : []);
+            function speakCurrent() {
+                if (!synth) return;
+                synth.cancel();
+                if (!active || !playing) return;
+                const u = new SpeechSynthesisUtterance(items[idx]);
+                u.rate = rate;
+                const v = voiceList().find(x => x.voiceURI === voiceId || x.name === voiceId);
+                if (v) { u.voice = v; u.lang = v.lang; }
+                u.onend = () => {
+                    if (u !== utt || !playing) return;
+                    if (idx >= items.length - 1) { stop(); return; }
+                    idx++; emit();
+                    setTimeout(() => { if (u === utt) speakCurrent(); }, 350);
+                };
+                u.onerror = e => {
+                    if (u !== utt) return;
+                    if (e.error === 'interrupted' || e.error === 'canceled') return;
+                    console.warn('[speak] utterance error', e.error);
+                    /* Blocked outright (no user gesture, no engine): stop and
+                       say so, rather than skipping through every item. */
+                    if (e.error === 'not-allowed' || e.error === 'audio-busy' || e.error === 'synthesis-unavailable' || e.error === 'synthesis-failed') {
+                        stop();
+                        if (_speak.pane) _speakSetStatus(_speak.pane, 'Browser blocked speech (' + e.error + ')', 'err');
+                        return;
+                    }
+                    if (idx < items.length - 1) { idx++; emit(); setTimeout(() => { if (u === utt) speakCurrent(); }, 350); }
+                    else stop();
+                };
+                utt = u;
+                /* Chrome sometimes drops an utterance queued right after cancel(). */
+                setTimeout(() => { if (u === utt) synth.speak(u); }, 30);
+            }
+            function stop() {
+                active = false; playing = false; utt = null;
+                if (synth) synth.cancel();
+                emit();
+            }
+            if (synth && synth.onvoiceschanged !== undefined) {
+                synth.addEventListener('voiceschanged', () => { if (_speak.pane) _speakFillVoices(_speak.pane, api.voices()); });
+            }
+            const api = {
+                kind: 'web',
+                start: (list, t, index) => {
+                    if (!synth) return false;
+                    items = list; title = t; idx = Math.max(0, Math.min(list.length - 1, index || 0));
+                    active = true; playing = true; emit(); speakCurrent(); return true;
+                },
+                toggle: () => { if (!active) return; playing = !playing; if (playing) speakCurrent(); else { utt = null; synth.cancel(); } emit(); },
+                next: () => { if (!active) return; idx = Math.min(items.length - 1, idx + 1); emit(); if (playing) speakCurrent(); },
+                prev: () => { if (!active) return; idx = Math.max(0, idx - 1); emit(); if (playing) speakCurrent(); },
+                goTo: i => { if (!active) return; idx = Math.max(0, Math.min(items.length - 1, i)); if (!playing) playing = true; emit(); speakCurrent(); },
+                stop,
+                rate: () => rate,
+                setRate: r => { rate = r; try { localStorage.setItem('sxSpeakRate', String(r)); } catch (_) { } if (active && playing) speakCurrent(); },
+                setVoice: id => { voiceId = id; try { localStorage.setItem('sxSpeakVoice', id); } catch (_) { } if (active && playing) speakCurrent(); },
+                voices: () => ({
+                    rate, voice: voiceId,
+                    voices: [{ id: '', label: 'Browser default', group: '' }].concat(
+                        voiceList().map(v => ({ id: v.voiceURI, label: v.name + ' (' + v.lang + ')', group: /^(en|hi)-IN/i.test(v.lang) ? 'Indian' : 'Other' }))
+                            .sort((a, b) => (a.group === 'Indian' ? 0 : 1) - (b.group === 'Indian' ? 0 : 1)))
+                }),
+                loadVoices: () => { },
+                status: () => (active ? { active, playing, index: idx, count: items.length, rate, voice: voiceId, title } : null)
+            };
+            return api;
+        })();
 
         /* Tag → color class mapping */
         function tagClass(tag) {
