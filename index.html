@@ -2358,9 +2358,20 @@
             backface-visibility: hidden;
         }
 
+        /* Chart-mode cards keep content-visibility:auto like every other
+           card. This rule used to switch it OFF for chart mode, which meant
+           every one of the ~100 rendered cards — three composited canvases
+           each — was laid out and painted on every scroll frame; that is
+           what made chart mode scroll in lurches. Off-screen cards are now
+           skipped again; the chart itself is still drawn just before a card
+           scrolls into view (initCardCharts), and drawCardChart defers any
+           card the browser has not laid out yet. The placeholder height is
+           the chart card's, not the 220px result card's, and `auto` keeps a
+           card's real height once it has been rendered so the scrollbar does
+           not jump as cards are realised. */
         #cards.cards-chart-mode .stock-card {
-            content-visibility: visible;
-            contain-intrinsic-size: none;
+            content-visibility: auto;
+            contain-intrinsic-size: auto 480px;
         }
 
         /* WIDER LEFT INDICATOR ONLY */
@@ -10496,6 +10507,15 @@
             const widthEl = wrap.querySelector('.card-chart-inner') || wrap;
             if (!ticker || !pCv || !vCv || !loadEl) return;
             const cssW = Math.round((widthEl && (widthEl.clientWidth || widthEl.offsetWidth)) || wrap.clientWidth || 0);
+            /* A card the browser is still skipping (content-visibility:auto,
+               well off-screen) has no layout, so it measures 0 wide. Drawing
+               now would size the chart from a guess; leave it undrawn instead
+               and let the contentvisibilityautostatechange listener below
+               draw it the moment the card is actually rendered. */
+            if (cssW === 0) {
+                delete wrap.dataset.drawn;
+                return;
+            }
             const dpr = Math.min(window.devicePixelRatio || 1, 2);
             const drawKey = [ticker, period, cssW, dpr].join('|');
             if (!opts.force && wrap.dataset.ready === '1' && wrap._chartDrawKey === drawKey) return;
@@ -10587,6 +10607,29 @@
 
             requestAnimationFrame(drawNextBatch);
         }
+
+        /* ── Draw a card's chart the moment the browser starts rendering it ──
+           Chart-mode cards are content-visibility:auto (see the
+           .cards-chart-mode rule), so the IntersectionObserver above can fire
+           for a card the browser has not laid out yet; drawCardChart then
+           backs off. The browser fires contentvisibilityautostatechange on
+           the card when it stops skipping it — that is the reliable moment
+           to draw. The event does not bubble, so it is caught in the capture
+           phase on the list container, which outlives every re-render. */
+        (function () {
+            const cardsEl = document.getElementById('cards');
+            if (!cardsEl) return;
+            cardsEl.addEventListener('contentvisibilityautostatechange', function (e) {
+                if (e.skipped || window._cardViewMode !== 'chart') return;
+                const card = e.target;
+                if (!card || !card.querySelectorAll) return;
+                const wraps = card.querySelectorAll('.card-chart-wrap:not([data-drawn])');
+                for (let k = 0; k < wraps.length; k++) {
+                    wraps[k].dataset.drawn = '1';
+                    drawCardChart(wraps[k]);
+                }
+            }, true);
+        })();
 
         /* ── Redraw already-visible charts on resize/orientation change (debounced) ── */
         (function () {
@@ -27796,7 +27839,14 @@
             border-radius: 0;
             overflow-y: auto;
             scrollbar-width: none;
-            scroll-behavior: smooth;
+            /* No smooth scroll-behavior and no scroll anchoring here — see
+               syncFSTickerListSelected. Rows use content-visibility:auto, so
+               they change size as they are realised; with a smooth scroll in
+               flight Chrome's anchoring kept re-adjusting scrollTop mid-
+               animation and the list visibly bounced up and down on every
+               arrow-key ticker change. */
+            scroll-behavior: auto;
+            overflow-anchor: none;
             box-sizing: border-box;
             display: flex;
             flex-direction: column;
@@ -27882,15 +27932,20 @@
             color: #fff;
         }
 
+        /* The current ticker is marked by a 1px outline around the whole
+           row, in the row's result colour (--fs-res is set inline per row;
+           rows without a result fall back to a white line). No fill, so the
+           ticker keeps its result colour. An inset shadow rather than a
+           border so the row does not grow when selected. */
         .fs-ticker-item.selected {
-            background: #0a84ff;
+            background: transparent;
             color: #fff;
             font-weight: 700;
-            box-shadow: 0 1px 3px rgba(10, 132, 255, 0.4);
+            box-shadow: inset 0 0 0 1px var(--fs-res, rgba(255, 255, 255, 0.6));
         }
 
         .fs-ticker-item.selected:hover {
-            background: #2896ff;
+            background: rgba(255, 255, 255, 0.07);
         }
 
         .fs-item-left {
@@ -27934,6 +27989,47 @@
            the sidebar's sector-rank badge, which has been removed so the list
            reads as ticker + name. The rank's own colour scale still lives with
            the company cards, which still show it. */
+
+        /* Quarterly-result colouring, same as the Tech Screener's ticker
+           cell: the ticker sits in a small pill whose text and thick left
+           edge take the Best/Good/Moderate/Weak/Very Weak colour the company
+           card uses (SI[_score].dot, set inline per row as border-color, so
+           the selected state below can light up the other three sides
+           without a second inline colour). */
+        .fs-item-tk.fs-tk-res {
+            display: inline-block;
+            max-width: 100%;
+            padding: 1px 6px;
+            border-radius: 3px;
+            border-style: solid;
+            border-color: transparent;
+            border-width: 0 0 0 5px;
+            background: rgba(255, 255, 255, 0.06);
+            box-sizing: border-box;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* Current ticker: the pill is unchanged — the outline sits on the
+           row (see .fs-ticker-item.selected), not on the pill. */
+        .fs-ticker-item.selected .fs-item-tk.fs-tk-res {
+            background: transparent;
+        }
+
+        /* SuperStar holder count, the company card's badge at list scale.
+           Hover shows the investor names through the shared #ss-tip. */
+        .fs-ticker-item .superstar-badge {
+            width: 16px;
+            height: 16px;
+            font-size: 8px;
+            margin-left: 6px;
+            box-shadow: 0 0 5px rgba(251, 191, 36, 0.35);
+        }
+
+        .fs-ticker-item .superstar-badge.multi {
+            box-shadow: 0 0 5px rgba(168, 85, 247, 0.45);
+        }
 
         .fs-ticker-block {
             display: flex;
@@ -31156,14 +31252,39 @@
                     const coNameFull = (window.tickerToName && window.tickerToName[tk]) || (r ? r._coName : '') || '';
                     const nameEsc = coNameFull ? escHtml(coNameFull) : '';
 
+                    /* Quarterly-result colour on the ticker, exactly as the
+                       Tech Screener paints its ticker cell: text + 3px left
+                       edge in SI[_score].dot, the company card's colour.
+                       Indices and tickers with no results row stay plain. */
+                    const si = (r && r._score !== undefined && typeof SI !== 'undefined') ? SI[r._score] : null;
+                    const tkCls = si ? 'fs-item-tk fs-tk-res' : 'fs-item-tk';
+                    const tkAttr = si
+                        ? ' style="border-color:' + si.dot + ';color:' + si.dot + ';" title="Quarterly Result: ' + si.label + '"'
+                        : '';
+
+                    /* SuperStar holder count on the right — the same badge,
+                       tooltip and click-popup the company card has, so the
+                       chart sidebar answers "who holds this?" without leaving
+                       the chart. showInvestorPopup reads superStarMap by
+                       ticker, so nothing else needs caching here. */
+                    const ssEntries = (window.superStarMap && window.superStarMap[tk.toUpperCase()]) || [];
+                    let ssHtml = '';
+                    if (ssEntries.length) {
+                        const ssNames = escHtml(ssEntries.map(function (e) { return e.investor; }).join('\n'));
+                        ssHtml = '<span class="superstar-badge' + (ssEntries.length > 1 ? ' multi' : '') + '"' +
+                            ' data-tip="' + ssNames + '" onclick="showInvestorPopup(event,\'' + tkEsc + '\')">' +
+                            ssEntries.length + '</span>';
+                    }
+
                     /* Escaped now that this is one HTML string rather than
                        per-element textContent/setAttribute — a ticker like
                        M&M would otherwise break both the attribute and the
                        label it is read back from. */
-                    items.push('<div class="fs-ticker-item" data-value="' + tkEsc + '">' +
-                        '<div class="fs-item-left"><span class="fs-item-tk">' + tkEsc + '</span>' +
+                    items.push('<div class="fs-ticker-item" data-value="' + tkEsc + '"' +
+                        (si ? ' style="--fs-res:' + si.dot + ';"' : '') + '>' +
+                        '<div class="fs-item-left"><span class="' + tkCls + '"' + tkAttr + '>' + tkEsc + '</span>' +
                         (nameEsc ? '<span class="fs-item-name" title="' + nameEsc + '">' + nameEsc + '</span>' : '') +
-                        '</div></div>');
+                        '</div>' + ssHtml + '</div>');
                 }
 
                 tickerSel.innerHTML = opts.join('');
@@ -31195,6 +31316,8 @@
                 if (listContainer._fsClickWired) return;
                 listContainer._fsClickWired = true;
                 listContainer.addEventListener('click', function (e) {
+                    // The SuperStar badge opens its investor popup; it is not a row pick.
+                    if (e.target && e.target.closest && e.target.closest('.superstar-badge')) return;
                     const item = e.target && e.target.closest ? e.target.closest('.fs-ticker-item') : null;
                     if (!item || !listContainer.contains(item)) return;
                     const tk = item.getAttribute('data-value');
@@ -31364,14 +31487,34 @@
                 if (targetItem) targetItem.classList.add('selected');
 
                 if (targetItem) {
-                    // Always scroll to keep the target item in the middle
-                    const containerH = listContainer.clientHeight;
-                    const itemTop = targetItem.offsetTop;
-                    const itemH = targetItem.clientHeight;
+                    /* Always scroll to keep the target item in the middle.
 
-                    listContainer.scrollTo({
-                        top: itemTop - (containerH / 2) + (itemH / 2),
-                        behavior: 'smooth'
+                       Instant, and measured twice. The rows are
+                       content-visibility:auto, so a row that has never been
+                       on screen is laid out as a 28px placeholder, and the
+                       selected row is taller than the rest; both of those
+                       resolve to their real height only once the row is
+                       realised — i.e. right after this scroll lands. A smooth
+                       scroll aimed at the pre-realisation offset therefore
+                       ended somewhere else, the browser's scroll anchoring
+                       nudged scrollTop again as rows above settled, and the
+                       next arrow key corrected the lot: the list bobbed up
+                       and down on every ticker change once enough rows had
+                       been visited. Jumping straight there, then re-centering
+                       on the next frame from the now-settled layout, lands
+                       exactly once. */
+                    const center = function () {
+                        const containerH = listContainer.clientHeight;
+                        const itemTop = targetItem.offsetTop;
+                        const itemH = targetItem.offsetHeight;
+                        const top = Math.max(0, Math.round(itemTop - (containerH / 2) + (itemH / 2)));
+                        if (Math.abs(listContainer.scrollTop - top) > 1) listContainer.scrollTop = top;
+                    };
+                    center();
+                    if (window._fsListCenterRaf) cancelAnimationFrame(window._fsListCenterRaf);
+                    window._fsListCenterRaf = requestAnimationFrame(function () {
+                        window._fsListCenterRaf = null;
+                        if (targetItem.classList.contains('selected')) center();
                     });
                 }
             };
