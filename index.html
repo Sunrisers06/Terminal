@@ -27874,6 +27874,23 @@
             transition: background-color 0.18s ease, color 0.18s ease;
             box-sizing: border-box;
 
+            /* ── Every row is exactly the same height ──
+               syncFSTickerListSelected centres the current row by reading
+               its offsetTop. With content-visibility (below) a row that has
+               never been on screen is laid out at its placeholder height,
+               and the placeholder only matched some rows: index rows have
+               no company name (~20px), named rows ~31px, the selected row
+               ~36px. The target's offsetTop was therefore a guess built
+               from whichever rows above it had or had not been realised,
+               and it changed again the moment the scroll realised them —
+               the list landed off-centre, or with the row out of view, and
+               drifted further the more tickers had been visited. A fixed
+               height makes placeholder and real height identical, so the
+               offset is exact before the scroll and unchanged after it. */
+            height: 36px;
+            flex: 0 0 36px;
+            overflow: hidden;
+
             /* ── 2,468 rows in a ~435px viewport ──
                Every one of them was being laid out. Measured in Chrome: a full
                layout of this list costs 15.8 ms against 0.00 ms with the list
@@ -27892,7 +27909,7 @@
                jumping as rows are realised. Browsers without support just get
                today's behaviour. */
             content-visibility: auto;
-            contain-intrinsic-size: auto 28px;
+            contain-intrinsic-size: 36px;
         }
 
         /* ── Training blackout ──
@@ -27960,6 +27977,7 @@
         .fs-item-tk {
             font-weight: 700;
             font-size: 11.5px;
+            line-height: 1.1;
             color: #e4e4e7;
             letter-spacing: 0.3px;
         }
@@ -27976,6 +27994,7 @@
 
         .fs-item-name {
             font-size: 8px;
+            line-height: 1.1;
             color: #71717a;
             font-weight: 500;
             white-space: nowrap;
@@ -29732,7 +29751,7 @@
             }
 
             .fs-ticker-item {
-                padding: 6px 10px !important;
+                padding: 3px 10px !important;
                 font-size: 11px !important;
             }
 
@@ -31157,6 +31176,12 @@
                 const group = document.getElementById('fs-group-select').value;
                 const tickerSel = document.getElementById('fs-ticker-select');
                 const prevVal = tickerSel.value;
+                /* The list as it stood before this rebuild, so that when the
+                   current ticker drops out of it (removed from Favorites /
+                   Hold while that group is showing) the selection can move
+                   to its neighbour instead of snapping back to the top. */
+                const prevIdx = tickerSel.selectedIndex;
+                const prevList = preserveValue ? Array.from(tickerSel.options, function (o) { return o.value; }) : null;
 
                 // Clear search if preserveValue is false (group changed)
                 const searchInput = document.getElementById('fs-ticker-search');
@@ -31296,7 +31321,23 @@
                 if (preserveValue && prevVal && hasMatchForPrevVal) {
                     tickerSel.value = prevVal;
                 } else if (tickerSel.options.length > 0) {
-                    tickerSel.selectedIndex = 0;
+                    /* The ticker being shown is gone from the new list. Stay
+                       where the eye is: take the first ticker AFTER it in the
+                       old order that survived the rebuild, else the first one
+                       BEFORE it (it was the last row). Only if nothing around
+                       it survived does the list start from the top. */
+                    let next = null;
+                    if (prevList && prevIdx >= 0) {
+                        const alive = new Set(Array.from(tickerSel.options, function (o) { return o.value; }));
+                        for (let i = prevIdx + 1; i < prevList.length && !next; i++) {
+                            if (alive.has(prevList[i])) next = prevList[i];
+                        }
+                        for (let i = prevIdx - 1; i >= 0 && !next; i--) {
+                            if (alive.has(prevList[i])) next = prevList[i];
+                        }
+                    }
+                    if (next) tickerSel.value = next;
+                    else tickerSel.selectedIndex = 0;
                 }
 
                 window.syncFSTickerListSelected();
