@@ -17153,8 +17153,8 @@
                     const activeCv = pCv._hoverCanvas;
 
                     pc.save();
-                    pc.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-                    pc.lineWidth = 0.8;
+                    pc.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+                    pc.lineWidth = 1.2;
                     pc.setLineDash([4, 4]);
 
                     // Vertical line (always drawn on pCv if any canvas is hovered)
@@ -17455,8 +17455,8 @@
                         const activeCv = pCv._hoverCanvas;
 
                         vc.save();
-                        vc.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-                        vc.lineWidth = 0.8;
+                        vc.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+                        vc.lineWidth = 1.2;
                         vc.setLineDash([4, 4]);
 
                         // Vertical line on volume canvas
@@ -17654,8 +17654,8 @@
                         const activeCv = pCv._hoverCanvas;
 
                         ic.save();
-                        ic.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-                        ic.lineWidth = 0.8;
+                        ic.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+                        ic.lineWidth = 1.2;
                         ic.setLineDash([4, 4]);
 
                         // Vertical line on indicator canvas
@@ -17932,8 +17932,8 @@
 
                     if (pCv._hoverX !== undefined && pCv._hoverX !== null) {
                         rsc.save();
-                        rsc.strokeStyle = 'rgba(255,255,255,0.4)';
-                        rsc.lineWidth = 0.8; rsc.setLineDash([4, 4]);
+                        rsc.strokeStyle = 'rgba(255,255,255,0.75)';
+                        rsc.lineWidth = 1.2; rsc.setLineDash([4, 4]);
                         rsc.beginPath(); rsc.moveTo(pCv._hoverX, RP.t); rsc.lineTo(pCv._hoverX, RSH - RP.b); rsc.stroke();
 
                         // Horizontal line and value badge when hovering on delivery/MRS canvas
