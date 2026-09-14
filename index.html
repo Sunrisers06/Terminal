@@ -15550,6 +15550,22 @@
                 }
             }
 
+            /* Crosshair lines only (badges are drawn later, on top of everything).
+               Called right after a pane's background/grid so the lines sit
+               BEHIND candles, MAs and volume bars instead of over them. */
+            function drawCrosshairLines(ctx, hx, hy, pad, W, H, withHorizontal) {
+                if (hx === undefined || hx === null) return;
+                ctx.save();
+                ctx.strokeStyle = 'rgba(118, 118, 128, 0.9)';
+                ctx.lineWidth = 1.6;
+                ctx.setLineDash([]);
+                ctx.beginPath(); ctx.moveTo(hx, pad.t); ctx.lineTo(hx, H - pad.b); ctx.stroke();
+                if (withHorizontal && hy !== undefined && hy !== null && hy >= pad.t && hy <= H - pad.b) {
+                    ctx.beginPath(); ctx.moveTo(pad.l, hy); ctx.lineTo(W - pad.r, hy); ctx.stroke();
+                }
+                ctx.restore();
+            }
+
             function drawPriceActionHoverPanel(ctx, pa, hx, W, PH, PP) {
                 if (!pa || !pa.lines) return;
                 const compact = W < 360;
@@ -16367,19 +16383,26 @@
                 let W = widthEl ? (widthEl.offsetWidth || (isMobile ? 300 : 380)) : (isMobile ? 300 : 380);
 
                 let PH, VH, IH, RSH;
+                /* Compact full-screen layout: a phone held in either orientation
+                   (rotated portrait gives ~360-430px of usable height) cannot
+                   afford desktop-sized axis bands and pane paddings — those
+                   alone ate ~60px of a ~390px screen and read as empty space
+                   between the price chart, A/D-OBV and Deliv% panes. */
+                let fsCompact = false;
                 if (pCv.id === 'fs-chart-pcv') {
                     const parentH = (widthEl && widthEl.parentElement) ? widthEl.parentElement.clientHeight : window.innerHeight;
+                    fsCompact = parentH < 520;
                     // Indexed lookup, not a walk of all ~280,000 deal rows.
                     // This one decides a 12px height, and it ran on every frame.
                     const hasDealsReal = _dealsForTicker(UC).length > 0;
-                    const dealH = hasDealsReal ? 12 : 0;
-                    const remH = Math.max(parentH - dealH, 300);
+                    const dealH = hasDealsReal ? (fsCompact ? 10 : 12) : 0;
+                    const remH = Math.max(parentH - dealH, fsCompact ? 240 : 300);
                     VH = 0; // hide volume pane in full screen
 
                     if (!window.fsRscvMode) window.fsRscvMode = 'DELIV';
                     const isRsActive = _rsCvEl !== null;
                     if (isRsActive) {
-                        PH = Math.round(remH * 0.80);
+                        PH = Math.round(remH * (fsCompact ? 0.76 : 0.80));
                         IH = Math.round(remH * 0.12);
                         RSH = remH - PH - IH;
                     } else {
@@ -16432,7 +16455,13 @@
                 /* ════════════════════════════════════════
                    PRICE CHART
                 ════════════════════════════════════════ */
-                const PP = isFs ? { t: 12, b: 32, l: 8, r: 70 } : { t: 10, b: 22, l: 6, r: 48 };
+                const PP = isFs
+                    ? (fsCompact ? { t: 8, b: 18, l: 6, r: 58 } : { t: 12, b: 32, l: 8, r: 70 })
+                    : { t: 10, b: 22, l: 6, r: 48 };
+                // Date-axis text metrics follow the band height (PP.b above).
+                const fsDateFont = fsCompact ? 'bold 9px "Lexend",monospace' : 'bold 11px "Lexend",monospace';
+                const fsDateFontLast = fsCompact ? 'bold 10px "Lexend",monospace' : 'bold 12px "Lexend",monospace';
+                const fsDateYOff = fsCompact ? 3 : 6;
                 const pW = W - PP.l - PP.r;
                 const pH = PH - PP.t - PP.b;
 
@@ -16456,9 +16485,11 @@
 
                 // Apply proportional padding on the logarithmic scale 
                 // (e.g. 8% empty space at bottom, 12% at top)
-                const logPad = logR_initial * 0.08;
+                // Compact full-screen trims the head/foot room too — on a phone
+                // that 8% + 12% was ~55px of dead air around the candles.
+                const logPad = logR_initial * (fsCompact ? 0.04 : 0.08);
                 logMin -= logPad;
-                logMax += logPad * 1.5;
+                logMax += logPad * (fsCompact ? 1.75 : 1.5);
 
                 const logR = logMax - logMin || 1;
 
@@ -16727,6 +16758,9 @@
                     pc.fillStyle = '#ffffff';
                     pc.fillText(fmtP(val), W - 4, y);
                 }
+
+                // ── Crosshair lines — under the MAs, candles and volume bars ──
+                drawCrosshairLines(pc, pCv._hoverX, pCv._hoverY, PP, W, PH, pCv._hoverCanvas === pCv);
 
                 // ── MA lines ──
                 // MA10: Gold Bold line
@@ -17096,10 +17130,10 @@
                             lastTickYear = yr;
                             lastLabelX = x;
 
-                            pc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 7.5px "Lexend",monospace';
+                            pc.font = isFs ? fsDateFont : 'bold 7.5px "Lexend",monospace';
                             pc.fillStyle = '#e2e8f0';
                             pc.textAlign = 'center';
-                            pc.fillText(label, x, PH - PP.b + (isFs ? 6 : 4));
+                            pc.fillText(label, x, PH - PP.b + (isFs ? fsDateYOff : 4));
                         } catch (e) {
                             console.error('Error drawing X-axis date label:', e);
                         }
@@ -17111,10 +17145,10 @@
                             const lastD = raw[raw.length - 1].date instanceof Date ? raw[raw.length - 1].date : new Date(raw[raw.length - 1].date);
                             if (lastD && !isNaN(lastD.getTime())) {
                                 const lastLabel = _mos[lastD.getMonth()];
-                                pc.font = isFs ? 'bold 12px "Lexend",monospace' : 'bold 8.5px "Lexend",monospace';
+                                pc.font = isFs ? fsDateFontLast : 'bold 8.5px "Lexend",monospace';
                                 pc.fillStyle = '#ffffff';
                                 pc.textAlign = 'right';
-                                pc.fillText(lastLabel, W - PP.r, PH - PP.b + (isFs ? 6 : 4));
+                                pc.fillText(lastLabel, W - PP.r, PH - PP.b + (isFs ? fsDateYOff : 4));
                             }
                         } catch (e) { /* ignore */ }
                     }
@@ -17153,25 +17187,12 @@
                     const activeCv = pCv._hoverCanvas;
 
                     pc.save();
-                    pc.strokeStyle = 'rgba(255, 255, 255, 0.75)';
-                    pc.lineWidth = 1.2;
-                    pc.setLineDash([4, 4]);
+                    // The crosshair lines themselves were painted before the
+                    // candles (see drawCrosshairLines above); only badges here.
+                    pc.setLineDash([]);
 
-                    // Vertical line (always drawn on pCv if any canvas is hovered)
-                    pc.beginPath();
-                    pc.moveTo(hx, PP.t);
-                    pc.lineTo(hx, PH - PP.b);
-                    pc.stroke();
-
-                    // Horizontal line and Price badge (only if hovering on price canvas)
+                    // Price badge (only if hovering on price canvas)
                     if (activeCv === pCv && hy !== undefined && hy !== null && hy >= PP.t && hy <= PH - PP.b) {
-                        pc.beginPath();
-                        pc.moveTo(PP.l, hy);
-                        pc.lineTo(W - PP.r, hy);
-                        pc.stroke();
-
-                        pc.setLineDash([]);
-
                         // Right-axis price badge (logarithmic mapping)
                         const valAtY = Math.exp(logMin + logR * (1 - (hy - PP.t) / pH));
                         const priceTxt = fmtP(valAtY);
@@ -17198,19 +17219,19 @@
                         const hoverCandle = raw[pCv._hoverIdx];
                         if (hoverCandle) {
                             const dateTxt = fmtChartDate(hoverCandle.date);
-                            pc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 8px "Lexend",monospace';
+                            pc.font = isFs ? fsDateFont : 'bold 8px "Lexend",monospace';
                             const dBadgeW = pc.measureText(dateTxt).width + (isFs ? 10 : 6);
                             let dbx = hx;
                             if (dbx - dBadgeW / 2 < PP.l) dbx = PP.l + dBadgeW / 2;
                             if (dbx + dBadgeW / 2 > W - PP.r) dbx = W - PP.r - dBadgeW / 2;
 
-                            const dbH = isFs ? 15 : 10;
+                            const dbH = isFs ? (fsCompact ? 13 : 15) : 10;
                             pc.fillStyle = '#475569'; // Slate-600
                             pc.fillRect(dbx - dBadgeW / 2, PH - PP.b + 1, dBadgeW, dbH);
                             pc.fillStyle = '#ffffff';
                             pc.textAlign = 'center';
                             pc.textBaseline = 'top';
-                            pc.fillText(dateTxt, dbx, PH - PP.b + (isFs ? 3 : 2));
+                            pc.fillText(dateTxt, dbx, PH - PP.b + (isFs ? (fsCompact ? 2 : 3) : 2));
                         }
                     }
 
@@ -17236,7 +17257,11 @@
                             pc.textBaseline = 'top';
                             pc.fillText(retTxt, rbx, PP.t + (isFs ? 2 : 1));
                             if (pCv._hoverCanvas === pCv) {
-                                drawPriceActionHoverPanel(pc, _fsPriceActionCached(UC, raw), hx, W, PH, PP);
+                                // Chart-pattern box is opt-in (full chart sidebar → Draw →
+                                // Pattern Box). Hidden by default on every chart.
+                                if (window._fsShowPatternBox) {
+                                    drawPriceActionHoverPanel(pc, _fsPriceActionCached(UC, raw), hx, W, PH, PP);
+                                }
 
                                 // Volume Overlay Tooltips (if hovering in bottom 15% of full screen price pane)
                                 if (isFs && hy >= PP.t + pH * 0.85) {
@@ -17355,6 +17380,7 @@
                     }
 
                     vc.fillStyle = '#000000'; vc.fillRect(0, 0, W, VH);
+                    drawCrosshairLines(vc, pCv._hoverX, pCv._hoverY, VP, W, VH, pCv._hoverCanvas === vCv);
 
                     // ── Separator line at top of volume panel ──
                     vc.strokeStyle = 'rgba(255,255,255,0.15)'; vc.lineWidth = 0.8;
@@ -17455,25 +17481,10 @@
                         const activeCv = pCv._hoverCanvas;
 
                         vc.save();
-                        vc.strokeStyle = 'rgba(255, 255, 255, 0.75)';
-                        vc.lineWidth = 1.2;
-                        vc.setLineDash([4, 4]);
+                        vc.setLineDash([]);
 
-                        // Vertical line on volume canvas
-                        vc.beginPath();
-                        vc.moveTo(hx, VP.t);
-                        vc.lineTo(hx, VH - VP.b);
-                        vc.stroke();
-
-                        // Horizontal line on volume canvas (only if hovered canvas is volume canvas)
+                        // Lines already painted under the bars; badge only.
                         if (activeCv === vCv && hy !== undefined && hy !== null && hy >= VP.t && hy <= VH - VP.b) {
-                            vc.beginPath();
-                            vc.moveTo(VP.l, hy);
-                            vc.lineTo(W - VP.r, hy);
-                            vc.stroke();
-
-                            vc.setLineDash([]);
-
                             // Volume badge on right-axis
                             const volMultiplier = isFs ? maxVClose : 1;
                             const volVal = maxV * (1 - (hy - VP.t) / vH2) * volMultiplier;
@@ -17547,7 +17558,9 @@
                    INDICATORS PANEL (A/D and OBV)
                 ════════════════════════════════════════ */
                 if (ic) {
-                    const IP = isFs ? { t: 6, b: 8, l: 8, r: 70 } : { t: 5, b: 5, l: 6, r: 48 };
+                    const IP = isFs
+                        ? (fsCompact ? { t: 3, b: 3, l: 6, r: 58 } : { t: 6, b: 8, l: 8, r: 70 })
+                        : { t: 5, b: 5, l: 6, r: 48 };
                     const iH = IH - IP.t - IP.b;
 
                     let adMin = Infinity, adMax = -Infinity;
@@ -17566,6 +17579,7 @@
 
                     // Background — pure dark black
                     ic.fillStyle = '#000000'; ic.fillRect(0, 0, W, IH);
+                    drawCrosshairLines(ic, pCv._hoverX, pCv._hoverY, IP, W, IH, pCv._hoverCanvas === indCv);
 
                     // Separator line at top of indicator panel
                     ic.strokeStyle = 'rgba(255,255,255,0.15)'; ic.lineWidth = 0.8;
@@ -17631,7 +17645,7 @@
                     const displayObv = (hoverIdx !== undefined && hoverIdx !== null) ? raw[hoverIdx].obv : lastObv;
 
                     // Right-side indicator scale labels
-                    ic.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 7px "Lexend",monospace';
+                    ic.font = isFs ? (fsCompact ? 'bold 9px "Lexend",monospace' : 'bold 11px "Lexend",monospace') : 'bold 7px "Lexend",monospace';
                     ic.textAlign = 'right';
                     ic.textBaseline = 'middle';
 
@@ -17647,33 +17661,8 @@
                     ic.fillStyle = '#00ccff';
                     ic.fillText(fmtV(lastObv), W - 4, obvY);
 
-                    // Draw crosshair on indicator canvas if hovering
-                    if (pCv._hoverX !== undefined && pCv._hoverX !== null) {
-                        const hx = pCv._hoverX;
-                        const hy = pCv._hoverY;
-                        const activeCv = pCv._hoverCanvas;
-
-                        ic.save();
-                        ic.strokeStyle = 'rgba(255, 255, 255, 0.75)';
-                        ic.lineWidth = 1.2;
-                        ic.setLineDash([4, 4]);
-
-                        // Vertical line on indicator canvas
-                        ic.beginPath();
-                        ic.moveTo(hx, IP.t);
-                        ic.lineTo(hx, IH - IP.b);
-                        ic.stroke();
-
-                        // Horizontal line on indicator canvas (only if hovered canvas is indicator canvas)
-                        if (activeCv === indCv && hy !== undefined && hy !== null && hy >= IP.t && hy <= IH - IP.b) {
-                            ic.beginPath();
-                            ic.moveTo(IP.l, hy);
-                            ic.lineTo(W - IP.r, hy);
-                            ic.stroke();
-                        }
-
-                        ic.restore();
-                    }
+                    // Crosshair lines for this pane are painted right after its
+                    // background (drawCrosshairLines) so they sit under the plots.
                 }
 
                 /* ════════════════════════════════════════
@@ -17686,18 +17675,19 @@
                         toggleBtn.style.display = 'flex';
                         toggleBtn.style.left = isSm ? '6px' : '12px';
                         toggleBtn.style.right = 'auto';
-                        toggleBtn.style.top = (PH + VH + (isSm ? 3 : 6)) + 'px';
+                        toggleBtn.style.top = (PH + VH + (fsCompact ? 2 : isSm ? 3 : 6)) + 'px';
                         toggleBtn.style.fontSize = isSm ? '8.5px' : '10.5px';
                         toggleBtn.style.padding = isSm ? '2px 5px' : '4px 9px';
                         toggleBtn.innerText = window.fsRscvMode === 'DELIV' ? '📊 Deliv %' : window.fsRscvMode === 'DELIV_VOL' ? '📦 Deliv Vol' : '📈 MRS';
                     }
 
                     window.fsRscvMode = window.fsRscvMode || 'MRS';
-                    const RP = { t: 6, b: 8, l: 8, r: 70 };
+                    const RP = fsCompact ? { t: 3, b: 3, l: 6, r: 58 } : { t: 6, b: 8, l: 8, r: 70 };
                     const rH = RSH - RP.t - RP.b;
 
                     // Background
                     rsc.fillStyle = '#000000'; rsc.fillRect(0, 0, W, RSH);
+                    drawCrosshairLines(rsc, pCv._hoverX, pCv._hoverY, RP, W, RSH, pCv._hoverCanvas === _rsCvEl);
 
                     // Separator line at top
                     rsc.strokeStyle = 'rgba(255,255,255,0.15)'; rsc.lineWidth = 0.8;
@@ -17932,20 +17922,12 @@
 
                     if (pCv._hoverX !== undefined && pCv._hoverX !== null) {
                         rsc.save();
-                        rsc.strokeStyle = 'rgba(255,255,255,0.75)';
-                        rsc.lineWidth = 1.2; rsc.setLineDash([4, 4]);
-                        rsc.beginPath(); rsc.moveTo(pCv._hoverX, RP.t); rsc.lineTo(pCv._hoverX, RSH - RP.b); rsc.stroke();
+                        rsc.setLineDash([]);
 
-                        // Horizontal line and value badge when hovering on delivery/MRS canvas
+                        // Lines already painted under the bars; value badge only.
                         const hy = pCv._hoverY;
                         const activeCv = pCv._hoverCanvas;
                         if (activeCv === _rsCvEl && hy !== undefined && hy !== null && hy >= RP.t && hy <= RSH - RP.b) {
-                            rsc.beginPath();
-                            rsc.moveTo(RP.l, hy);
-                            rsc.lineTo(W - RP.r, hy);
-                            rsc.stroke();
-
-                            rsc.setLineDash([]);
                             let badgeValStr = '';
                             if (window.fsRscvMode === 'DELIV') {
                                 const delivVals = raw.map(r => r.delivPer).filter(v => v !== null && v !== undefined);
@@ -18008,7 +17990,7 @@
                 ════════════════════════════════════════ */
                 if (dealCv) {
                     dealCv.style.display = 'block';
-                    const SH = 12;
+                    const SH = fsCompact ? 10 : 12;
                     dealCv.style.width = W + 'px';
                     dealCv.style.height = SH + 'px';
                     dealCv.width = W * DPR;
@@ -29764,6 +29746,13 @@
                 height: 16px !important;
             }
 
+            /* The toggle's inline left (176px) matches the desktop sidebar; on
+               mobile the sidebar is 140px, so the button floated 36px into the
+               chart. Track the narrower width while the sidebar is open. */
+            #fs-chart-modal:not(.fs-sb-hidden) #fs-sidebar-toggle {
+                left: 140px !important;
+            }
+
             /* Reduce replay buttons */
             .fs-drum-trigger {
                 padding: 6px !important;
@@ -29984,7 +29973,7 @@
 
                     <div class="fs-replay-btns">
                         <button id="fs-replay-btn" onclick="window.toggleFsReplay()"
-                            title="Play / Pause (Space)">▶</button>
+                            title="Play / Pause (P)">▶</button>
                         <button id="fs-step-fwd-btn" onclick="window.fsFsStepForward()"
                             title="Step +1 candle">›</button>
                         <button id="fs-replay-stop-btn" onclick="window.stopFsReplay()" title="Stop replay">⏹</button>
@@ -30192,6 +30181,13 @@
                         onclick="window.fsToggleQuickTrend()"
                         title="Click chart to anchor point 1, click again to draw trendline with return %, click once more to clear">📐
                         Quick Trendline</button>
+                    <!-- Hover "pattern box" (price-action / chart-pattern panel). Off by
+                         default; the same flag gates the company-card charts. -->
+                    <button id="fs-pattern-box-btn" class="fs-draw-btn"
+                        style="width:100%; margin-top:4px; font-size:10px; letter-spacing:0.03em;"
+                        onclick="window.fsTogglePatternBox()"
+                        title="Show / hide the chart-pattern box that appears while hovering the price chart (applies to company card charts too)">🧩
+                        Pattern Box: Off</button>
                     <button class="fs-draw-clear" onclick="window.fsClearDrawings()"
                         title="Clear All Drawings (Delete / Backspace key)">🗑 Clear All</button>
                 </div>
@@ -31015,6 +31011,8 @@
                 const btn = document.getElementById('fs-sidebar-toggle');
                 if (!sb || !btn) return;
                 const isCollapsed = sb.classList.toggle('fs-sidebar-collapsed');
+                const modal = document.getElementById('fs-chart-modal');
+                if (modal) modal.classList.toggle('fs-sb-hidden', isCollapsed);
                 if (isCollapsed) {
                     btn.style.left = '0px';
                     btn.innerHTML = '▶';
@@ -34309,6 +34307,32 @@
             };
 
             // ── Toggle Quick Trendline mode ──
+            /* ── Chart-pattern box (hover price-action panel) toggle ──
+               One flag for every chart: drawChartCore reads it for the full
+               chart AND the company-card charts. Default OFF; the choice is
+               remembered across reloads. */
+            const _FS_PATTERN_BOX_KEY = 'fs_show_pattern_box';
+            window._fsShowPatternBox = false;
+            try { window._fsShowPatternBox = localStorage.getItem(_FS_PATTERN_BOX_KEY) === '1'; } catch (e) { }
+            window._fsSyncPatternBoxBtn = function () {
+                const btn = document.getElementById('fs-pattern-box-btn');
+                if (!btn) return;
+                const on = !!window._fsShowPatternBox;
+                btn.classList.toggle('active', on);
+                btn.textContent = on ? '🧩 Pattern Box: On' : '🧩 Pattern Box: Off';
+            };
+            window.fsTogglePatternBox = function () {
+                window._fsShowPatternBox = !window._fsShowPatternBox;
+                try { localStorage.setItem(_FS_PATTERN_BOX_KEY, window._fsShowPatternBox ? '1' : '0'); } catch (e) { }
+                window._fsSyncPatternBoxBtn();
+                // Repaint so a box already on screen disappears (or appears) at once.
+                const m = document.getElementById('fs-chart-modal');
+                if (m && m.style.display === 'flex' && typeof window.renderFullScreenChart === 'function') {
+                    window.renderFullScreenChart({ skipChrome: true });
+                }
+            };
+            window._fsSyncPatternBoxBtn();
+
             window.fsToggleQuickTrend = function () {
                 const canvas = document.getElementById('fs-draw-canvas');
                 const qtBtn = document.getElementById('fs-quick-trend-btn');
@@ -34980,7 +35004,15 @@
                 }
 
                 if (e.key === ' ' || e.key === 'Spacebar') {
-                    // Space: toggle replay pause/resume (or start if not running)
+                    // Space: open the ticker search (same as the main page).
+                    e.preventDefault();
+                    if (typeof window.gsxOpen === 'function') window.gsxOpen('chart');
+                    return;
+                }
+
+                if (e.key === 'p' || e.key === 'P') {
+                    // P: toggle replay pause/resume (or start if not running) —
+                    // this used to be Space, which now opens search.
                     e.preventDefault();
                     window.toggleFsReplay();
                     _fsUpdatePnlDisplay();
@@ -35443,7 +35475,7 @@
                         if (type === 'price') _drawCandles(ctx2, W, H, valid, lbl);
                         else _drawLine(ctx2, W, H, valid, lbl, type);
                         const hx = toX(idx), hy = toY(val);
-                        ctx2.strokeStyle = 'rgba(255,255,255,0.28)'; ctx2.lineWidth = 0.8; ctx2.setLineDash([3, 3]);
+                        ctx2.strokeStyle = 'rgba(118, 118, 128, 0.9)'; ctx2.lineWidth = 1.6; ctx2.setLineDash([]);
                         ctx2.beginPath(); ctx2.moveTo(hx, P.t); ctx2.lineTo(hx, H - P.b); ctx2.stroke();
                         ctx2.beginPath(); ctx2.moveTo(P.l, hy); ctx2.lineTo(W - P.r, hy); ctx2.stroke(); ctx2.setLineDash([]);
                         ctx2.beginPath(); ctx2.arc(hx, hy, 5, 0, Math.PI * 2); ctx2.fillStyle = lc; ctx2.fill();
@@ -39032,6 +39064,18 @@
                     !!(ev.target && ev.target.isContentEditable);
                 if (ev.key === '/' && !typing && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
                     ev.preventDefault(); open();
+                    return;
+                }
+                /* Space opens search. Over the full-screen chart its own key
+                   handler does this (targeting the chart's ticker search), so
+                   stand aside there. A focused button is blurred first so
+                   Space does not also re-fire that button. */
+                if ((ev.key === ' ' || ev.key === 'Spacebar') && !typing && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+                    const fsModal = document.getElementById('fs-chart-modal');
+                    if (fsModal && fsModal.style.display === 'flex') return;
+                    ev.preventDefault();
+                    if (ev.target && typeof ev.target.blur === 'function' && ev.target !== document.body) ev.target.blur();
+                    open();
                 }
             });
 
