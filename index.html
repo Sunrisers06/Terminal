@@ -9026,23 +9026,37 @@
                 filteredInsightsData = allInsightsData;
                 filteredNseNewsData = allNseNewsData;
             } else {
+                // Exact ticker parts → the card-click matcher, one per ticker
+                const exactQ = splitExactTickerQuery(rawQ);
+                const matchers = [];
+                if (exactQ.exact.size && typeof allData !== 'undefined' && Array.isArray(allData)) {
+                    for (const r of allData) {
+                        const key = (r._tickLow || String(r._ticker || '').toLowerCase()).replace(/\.ns$/, '');
+                        if (exactQ.exact.has(key)) matchers.push(_companyNewsMatcher(r._ticker, r._coName));
+                    }
+                }
+                const exactTkUp = new Set(matchers.map(m => m.ticker));
+                const exactNews = n => matchers.some(m => m.headline(joinedTok(n)));
+                const exactTick = n => exactTkUp.has(String(n.ticker || '').trim().toUpperCase().replace(/\.NS$/, ''));
+
                 // OR groups, each group = AND tokens (same engine as stock search)
-                const orGroups = rawQ.toLowerCase().split('|').map(g => tokenize(g)).filter(g => g.length);
+                const orGroups = exactQ.rest.join('|').toLowerCase().split('|').map(g => tokenize(g)).filter(g => g.length);
 
                 /* No groups means the query tokenized to nothing (e.g. "!!!").
                    That yields no matches, not everything — same as the
                    insights and NSE panes just below, which reach the same
                    result through `[].some(...)` being false. */
                 const newsMatch = makeOrGroupMatcher(orGroups);
-                filteredNewsData = newsMatch
-                    ? allNewsData.filter(n => newsMatch(joinedTok(n)))
-                    : [];
+                filteredNewsData = allNewsData.filter(n =>
+                    (newsMatch && newsMatch(joinedTok(n))) || (matchers.length && exactNews(n)));
                 // Insights: match ticker field only — use pre-computed _tickLow
                 filteredInsightsData = allInsightsData.filter(n => {
+                    if (matchers.length && exactTick(n)) return true;
                     const tick = n._tickLow; // pre-computed at load time
                     return orGroups.some(tokens => tokens.every(tok => tick.startsWith(tok) || tick.includes(tok)));
                 });
                 filteredNseNewsData = allNseNewsData.filter(n => {
+                    if (matchers.length && exactTick(n)) return true;
                     const searchText = n._searchLow || '';
                     return orGroups.some(tokens => tokens.every(tok => searchText.includes(tok)));
                 });
@@ -10203,6 +10217,27 @@
             return String(str || '').toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean);
         }
 
+        /* ── Exact-ticker query parts ──
+           "TMCV" typed in the search box (or picked from the search dropdown,
+           which writes the ticker) means THAT stock — not every ticker or
+           name that merely contains "tmcv" the way the fuzzy engine reads
+           it. A pipe part that equals a ticker in allData is exact; the
+           other parts keep the fuzzy engine, so "TMCV | tata" still works.
+           Keys are lowercase with any .NS suffix dropped, the same form as
+           the rows' _tickLow. */
+        function splitExactTickerQuery(rawQ) {
+            const exact = new Set(), rest = [];
+            const parts = String(rawQ || '').split('|').map(p => p.trim()).filter(Boolean);
+            if (!parts.length || typeof allData === 'undefined' || !Array.isArray(allData)) return { exact, rest: parts };
+            const tks = new Set();
+            for (const r of allData) tks.add((r._tickLow || String(r._ticker || '').toLowerCase()).replace(/\.ns$/, ''));
+            for (const p of parts) {
+                const key = p.toLowerCase().replace(/\.ns$/, '');
+                if (tks.has(key)) exact.add(key); else rest.push(p);
+            }
+            return { exact, rest };
+        }
+
         /* ── OR-group matching (shared by the search box and the F/H filter) ──
            Semantics: a row matches if ANY group matches; a group matches when
            EVERY token in it appears as a substring of the row's text. That is
@@ -10302,8 +10337,11 @@
             const dc = _getDomCache();
             const rawQ = dc.searchInput.value.trim();
 
-            // Pipe = OR groups, each group = AND tokens
-            const orGroups = rawQ.toLowerCase().split('|').map(g => tokenize(g)).filter(g => g.length);
+            // Pipe = OR groups, each group = AND tokens. A part that IS a
+            // ticker is matched exactly (see splitExactTickerQuery).
+            const exactQ = splitExactTickerQuery(rawQ);
+            const exactTk = exactQ.exact;
+            const orGroups = exactQ.rest.join('|').toLowerCase().split('|').map(g => tokenize(g)).filter(g => g.length);
 
             const idxQ = dc.idxFilter.value;
             const qtrQ = dc.qtrFilter.value;
@@ -10327,11 +10365,16 @@
             const grades = ['A', 'B', 'C', 'D', 'E'];
 
             let base = allData.filter(r => {
-                // Smart search: OR across groups, AND within group
-                if (orGroups.length > 0) {
+                // Smart search: exact ticker parts first, then OR across
+                // fuzzy groups, AND within group
+                if (exactTk.size && exactTk.has((r._tickLow || String(r._ticker || '').toLowerCase()).replace(/\.ns$/, ''))) {
+                    r._matchScore = 3;
+                } else if (orGroups.length > 0) {
                     const bestScore = orGroups.reduce((best, tokens) => Math.max(best, scoreSearchMatch(r, tokens)), 0);
                     if (!bestScore) return false;
                     r._matchScore = bestScore;
+                } else if (exactTk.size) {
+                    return false;
                 } else {
                     r._matchScore = 0;
                 }
@@ -27734,34 +27777,95 @@
         }
 
         /* Sidebar toggle button — macOS "hide sidebar" style: small floating circle */
+        /* ── Sidebar handle ──
+           A slim tab glued to the sidebar's edge, vertically centred, so it is
+           always in the same place whether the sidebar is open or not. It
+           follows the sidebar width through the modal's fs-sb-hidden class
+           rather than an inline left, so the mobile width just works. */
         #fs-sidebar-toggle {
             position: absolute;
-            top: 105px;
+            top: 50%;
+            left: 194px;
+            transform: translateY(-50%);
             z-index: 100001;
-            width: 22px;
-            height: 22px;
-            background: rgba(44, 44, 46, 0.9);
+            width: 14px;
+            height: 64px;
+            background: rgba(44, 44, 46, 0.92);
             backdrop-filter: blur(20px) saturate(180%);
             -webkit-backdrop-filter: blur(20px) saturate(180%);
             border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 50%;
-            color: rgba(235, 235, 245, 0.55);
-            font-size: 10px;
+            border-left: none;
+            border-radius: 0 9px 9px 0;
+            color: rgba(235, 235, 245, 0.6);
+            font-size: 15px;
+            font-weight: 700;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.2s, color 0.2s, transform 0.15s;
+            transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.2s, color 0.2s, width 0.15s;
             pointer-events: auto;
             padding: 0;
             line-height: 1;
-            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+            box-shadow: 2px 0 8px rgba(0, 0, 0, 0.4);
+            touch-action: manipulation;
+        }
+
+        /* Wider invisible hit area — a 14px tab is a poor touch target. */
+        #fs-sidebar-toggle::after {
+            content: '';
+            position: absolute;
+            top: -14px;
+            bottom: -14px;
+            left: -6px;
+            right: -14px;
+        }
+
+        #fs-sidebar-toggle .fs-sb-glyph {
+            display: block;
+            transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         #fs-sidebar-toggle:hover {
-            background: rgba(64, 64, 68, 0.95);
+            background: rgba(10, 132, 255, 0.85);
             color: #fff;
-            transform: scale(1.08);
+            width: 18px;
+        }
+
+        #fs-chart-modal.fs-sb-hidden #fs-sidebar-toggle {
+            left: 0;
+        }
+
+        #fs-chart-modal.fs-sb-hidden #fs-sidebar-toggle .fs-sb-glyph {
+            transform: rotate(180deg);
+        }
+
+        /* Peek: while collapsed, hovering the handle (or the left edge) slides
+           the sidebar OVER the chart instead of pushing it, so the chart keeps
+           its full width and needs no redraw. Leaving it hides it again;
+           clicking the handle while peeking pins it open. */
+        #fs-chart-modal.fs-sb-peek #fs-sidebar.fs-sidebar-collapsed {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            width: 194px !important;
+            min-width: 194px !important;
+            overflow-y: auto;
+            z-index: 100000;
+            border-right: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 8px 0 28px rgba(0, 0, 0, 0.55);
+            transition: none;
+        }
+
+        #fs-chart-modal.fs-sb-peek #fs-sidebar-toggle {
+            left: 194px;
+            background: rgba(10, 132, 255, 0.85);
+            color: #fff;
+        }
+
+        #fs-chart-modal.fs-sb-peek #fs-sidebar-toggle .fs-sb-glyph {
+            transform: none;
         }
 
 
@@ -27892,7 +27996,7 @@
 
         /* Watchlist picker + its fixed search spark, on one line. The picker
            takes what is left after the 30px button rather than a fixed width,
-           so this row survives the 140px sidebar on a phone. */
+           so this row survives the 112px sidebar on a phone. */
         .fs-group-row {
             display: flex;
             align-items: center;
@@ -29900,10 +30004,42 @@
 
         /* ── Mobile enhancements for Fullscreen Chart ── */
         @media screen and (max-width: 768px) {
+            /* Thin sidebar: a phone in the forced-landscape chart has ~700px
+               across, and the sidebar is dead width while reading candles.
+               Every row below is tightened to survive 112px. */
             #fs-sidebar {
-                width: 140px !important;
-                min-width: 140px !important;
+                width: 112px !important;
+                min-width: 112px !important;
                 font-size: 10px;
+            }
+
+            .fs-section {
+                padding: 8px 8px !important;
+                gap: 6px !important;
+            }
+
+            #fs-search-section {
+                padding: 8px 8px 4px 8px !important;
+            }
+
+            #fs-sidebar-header {
+                padding: 6px 8px !important;
+            }
+
+            .fs-draw-btn,
+            .fs-trainer-btn,
+            .fs-draw-clear {
+                font-size: 9px !important;
+                padding: 5px 2px !important;
+            }
+
+            .fs-ind-btn {
+                font-size: 8.5px !important;
+                padding: 3px 5px !important;
+            }
+
+            .fs-ind-dot {
+                margin-right: 3px !important;
             }
 
             .fs-sel {
@@ -29922,29 +30058,33 @@
             }
 
             .fs-pill {
-                padding: 3px 6px !important;
-                font-size: 9px !important;
+                padding: 3px 0 !important;
+                font-size: 8.5px !important;
             }
 
             .fs-ticker-item {
-                padding: 3px 10px !important;
-                font-size: 11px !important;
+                padding: 3px 6px !important;
+                font-size: 10.5px !important;
             }
 
             #fs-ticker-search {
                 font-size: 11px !important;
-                padding: 6px 10px 6px 24px !important;
+                padding: 6px 8px 6px 22px !important;
             }
 
             #fs-sidebar-header img {
                 height: 16px !important;
             }
 
-            /* The toggle's inline left (176px) matches the desktop sidebar; on
-               mobile the sidebar is 140px, so the button floated 36px into the
-               chart. Track the narrower width while the sidebar is open. */
-            #fs-chart-modal:not(.fs-sb-hidden) #fs-sidebar-toggle {
-                left: 140px !important;
+            /* The handle and the peek overlay follow the 112px mobile width. */
+            #fs-chart-modal:not(.fs-sb-hidden) #fs-sidebar-toggle,
+            #fs-chart-modal.fs-sb-peek #fs-sidebar-toggle {
+                left: 112px !important;
+            }
+
+            #fs-chart-modal.fs-sb-peek #fs-sidebar.fs-sidebar-collapsed {
+                width: 112px !important;
+                min-width: 112px !important;
             }
 
             /* Reduce replay buttons */
@@ -30054,9 +30194,11 @@
     </style>
     <div id="fs-chart-modal"
         style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; width:100%; height:100%; background:var(--bg); z-index:99999; flex-direction:row; overflow:hidden;">
-        <!-- Sidebar toggle button -->
-        <button id="fs-sidebar-toggle" style="left:176px;" onclick="window.toggleFsSidebar()"
-            title="Hide / Show Sidebar">◀</button>
+        <!-- Sidebar handle: a slim tab on the sidebar's edge. Click toggles,
+             hovering it while collapsed peeks the sidebar over the chart, and
+             S / [ toggle from the keyboard. Positioned by CSS (fs-sb-hidden). -->
+        <button id="fs-sidebar-toggle" onclick="window.toggleFsSidebar()"
+            title="Hide sidebar (S)" aria-label="Hide sidebar"><span class="fs-sb-glyph">‹</span></button>
         <!-- Left Panel: Apple-style sidebar -->
         <div id="fs-sidebar">
             <!-- Header: Logo -->
@@ -31121,6 +31263,7 @@
         (function () {
             window.openFullScreenChart = function () {
                 document.getElementById('fs-chart-modal').style.display = 'flex';
+                if (typeof window._fsSidebarInit === 'function') window._fsSidebarInit();
 
                 /* Index history is its own 0.7 MB parquet that nothing else in
                    the app touches, and it used to begin loading only when an
@@ -31220,29 +31363,98 @@
 
             window.closeFullScreenChart = function () {
                 window.stopFsReplay();
-                document.getElementById('fs-chart-modal').style.display = 'none';
+                const m = document.getElementById('fs-chart-modal');
+                m.classList.remove('fs-sb-peek');
+                m.style.display = 'none';
             };
 
             // ── Sidebar toggle ──
-            window.toggleFsSidebar = function () {
+            /* The choice is remembered (fs_sidebar_collapsed). With nothing
+               saved, a phone starts collapsed — the chart is the point of a
+               small screen and the sidebar is one tap (or edge-hover) away. */
+            const _FS_SB_KEY = 'fs_sidebar_collapsed';
+            let _fsSbPeekTimer = null;
+            function _fsSbSetCollapsed(collapsed, opts) {
                 const sb = document.getElementById('fs-sidebar');
                 const btn = document.getElementById('fs-sidebar-toggle');
-                if (!sb || !btn) return;
-                const isCollapsed = sb.classList.toggle('fs-sidebar-collapsed');
                 const modal = document.getElementById('fs-chart-modal');
-                if (modal) modal.classList.toggle('fs-sb-hidden', isCollapsed);
-                if (isCollapsed) {
-                    btn.style.left = '0px';
-                    btn.innerHTML = '▶';
-                    btn.title = 'Show Sidebar';
-                } else {
-                    btn.style.left = '176px';
-                    btn.innerHTML = '◀';
-                    btn.title = 'Hide Sidebar';
+                if (!sb || !btn || !modal) return;
+                const was = sb.classList.contains('fs-sidebar-collapsed');
+                _fsSbPeek(false);
+                sb.classList.toggle('fs-sidebar-collapsed', collapsed);
+                modal.classList.toggle('fs-sb-hidden', collapsed);
+                btn.title = collapsed ? 'Show sidebar (S) — hover to peek' : 'Hide sidebar (S)';
+                btn.setAttribute('aria-label', collapsed ? 'Show sidebar' : 'Hide sidebar');
+                if (!(opts && opts.silent)) {
+                    try { localStorage.setItem(_FS_SB_KEY, collapsed ? '1' : '0'); } catch (e) { }
                 }
-                // Re-render chart after transition to use full width
-                setTimeout(() => { window.renderFullScreenChart(); }, 280);
+                // Re-render chart after transition to use the new width
+                if (was !== collapsed && modal.style.display === 'flex') {
+                    setTimeout(() => { window.renderFullScreenChart(); }, 280);
+                }
+            }
+            function _fsSbPeek(on) {
+                const modal = document.getElementById('fs-chart-modal');
+                const sb = document.getElementById('fs-sidebar');
+                if (!modal || !sb) return;
+                clearTimeout(_fsSbPeekTimer);
+                if (on && !sb.classList.contains('fs-sidebar-collapsed')) return;
+                modal.classList.toggle('fs-sb-peek', !!on);
+            }
+            window.toggleFsSidebar = function (force) {
+                const sb = document.getElementById('fs-sidebar');
+                if (!sb) return;
+                const collapsed = typeof force === 'boolean' ? force : !sb.classList.contains('fs-sidebar-collapsed');
+                _fsSbSetCollapsed(collapsed);
             };
+            /* Called when the modal opens: apply the saved choice, else the
+               size-based default. Silent — a default is not a preference. */
+            window._fsSidebarInit = function () {
+                let saved = null;
+                try { saved = localStorage.getItem(_FS_SB_KEY); } catch (e) { }
+                let collapsed;
+                if (saved === '1' || saved === '0') collapsed = saved === '1';
+                else collapsed = Math.min(window.innerWidth, window.innerHeight) <= 500;
+                _fsSbSetCollapsed(collapsed, { silent: true });
+            };
+            (function () {
+                const modal = document.getElementById('fs-chart-modal');
+                const sb = document.getElementById('fs-sidebar');
+                const btn = document.getElementById('fs-sidebar-toggle');
+                if (!modal || !sb || !btn) return;
+                const canHover = window.matchMedia && window.matchMedia('(hover: hover)').matches;
+                // Hover the handle while collapsed → peek; leave the sidebar → hide.
+                if (canHover) {
+                    btn.addEventListener('mouseenter', function () { _fsSbPeek(true); });
+                    const leave = function () {
+                        clearTimeout(_fsSbPeekTimer);
+                        _fsSbPeekTimer = setTimeout(function () { _fsSbPeek(false); }, 220);
+                    };
+                    const stay = function () { clearTimeout(_fsSbPeekTimer); };
+                    btn.addEventListener('mouseleave', leave);
+                    sb.addEventListener('mouseleave', leave);
+                    sb.addEventListener('mouseenter', stay);
+                }
+                // Touch: a swipe in from the left edge peeks; tapping the chart
+                // while peeking hides it again. The handle itself still toggles.
+                let edgeX = null;
+                modal.addEventListener('touchstart', function (e) {
+                    const t = e.touches && e.touches[0];
+                    if (!t) return;
+                    const rect = modal.getBoundingClientRect();
+                    edgeX = (sb.classList.contains('fs-sidebar-collapsed') && !modal.classList.contains('fs-sb-peek') && (t.clientX - rect.left) <= 18) ? t.clientX : null;
+                }, { passive: true });
+                modal.addEventListener('touchmove', function (e) {
+                    const t = e.touches && e.touches[0];
+                    if (edgeX === null || !t) return;
+                    if (t.clientX - edgeX > 36) { edgeX = null; _fsSbPeek(true); }
+                }, { passive: true });
+                modal.addEventListener('pointerdown', function (e) {
+                    if (!modal.classList.contains('fs-sb-peek')) return;
+                    if (sb.contains(e.target) || btn.contains(e.target)) return;
+                    _fsSbPeek(false);
+                }, true);
+            })();
 
             window.selectFsDuration = function (val) {
                 const input = document.getElementById('fs-duration-select');
@@ -31968,19 +32180,6 @@
                         const atrToggle = document.getElementById('fs-atr-mult-toggle');
                         if (atrToggle) atrToggle.style.display = isHold ? 'flex' : 'none';
                     }
-                }
-
-                // Position the sidebar-toggle just below the mini financial card / Fav-Hold overlay
-                // (the card's cell size scales with window width, so its height is not fixed — measure it
-                // instead of hardcoding a top offset that would overlap on wide screens).
-                const sbToggleBtn = document.getElementById('fs-sidebar-toggle');
-                if (sbToggleBtn) {
-                    const overlayTop = 12; // matches the floating info/actions overlay wrapper's inline top:12px
-                    const gap = 14;
-                    const cardH = (cardEl && cardEl.style.display !== 'none') ? cardEl.offsetHeight : 0;
-                    const fhActionsEl = document.getElementById('fs-fh-actions-left');
-                    const fhH = fhActionsEl ? fhActionsEl.offsetHeight : 0;
-                    sbToggleBtn.style.top = (overlayTop + Math.max(cardH, fhH) + gap) + 'px';
                 }
 
                 /* An open position is marked against its own stock, so the
@@ -35226,6 +35425,13 @@
                     // Space: open the ticker search (same as the main page).
                     e.preventDefault();
                     if (typeof window.gsxOpen === 'function') window.gsxOpen('chart');
+                    return;
+                }
+
+                if (e.key === 's' || e.key === 'S' || e.key === '[') {
+                    // S or [ : hide / show the sidebar
+                    e.preventDefault();
+                    window.toggleFsSidebar();
                     return;
                 }
 
