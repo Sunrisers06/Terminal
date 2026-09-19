@@ -931,6 +931,51 @@
             border-color: var(--pop-purple);
         }
 
+        /* Fundamentals grid inside the Top Performers panel */
+        .top-fund-hint {
+            font-weight: 400;
+            opacity: 0.6;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+
+        .top-fund-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 5px;
+        }
+
+        .top-fund-in {
+            width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
+            background: var(--bg);
+            border: 1px solid var(--border2);
+            border-radius: 6px;
+            padding: 5px 6px;
+            font-size: 10.5px;
+            font-family: 'Lexend', sans-serif;
+            color: var(--text);
+            outline: none;
+            transition: border-color .2s;
+            -moz-appearance: textfield;
+        }
+
+        .top-fund-in::-webkit-outer-spin-button,
+        .top-fund-in::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        .top-fund-in:focus {
+            border-color: var(--pop-purple);
+        }
+
+        .top-fund-in.top-fund-set {
+            border-color: rgba(168, 85, 247, 0.6);
+            background: rgba(168, 85, 247, 0.08);
+        }
+
         select.top-n-select option {
             background: var(--surface);
             color: var(--text);
@@ -2128,6 +2173,293 @@
             display: block;
         }
 
+        /* ═══ REFRESH OVERLAY ═══ */
+        #refresh-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 100050;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            background: rgba(6, 8, 14, 0.94);
+            backdrop-filter: blur(14px) saturate(140%);
+            -webkit-backdrop-filter: blur(14px) saturate(140%);
+            opacity: 0;
+            transition: opacity 0.25s ease;
+            overflow: hidden;
+        }
+
+        #refresh-overlay.show {
+            display: flex;
+        }
+
+        /* The legacy loading logo and the "Fetching…" status grid would
+           otherwise show through behind the card; the card replaces them. */
+        body.rf-open #loading,
+        body.rf-open #sbox {
+            visibility: hidden !important;
+        }
+
+        #refresh-overlay.in {
+            opacity: 1;
+        }
+
+        .rf-card {
+            width: min(560px, 100%);
+            max-width: calc(100vw - 32px);
+            max-height: calc(100vh - 32px);
+            overflow-y: auto;
+            overflow-x: hidden;
+            box-sizing: border-box;
+            background: linear-gradient(180deg, rgba(24, 26, 36, 0.96), rgba(14, 16, 24, 0.98));
+            border: 1px solid rgba(255, 255, 255, 0.10);
+            border-radius: 20px;
+            padding: 26px 24px 20px;
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(168, 85, 247, 0.12), 0 0 60px rgba(168, 85, 247, 0.12);
+            font-family: 'Lexend', sans-serif;
+            text-align: center;
+            animation: fadeUp 0.3s ease;
+        }
+
+        .rf-logo-wrap {
+            position: relative;
+            width: 128px;
+            height: 128px;
+            margin: 6px auto 14px;
+        }
+
+        .rf-logo {
+            position: absolute;
+            inset: 24px;
+            width: 80px;
+            height: 80px;
+            filter: brightness(0) invert(1) drop-shadow(0 0 14px rgba(168, 85, 247, 0.55));
+            animation: rfPulse 1.8s ease-in-out infinite;
+        }
+
+        .rf-ring {
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+            mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+        }
+
+        .rf-ring-a {
+            background: conic-gradient(from 0deg, transparent 0 55%, #a855f7 80%, #38bdf8 100%);
+            animation: rfSpin 1.4s linear infinite;
+        }
+
+        .rf-ring-b {
+            inset: 9px;
+            background: conic-gradient(from 180deg, transparent 0 65%, rgba(56, 189, 248, 0.9) 100%);
+            animation: rfSpin 2.6s linear infinite reverse;
+            opacity: 0.8;
+        }
+
+        .rf-orbit {
+            position: absolute;
+            inset: 0;
+            animation: rfSpin 3.2s linear infinite;
+        }
+
+        .rf-orbit i {
+            position: absolute;
+            top: -4px;
+            left: 50%;
+            width: 9px;
+            height: 9px;
+            margin-left: -4.5px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 0 0 10px 3px rgba(168, 85, 247, 0.8);
+        }
+
+        #refresh-overlay.done .rf-ring,
+        #refresh-overlay.done .rf-orbit {
+            animation-play-state: paused;
+            opacity: 0.25;
+        }
+
+        #refresh-overlay.done .rf-logo {
+            animation: none;
+            filter: brightness(0) invert(1) drop-shadow(0 0 18px rgba(34, 197, 94, 0.7));
+        }
+
+        @keyframes rfSpin {
+            to { transform: rotate(360deg); }
+        }
+
+        @keyframes rfPulse {
+            0%, 100% { transform: scale(1); opacity: 0.92; }
+            50% { transform: scale(1.06); opacity: 1; }
+        }
+
+        .rf-title {
+            font-size: 17px;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: 0.02em;
+        }
+
+        .rf-sub {
+            font-size: 11.5px;
+            color: var(--text3);
+            margin-top: 3px;
+            min-height: 15px;
+        }
+
+        .rf-bar {
+            height: 5px;
+            margin: 14px 0 6px;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.08);
+            overflow: hidden;
+        }
+
+        .rf-bar-fill {
+            height: 100%;
+            width: 0;
+            border-radius: 5px;
+            background: linear-gradient(90deg, #a855f7, #38bdf8);
+            background-size: 200% 100%;
+            animation: rfShimmer 1.6s linear infinite;
+            transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        #refresh-overlay.done .rf-bar-fill {
+            background: #22c55e;
+            animation: none;
+        }
+
+        @keyframes rfShimmer {
+            from { background-position: 200% 0; }
+            to { background-position: -200% 0; }
+        }
+
+        .rf-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10.5px;
+            color: var(--text3);
+            font-variant-numeric: tabular-nums;
+            margin-bottom: 14px;
+        }
+
+        .rf-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 6px;
+            text-align: left;
+        }
+
+        .rf-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+            overflow: hidden;
+            padding: 7px 10px;
+            border-radius: 9px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            font-size: 11.5px;
+            color: var(--text2);
+            transition: background 0.25s, border-color 0.25s, color 0.25s;
+        }
+
+        .rf-row .rf-ico {
+            font-size: 14px;
+            width: 18px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .rf-row .rf-name {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .rf-row .rf-note {
+            font-size: 9.5px;
+            color: var(--text3);
+            white-space: nowrap;
+            max-width: 45%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex-shrink: 1;
+        }
+
+        .rf-row .rf-st {
+            width: 18px;
+            height: 18px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .rf-row.queued { opacity: 0.55; }
+
+        .rf-row.busy {
+            color: #fff;
+            border-color: rgba(168, 85, 247, 0.45);
+            background: linear-gradient(90deg, rgba(168, 85, 247, 0.16), rgba(56, 189, 248, 0.10), rgba(168, 85, 247, 0.16));
+            background-size: 200% 100%;
+            animation: rfShimmer 1.4s linear infinite;
+        }
+
+        .rf-row.busy .rf-st::before {
+            content: '';
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-top-color: #38bdf8;
+            animation: rfSpin 0.7s linear infinite;
+        }
+
+        .rf-row.ok {
+            border-color: rgba(34, 197, 94, 0.35);
+            background: rgba(34, 197, 94, 0.08);
+            color: #d1fae5;
+        }
+
+        .rf-row.ok .rf-st {
+            color: #22c55e;
+            animation: rfPop 0.35s cubic-bezier(0.2, 1.4, 0.4, 1);
+        }
+
+        .rf-row.err {
+            border-color: rgba(244, 63, 94, 0.45);
+            background: rgba(244, 63, 94, 0.10);
+            color: #fecdd3;
+        }
+
+        .rf-row.err .rf-st { color: #f43f5e; }
+
+        .rf-row.skip {
+            opacity: 0.5;
+        }
+
+        .rf-row.skip .rf-st { color: var(--text3); }
+
+        @keyframes rfPop {
+            0% { transform: scale(0.3); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        @media (max-width: 480px) {
+            .rf-grid { grid-template-columns: 1fr; }
+            .rf-card { padding: 20px 14px 14px; border-radius: 16px; }
+        }
+
         .s-warn {
             background: var(--weak-bg);
             border: 1px solid var(--weak-brd);
@@ -3042,6 +3374,51 @@
             margin-top: 8px;
             width: 100%;
             padding-bottom: 2px;
+        }
+
+        /* Column-style result cell */
+        .mc-v2 {
+            padding-bottom: 5px;
+        }
+
+        .mc-val-row {
+            display: flex;
+            align-items: baseline;
+            gap: 4px;
+            min-width: 0;
+        }
+
+        .mc-val-row .mc-val {
+            margin-bottom: 0;
+            flex: 0 1 auto;
+        }
+
+        .mc-qoq {
+            font-size: 8.5px;
+            font-weight: 700;
+            font-family: 'Lexend', sans-serif;
+            padding: 0 4px;
+            border-radius: 3px;
+            line-height: 1.4;
+            white-space: nowrap;
+            color: var(--text3);
+            border: 1px solid transparent;
+        }
+
+        .mc-qoq-lbl {
+            font-size: 7px;
+            font-weight: 700;
+            color: var(--text3);
+            letter-spacing: 0.06em;
+            opacity: 0.7;
+        }
+
+        .mc-col-chart {
+            display: block;
+            width: 100%;
+            height: auto;
+            margin-top: 3px;
+            overflow: visible;
         }
 
         .h-bar-row {
@@ -5239,6 +5616,253 @@
             background: var(--surface3);
         }
 
+        #peer-count-val::-webkit-outer-spin-button,
+        #peer-count-val::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        #peer-popup-fs {
+            cursor: pointer;
+            color: var(--text3);
+            font-size: 12px;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            flex-shrink: 0;
+            margin-left: 2px;
+            transition: all .15s;
+        }
+
+        #peer-popup-fs:hover {
+            color: #22d3ee;
+            background: rgba(34, 211, 238, 0.12);
+        }
+
+        #peer-body {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            flex: 1;
+        }
+
+        /* ── Full-screen comparison ── */
+        #peer-popup.peer-fs {
+            position: fixed !important;
+            inset: 0 !important;
+            left: 0 !important;
+            top: 0 !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            height: 100dvh !important;
+            max-width: none !important;
+            max-height: none !important;
+            transform: none !important;
+            border-radius: 0 !important;
+            border: none;
+            padding-top: env(safe-area-inset-top, 0px);
+        }
+
+        /* While the element itself is in browser fullscreen (Fullscreen API) */
+        #peer-popup:fullscreen {
+            background: #0a0a10;
+        }
+
+        #peer-popup.peer-fs #peer-popup-header {
+            cursor: default;
+        }
+
+        #peer-params-tech {
+            display: none;
+            gap: 4px;
+            padding: 0 12px 6px;
+            flex-wrap: wrap;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.2);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            flex-shrink: 0;
+        }
+
+        #peer-popup.peer-fs #peer-params-tech {
+            display: flex;
+        }
+
+        #peer-popup.peer-fs #peer-params {
+            border-bottom: none;
+        }
+
+        .peer-params-tech-lbl {
+            font-size: 8px;
+            font-weight: 800;
+            letter-spacing: 0.1em;
+            color: rgba(168, 85, 247, 0.8);
+            margin-right: 2px;
+        }
+
+        #peer-params-tech .peer-param-pill.active {
+            background: rgba(168, 85, 247, 0.18);
+            border-color: #a855f7;
+            color: #c084fc;
+            box-shadow: 0 0 8px rgba(168, 85, 247, 0.25);
+        }
+
+        #peer-popup.peer-fs #peer-body {
+            flex-direction: row;
+            overflow: hidden;
+        }
+
+        #peer-popup.peer-fs #peer-octa-wrap {
+            flex: 1 1 auto;
+            min-width: 0;
+            min-height: 0;
+            max-height: none;
+            height: auto;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 14px;
+            overflow: auto;
+        }
+
+        /* JS (_fitCharts) sets explicit px sizes from the measured area */
+        #peer-popup.peer-fs #peer-octa-svg {
+            width: auto;
+            height: auto;
+            margin: 0;
+        }
+
+        #peer-popup.peer-fs #peer-alt-svg {
+            max-width: none;
+            margin: 0;
+            display: block;
+            height: auto;
+        }
+
+        #peer-popup.peer-fs #peer-list {
+            flex: 0 0 300px;
+            max-height: none !important;
+            height: auto;
+            min-height: 0;
+            border-left: 1px solid rgba(255, 255, 255, 0.06);
+            padding: 8px 14px 14px;
+        }
+
+        /* iPad / small laptop: narrower list */
+        @media (max-width: 1100px) {
+            #peer-popup.peer-fs #peer-list {
+                flex-basis: 240px;
+            }
+        }
+
+        /* Phone-height landscape: pills on one scrollable line, tighter chrome */
+        @media (max-height: 520px) {
+            #peer-popup.peer-fs #peer-params,
+            #peer-popup.peer-fs #peer-params-tech,
+            #peer-popup.peer-fs #peer-chart-types {
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                scrollbar-width: none;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            #peer-popup.peer-fs #peer-params::-webkit-scrollbar,
+            #peer-popup.peer-fs #peer-params-tech::-webkit-scrollbar {
+                display: none;
+            }
+
+            #peer-popup.peer-fs #peer-params,
+            #peer-popup.peer-fs #peer-params-tech,
+            #peer-popup.peer-fs #peer-tools {
+                padding-top: 4px;
+                padding-bottom: 4px;
+            }
+
+            #peer-popup.peer-fs #peer-list {
+                flex-basis: 200px;
+            }
+        }
+
+        #peer-popup.peer-fs .peer-item {
+            padding: 5px 0;
+        }
+
+        #peer-popup.peer-fs .peer-name,
+        #peer-popup.peer-fs .peer-val {
+            font-size: 11px;
+        }
+
+        #peer-popup.peer-fs .peer-bar-wrap {
+            width: 80px;
+        }
+
+        #peer-popup.peer-fs .peer-param-pill {
+            font-size: 10px;
+            padding: 4px 11px;
+        }
+
+        #peer-popup.peer-fs .peer-ct-pill {
+            font-size: 10px;
+            padding: 4px 10px;
+        }
+
+        /* Phone portrait: chart on top (fills what the pills leave), list below */
+        @media (max-width: 700px) and (orientation: portrait) {
+            #peer-popup.peer-fs #peer-body {
+                flex-direction: column;
+                overflow: hidden;
+            }
+
+            #peer-popup.peer-fs #peer-octa-wrap {
+                flex: 1 1 auto;
+                min-height: 220px;
+                padding: 8px 10px;
+            }
+
+            #peer-popup.peer-fs #peer-list {
+                flex: 0 0 34%;
+                max-height: 34% !important;
+                border-left: none;
+                border-top: 1px solid rgba(255, 255, 255, 0.06);
+                padding: 6px 12px 10px;
+            }
+
+            #peer-popup.peer-fs #peer-params,
+            #peer-popup.peer-fs #peer-params-tech,
+            #peer-popup.peer-fs #peer-chart-types {
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                scrollbar-width: none;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            #peer-popup.peer-fs #peer-params::-webkit-scrollbar,
+            #peer-popup.peer-fs #peer-params-tech::-webkit-scrollbar,
+            #peer-popup.peer-fs #peer-chart-types::-webkit-scrollbar {
+                display: none;
+            }
+
+            #peer-popup.peer-fs #peer-tools {
+                flex-wrap: wrap;
+            }
+
+            #peer-popup.peer-fs .peer-param-pill,
+            #peer-popup.peer-fs .peer-ct-pill {
+                font-size: 10px;
+                padding: 5px 10px;
+            }
+
+            #peer-popup.peer-fs #peer-popup-fs,
+            #peer-popup.peer-fs #peer-popup-close {
+                width: 28px;
+                height: 28px;
+                font-size: 15px;
+            }
+        }
+
         /* ══════════════════════════════════════════════════════
    TECH SCREENER (SuperStar sub-category)
 ══════════════════════════════════════════════════════ */
@@ -5737,6 +6361,180 @@
             box-shadow: 0 0 8px rgba(34, 211, 238, 0.25);
         }
 
+        /* Chart type + add-ticker row */
+        #peer-tools {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 6px;
+            padding: 6px 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            flex-shrink: 0;
+        }
+
+        #peer-chart-types {
+            display: flex;
+            gap: 3px;
+            flex-wrap: wrap;
+            min-width: 0;
+        }
+
+        .peer-ct-pill {
+            padding: 3px 7px;
+            border-radius: 6px;
+            font-size: 8.5px;
+            font-weight: 800;
+            letter-spacing: 0.03em;
+            cursor: pointer;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text3);
+            white-space: nowrap;
+            transition: all .15s;
+        }
+
+        .peer-ct-pill:hover {
+            color: #fff;
+            border-color: rgba(255, 255, 255, 0.25);
+        }
+
+        .peer-ct-pill.active {
+            background: #22d3ee;
+            border-color: #22d3ee;
+            color: #06202a;
+            box-shadow: 0 0 10px rgba(34, 211, 238, 0.35);
+        }
+
+        #peer-add-wrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+
+        #peer-add-inp {
+            width: 74px;
+            padding: 3px 7px;
+            font-size: 9px;
+            font-family: 'Lexend', sans-serif;
+            font-weight: 700;
+            color: #22d3ee;
+            background: rgba(34, 211, 238, 0.06);
+            border: 1px dashed rgba(34, 211, 238, 0.4);
+            border-radius: 6px;
+            outline: none;
+            text-transform: uppercase;
+        }
+
+        #peer-add-inp:focus {
+            border-style: solid;
+            background: rgba(34, 211, 238, 0.12);
+        }
+
+        #peer-add-inp::placeholder {
+            color: rgba(34, 211, 238, 0.6);
+            text-transform: none;
+        }
+
+        #peer-y-param {
+            display: none;
+            max-width: 80px;
+            padding: 3px 4px;
+            font-size: 9px;
+            font-family: 'Lexend', sans-serif;
+            font-weight: 700;
+            color: var(--text2);
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 6px;
+            outline: none;
+        }
+
+        #peer-popup.peer-ct-scatter #peer-y-param {
+            display: block;
+        }
+
+        #peer-add-sugg {
+            position: absolute;
+            top: calc(100% + 4px);
+            right: 0;
+            width: 200px;
+            max-height: 150px;
+            overflow-y: auto;
+            background: #12121a;
+            border: 1px solid rgba(34, 211, 238, 0.35);
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+            z-index: 5;
+        }
+
+        #peer-add-sugg[hidden] {
+            display: none;
+        }
+
+        .peer-sugg-row {
+            display: flex;
+            gap: 6px;
+            align-items: baseline;
+            padding: 5px 9px;
+            cursor: pointer;
+            font-size: 9.5px;
+        }
+
+        .peer-sugg-row:hover {
+            background: rgba(34, 211, 238, 0.12);
+        }
+
+        .peer-sugg-tk {
+            font-weight: 800;
+            color: #22d3ee;
+            flex-shrink: 0;
+        }
+
+        .peer-sugg-nm {
+            color: var(--text3);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #peer-extra-chips {
+            display: none;
+            flex-wrap: wrap;
+            gap: 4px;
+            padding: 5px 12px 0;
+        }
+
+        #peer-extra-chips.has {
+            display: flex;
+        }
+
+        .peer-extra-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 4px 2px 7px;
+            border-radius: 12px;
+            font-size: 8.5px;
+            font-weight: 800;
+            color: #fbbf24;
+            background: rgba(251, 191, 36, 0.10);
+            border: 1px solid rgba(251, 191, 36, 0.4);
+        }
+
+        .peer-extra-chip b {
+            cursor: pointer;
+            font-size: 10px;
+            line-height: 1;
+            padding: 0 2px;
+            color: rgba(251, 191, 36, 0.7);
+        }
+
+        .peer-extra-chip b:hover {
+            color: #fff;
+        }
+
         /* Octagon chart area */
         #peer-octa-wrap {
             padding: 10px 12px 4px;
@@ -5744,12 +6542,33 @@
             align-items: center;
             justify-content: center;
             flex-shrink: 0;
+            max-height: 56vh;
+            overflow-y: auto;
         }
 
         #peer-octa-svg {
             width: 200px;
             height: 200px;
             overflow: visible;
+        }
+
+        #peer-alt-svg {
+            width: 100%;
+            height: auto;
+            overflow: visible;
+            font-family: 'Lexend', sans-serif;
+        }
+
+        #peer-alt-svg .peer-svg-link {
+            cursor: pointer;
+        }
+
+        #peer-alt-svg .peer-svg-link:hover {
+            fill: #22d3ee;
+        }
+
+        #peer-popup {
+            max-height: 92vh;
         }
 
         /* Legend / ranked list */
@@ -6403,6 +7222,11 @@
                 padding: 9px 13px;
             }
 
+            .top-fund-in {
+                font-size: 13px;
+                padding: 8px 6px;
+            }
+
             .top-apply-btn,
             .top-reset-btn {
                 font-size: 14px;
@@ -6605,6 +7429,24 @@
 
 
 
+    <!-- Refresh overlay: shown by refreshDataFromNetwork. Every data source
+         gets a row whose state the loaders update through window._refreshUI. -->
+    <div id="refresh-overlay" aria-live="polite" aria-hidden="true">
+        <div class="rf-card">
+            <div class="rf-logo-wrap">
+                <span class="rf-ring rf-ring-a"></span>
+                <span class="rf-ring rf-ring-b"></span>
+                <span class="rf-orbit"><i></i></span>
+                <img class="rf-logo" src="https://lh3.googleusercontent.com/d/1pPqrvLPPH2Mh9aqjQgG1eAnoziFAxtWg" alt="">
+            </div>
+            <div class="rf-title" id="rf-title">Refreshing data</div>
+            <div class="rf-sub" id="rf-sub">Contacting data sources…</div>
+            <div class="rf-bar"><div class="rf-bar-fill" id="rf-bar-fill"></div></div>
+            <div class="rf-meta"><span id="rf-count">0 / 0</span><span id="rf-elapsed">0.0s</span></div>
+            <div class="rf-grid" id="rf-grid"></div>
+        </div>
+    </div>
+
     <div id="top-filter-panel">
         <div class="top-panel-header">
             <span class="top-panel-title">🏆 Top Performers</span>
@@ -6639,6 +7481,28 @@
                 <option value="20">Top 20</option>
                 <option value="25">Top 25</option>
             </select>
+        </div>
+
+        <!-- Fundamental minimums. These mirror the main filter bar's inputs
+             (one source of truth): opening the panel reads them, Apply writes
+             them back, so the Top-N is ranked only among stocks that clear them. -->
+        <div class="top-panel-section">
+            <span class="top-panel-label">Min Fundamentals <span class="top-fund-hint">(blank = any)</span></span>
+            <div class="top-fund-grid" id="top-fund-grid">
+                <input type="number" class="top-fund-in" data-main="min-mcap" placeholder="MCap" title="Min Market Cap (Cr)">
+                <input type="number" class="top-fund-in" data-main="min-eps" placeholder="EPS" title="Min EPS Performance">
+                <input type="number" class="top-fund-in" data-main="min-smr" placeholder="SMR" title="Min SMR Score">
+                <input type="number" class="top-fund-in" data-main="min-dur" placeholder="Dur" title="Min Durability">
+                <input type="number" class="top-fund-in" data-main="min-gwth" placeholder="Gwth" title="Min Growth">
+                <input type="number" class="top-fund-in" data-main="min-prof" placeholder="Prof" title="Min Profitability">
+                <input type="number" class="top-fund-in" data-main="min-cons" placeholder="Qlty" title="Min Consistency / Quality">
+                <input type="number" class="top-fund-in" data-main="min-balsht" placeholder="Bal" title="Min Balance Sheet">
+                <input type="number" class="top-fund-in" data-main="min-val" placeholder="Val" title="Min Valuation Attractive">
+                <input type="number" class="top-fund-in" data-main="min-ebitp" placeholder="EBIT" title="Min EBITDA Performance">
+                <input type="number" class="top-fund-in" data-main="min-revp" placeholder="Sale" title="Min Revenue Performance">
+                <input type="number" class="top-fund-in" data-main="min-npp" placeholder="NP" title="Min Net Profit Performance">
+                <input type="number" class="top-fund-in" data-main="min-cfopat" placeholder="CFO/P" title="Min CFO / PAT">
+            </div>
         </div>
 
         <div class="top-panel-actions">
@@ -7382,7 +8246,12 @@
                 <span class="fl">Filter</span>
                 <select id="view-mode-filter" class="fi w110" onchange="setViewMode(this.value)"
                     title="Switch company card view">
-                    <option value="latest" selected>Latest Result</option>
+                    <option value="latest" selected>Result · Columns</option>
+                    <option value="slope">Result · Slope</option>
+                    <option value="waterfall">Result · Waterfall</option>
+                    <option value="meter">Result · Meter</option>
+                    <option value="tiles">Result · Tiles</option>
+                    <option value="classic">Result · Classic</option>
                     <option value="chart">Chart</option>
                 </select>
                 <select id="card-chart-period-filter" class="fi w90" style="display:none;"
@@ -7431,6 +8300,23 @@
                     <option value="all">All Investors</option>
                     <option value="superstar">⭐ All SuperStars</option>
                 </select>
+                <select id="ipo-filter" class="fi w110" onchange="doFilter()"
+                    title="Recent listings — stocks whose price history starts within the last 1 or 2 years">
+                    <option value="all">All Listings</option>
+                    <option value="1y">🆕 IPO ≤ 1Y</option>
+                    <option value="2y">🆕 IPO ≤ 2Y</option>
+                </select>
+                <input type="number" id="near-52w" class="fi w110" placeholder="Near 52W Hi %"
+                    title="Price within X% of its 52-week high (e.g. 5)" oninput="onSearchInput()" min="0" step="0.5">
+                <input type="number" id="tight-base" class="fi w110" placeholder="Tight 8W %"
+                    title="Total high-low range of the last 8 weeks is at most X% of price (e.g. 15) — quiet base"
+                    oninput="onSearchInput()" min="0" step="1">
+                <input type="number" id="vol-surge" class="fi w110" placeholder="Vol Surge ×"
+                    title="Latest week's volume is at least X times its 20-week average, on an up week (e.g. 2)"
+                    oninput="onSearchInput()" min="0" step="0.5">
+                <input type="number" id="min-deliv" class="fi w110" placeholder="Min Deliv %"
+                    title="Average delivery % of the last 4 weeks is at least X and above the 26-week average — real accumulation"
+                    oninput="onSearchInput()" min="0" step="5">
                 <label class="fi-checkbox" title="Show only stocks with Post-Earnings Announcement Drift setups">
                     <input type="checkbox" id="pead-filter" onchange="doFilter()">
                     <span>📊 PEAD</span>
@@ -7443,6 +8329,11 @@
                     title="Show only stocks where a Quarter/Year/All-time high or low Volume record (Q/Y/E/q/y/e) landed in the last 2 candles">
                     <input type="checkbox" id="volms-filter" onchange="doFilter()">
                     <span>🎯 Vol QYE</span>
+                </label>
+                <label class="fi-checkbox"
+                    title="Accumulation: A/D line or OBV at a 26-week high while price is still below its 26-week high">
+                    <input type="checkbox" id="accum-filter" onchange="doFilter()">
+                    <span>📥 Accum</span>
                 </label>
                 <button class="clear-btn" onclick="window.resetAllAppFilters()">✖ Clear</button>
                 <select id="sort-select" class="fi sort-fi" onchange="doFilter()">
@@ -7599,7 +8490,7 @@
             const dealSearch = document.getElementById('deal-search');
             if (dealSearch) dealSearch.value = '';
 
-            ['qtr-filter', 'sec-filter', 'ind-filter', 'investor-filter'].forEach(id => {
+            ['qtr-filter', 'sec-filter', 'ind-filter', 'investor-filter', 'ipo-filter'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.value = 'all';
             });
@@ -7609,12 +8500,14 @@
             if (vcpFilter) vcpFilter.checked = false;
             const volmsFilter = document.getElementById('volms-filter');
             if (volmsFilter) volmsFilter.checked = false;
+            const accumFilter = document.getElementById('accum-filter');
+            if (accumFilter) accumFilter.checked = false;
             const idxFilter = document.getElementById('index-filter');
             if (idxFilter) {
                 idxFilter.value = Array.from(idxFilter.options).some(o => o.value === 'Nifty_ALL') ? 'Nifty_ALL' : 'all';
             }
 
-            ['min-mcap', 'min-eps', 'min-smr', 'min-dur', 'min-gwth', 'min-prof', 'min-cons', 'min-balsht', 'min-val', 'min-ebitp', 'min-revp', 'min-npp', 'min-cfopat', 'max-pivot-dist'].forEach(id => {
+            ['min-mcap', 'min-eps', 'min-smr', 'min-dur', 'min-gwth', 'min-prof', 'min-cons', 'min-balsht', 'min-val', 'min-ebitp', 'min-revp', 'min-npp', 'min-cfopat', 'max-pivot-dist', 'near-52w', 'tight-base', 'vol-surge', 'min-deliv'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.value = '';
             });
@@ -7622,7 +8515,7 @@
             const sortSel = document.getElementById('sort-select');
             if (sortSel) sortSel.value = 'sno';
             const viewModeSel = document.getElementById('view-mode-filter');
-            if (viewModeSel) { viewModeSel.value = 'latest'; if (typeof setViewMode === 'function') setViewMode('latest'); }
+            if (viewModeSel) { const st = window._cardResultStyle || 'latest'; viewModeSel.value = st; if (typeof setViewMode === 'function') setViewMode(st); }
             const colSel = document.getElementById('col-filter');
             if (colSel) { colSel.value = 'auto'; if (typeof updateColumnCount === 'function') updateColumnCount('auto'); }
 
@@ -8036,9 +8929,15 @@
             // ── _parquetToCSV: fetch a local .parquet file and return CSV text ──
             // Buffer cache so each file is only fetched once per session.
             const _pqBufCache = {};
+            /* The main refresh button empties this cache and sets _pqForceNet,
+               so every file is fetched again past the browser's HTTP cache —
+               before this, a "refresh" re-parsed the same bytes from memory. */
+            window._pqBufCacheClear = function () { Object.keys(_pqBufCache).forEach(k => { delete _pqBufCache[k]; }); };
+            window._pqForceNet = false;
+            const _pqUrl = f => window._pqForceNet ? f + '?_nc=' + Date.now() : f;
             window._parquetToCSV = async function (filename) {
                 if (!_pqBufCache[filename]) {
-                    const r = await fetch(filename);
+                    const r = await fetch(_pqUrl(filename));
                     if (!r.ok) throw new Error('HTTP ' + r.status + ' loading ' + filename);
                     _pqBufCache[filename] = await r.arrayBuffer();
                 }
@@ -8067,7 +8966,7 @@
             // Skips CSV serialization for high performance loading of large datasets like deals.
             window._parquetToRows = async function (filename) {
                 if (!_pqBufCache[filename]) {
-                    const r = await fetch(filename);
+                    const r = await fetch(_pqUrl(filename));
                     if (!r.ok) throw new Error('HTTP ' + r.status + ' loading ' + filename);
                     _pqBufCache[filename] = await r.arrayBuffer();
                 }
@@ -8518,6 +9417,216 @@
             return `<div class="h-chart">${rows}</div>`;
         }
 
+        /* ── Result column chart (default "Latest Result" style) ──
+           Three vertical columns — YoY quarter, previous quarter, current —
+           on a shared zero baseline, so a loss quarter visibly drops below
+           the line and the trajectory reads left→right at a glance. Value on
+           top of each column, quarter under it, a dotted trend path through
+           the tops, and the current column drawn brightest. Inline SVG with
+           a proportional viewBox: it scales with the cell and needs no JS
+           after render. The classic horizontal bars stay available through
+           the view-mode select ("Latest Result · Classic"). */
+        function buildResultColumnChart(yoyV, prevV, curV, qYoy, qPrev, qCur) {
+            const vals = [parseFloat(yoyV) || 0, parseFloat(prevV) || 0, parseFloat(curV) || 0];
+            const labels = [shortQtr(qYoy), shortQtr(qPrev), shortQtr(qCur)];
+            const W = 100, TOP = 10, BOT = 35, LBL_Y = 44;
+            const maxPos = Math.max(0, ...vals), minNeg = Math.min(0, ...vals);
+            const range = (maxPos - minNeg) || 1;
+            const plotH = BOT - TOP;
+            const y0 = TOP + (maxPos / range) * plotH;      // zero baseline
+            const hasNeg = minNeg < 0;
+            const cx = [17, 50, 83], cw = 20;
+            const COL = [
+                { pos: 'rgba(16,185,129,0.42)', neg: 'rgba(244,63,94,0.42)', txt: 'rgba(255,255,255,0.55)' },
+                { pos: 'rgba(16,185,129,0.68)', neg: 'rgba(244,63,94,0.68)', txt: 'rgba(255,255,255,0.72)' },
+                { pos: '#34d399', neg: '#fb7185', txt: '#ffffff' }
+            ];
+            let rects = '', texts = '', pts = [];
+            vals.forEach((v, i) => {
+                const h = Math.max(Math.abs(v) / range * plotH, v === 0 ? 0.8 : 1.4);
+                const isNeg = v < 0;
+                const y = isNeg ? y0 : y0 - h;
+                const x = cx[i] - cw / 2;
+                const c = COL[i];
+                const isCur = i === 2;
+                rects += `<rect x="${x}" y="${y.toFixed(2)}" width="${cw}" height="${h.toFixed(2)}" rx="2" fill="${isNeg ? c.neg : c.pos}"${isCur ? ' stroke="rgba(255,255,255,0.35)" stroke-width="0.6"' : ''}><title>${labels[i] || '—'}: ${fmt(v)}</title></rect>`;
+                const ty = isNeg ? Math.min(y0 + h + 6.5, LBL_Y - 7) : Math.max(y - 2, 6.5);
+                texts += `<text x="${cx[i]}" y="${ty.toFixed(2)}" text-anchor="middle" font-size="7.2" font-weight="${isCur ? 800 : 700}" fill="${c.txt}">${fmt(v)}</text>`;
+                texts += `<text x="${cx[i]}" y="${LBL_Y}" text-anchor="middle" font-size="6.6" font-weight="${isCur ? 800 : 600}" fill="${isCur ? '#34d399' : 'rgba(255,255,255,0.4)'}">${labels[i] || '—'}</text>`;
+                pts.push(cx[i] + ',' + (isNeg ? y0 + h : y).toFixed(2));
+            });
+            const trend = `<polyline points="${pts.join(' ')}" fill="none" stroke="rgba(255,255,255,0.32)" stroke-width="0.8" stroke-dasharray="1.6 1.6" stroke-linejoin="round"/>`;
+            const base = `<line x1="2" y1="${y0.toFixed(2)}" x2="${W - 2}" y2="${y0.toFixed(2)}" stroke="rgba(255,255,255,${hasNeg ? 0.35 : 0.16})" stroke-width="0.6"${hasNeg ? ' stroke-dasharray="1.2 1.2"' : ''}/>`;
+            return `<svg class="mc-col-chart" viewBox="0 0 ${W} 47" font-family="Lexend, sans-serif" aria-hidden="true">${base}${rects}${trend}${texts}</svg>`;
+        }
+
+        /* ── Shared scale for the result mini-charts: zero baseline inside
+           the plot band TOP..BOT, so positives rise and negatives hang. ── */
+        function _rsScale(vals, TOP, BOT) {
+            const maxPos = Math.max(0, ...vals), minNeg = Math.min(0, ...vals);
+            const range = (maxPos - minNeg) || 1;
+            const h = BOT - TOP;
+            const y0 = TOP + (maxPos / range) * h;
+            return { y0, range, h, hasNeg: minNeg < 0, toY: v => y0 - (v / range) * h };
+        }
+        const _RS_X = [17, 50, 83];
+        const _RS_FONT = 'font-family="Lexend, sans-serif" aria-hidden="true"';
+
+        /* Slope: a line through the three quarters with a soft area under it.
+           Reads as "where is this heading" — the line colour is the YoY verdict. */
+        function buildResultSlopeChart(yoyV, prevV, curV, qYoy, qPrev, qCur) {
+            const vals = [parseFloat(yoyV) || 0, parseFloat(prevV) || 0, parseFloat(curV) || 0];
+            const labels = [shortQtr(qYoy), shortQtr(qPrev), shortQtr(qCur)];
+            const sc = _rsScale(vals, 11, 34);
+            const up = vals[2] >= vals[0];
+            const col = up ? '#34d399' : '#fb7185';
+            const rgb = up ? '52,211,153' : '251,113,133';
+            const pts = vals.map((v, i) => [_RS_X[i], sc.toY(v)]);
+            const line = pts.map(p => p[0] + ',' + p[1].toFixed(2)).join(' ');
+            const area = `${_RS_X[0]},${sc.y0.toFixed(2)} ${line} ${_RS_X[2]},${sc.y0.toFixed(2)}`;
+            let dots = '', texts = '';
+            pts.forEach((pt, i) => {
+                const isCur = i === 2, v = vals[i];
+                dots += `<circle cx="${pt[0]}" cy="${pt[1].toFixed(2)}" r="${isCur ? 3.2 : 2.3}" fill="${isCur ? col : '#0b0d14'}" stroke="${col}" stroke-width="${isCur ? 1.2 : 1.4}"><title>${labels[i] || '—'}: ${fmt(v)}</title></circle>`;
+                const above = v >= 0;
+                const ty = above ? Math.max(pt[1] - 5, 6.5) : Math.min(pt[1] + 10.5, 37);
+                texts += `<text x="${pt[0]}" y="${ty.toFixed(2)}" text-anchor="middle" font-size="7.2" font-weight="${isCur ? 800 : 700}" fill="${isCur ? '#fff' : 'rgba(255,255,255,0.65)'}">${fmt(v)}</text>`;
+                texts += `<text x="${pt[0]}" y="44" text-anchor="middle" font-size="6.6" font-weight="${isCur ? 800 : 600}" fill="${isCur ? col : 'rgba(255,255,255,0.4)'}">${labels[i] || '—'}</text>`;
+            });
+            return `<svg class="mc-col-chart" viewBox="0 0 100 47" ${_RS_FONT}>` +
+                `<line x1="2" y1="${sc.y0.toFixed(2)}" x2="98" y2="${sc.y0.toFixed(2)}" stroke="rgba(255,255,255,${sc.hasNeg ? 0.35 : 0.14})" stroke-width="0.6"${sc.hasNeg ? ' stroke-dasharray="1.2 1.2"' : ''}/>` +
+                `<polygon points="${area}" fill="rgba(${rgb},0.16)"/>` +
+                `<polyline points="${line}" fill="none" stroke="${col}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>` +
+                dots + texts + `</svg>`;
+        }
+
+        /* Waterfall: YoY base → step to previous → step to current → total.
+           Each step is a floating bar coloured by its direction, so the two
+           changes that produced the current number are the picture. */
+        function buildResultWaterfallChart(yoyV, prevV, curV, qYoy, qPrev, qCur) {
+            const yv = parseFloat(yoyV) || 0, pv = parseFloat(prevV) || 0, cv = parseFloat(curV) || 0;
+            const levels = [0, yv, pv, cv];
+            const sc = _rsScale(levels, 11, 34);
+            const X = [13, 38, 63, 88], W = 16;
+            const bar = (i, a, b, fill, stroke) => {
+                const y1 = sc.toY(Math.max(a, b)), y2 = sc.toY(Math.min(a, b));
+                const h = Math.max(y2 - y1, 1.2);
+                return `<rect x="${X[i] - W / 2}" y="${y1.toFixed(2)}" width="${W}" height="${h.toFixed(2)}" rx="1.8" fill="${fill}"${stroke ? ' stroke="rgba(255,255,255,0.35)" stroke-width="0.6"' : ''}/>`;
+            };
+            const d1 = pv - yv, d2 = cv - pv;
+            const dc = d => d >= 0 ? 'rgba(52,211,153,0.78)' : 'rgba(251,113,133,0.78)';
+            const connector = (i, lvl) => `<line x1="${X[i] + W / 2}" y1="${sc.toY(lvl).toFixed(2)}" x2="${X[i + 1] - W / 2}" y2="${sc.toY(lvl).toFixed(2)}" stroke="rgba(255,255,255,0.3)" stroke-width="0.5" stroke-dasharray="1 1"/>`;
+            const lbl = (i, v, y, bold, colr, sign) =>
+                `<text x="${X[i]}" y="${y.toFixed(2)}" text-anchor="middle" font-size="7" font-weight="${bold ? 800 : 700}" fill="${colr}">${sign ? (v >= 0 ? '+' : '−') + fmt(Math.abs(v)) : fmt(v)}</text>`;
+            const topOf = (a, b) => sc.toY(Math.max(a, b)) - 2.2;
+            const botOf = (a, b) => Math.min(sc.toY(Math.min(a, b)) + 7, 37);
+            const lblY = (a, b, v) => v >= 0 ? Math.max(topOf(a, b), 6.5) : botOf(a, b);
+            return `<svg class="mc-col-chart" viewBox="0 0 100 47" ${_RS_FONT}>` +
+                `<line x1="2" y1="${sc.y0.toFixed(2)}" x2="98" y2="${sc.y0.toFixed(2)}" stroke="rgba(255,255,255,${sc.hasNeg ? 0.35 : 0.14})" stroke-width="0.6"/>` +
+                bar(0, 0, yv, yv >= 0 ? 'rgba(148,163,184,0.45)' : 'rgba(251,113,133,0.45)') +
+                connector(0, yv) + bar(1, yv, pv, dc(d1)) + connector(1, pv) + bar(2, pv, cv, dc(d2)) + connector(2, cv) +
+                bar(3, 0, cv, cv >= 0 ? '#34d399' : '#fb7185', true) +
+                lbl(0, yv, lblY(0, yv, yv), false, 'rgba(255,255,255,0.6)') +
+                lbl(1, d1, lblY(yv, pv, d1), false, d1 >= 0 ? '#34d399' : '#fb7185', true) +
+                lbl(2, d2, lblY(pv, cv, d2), false, d2 >= 0 ? '#34d399' : '#fb7185', true) +
+                lbl(3, cv, lblY(0, cv, cv), true, '#fff') +
+                `<text x="${X[0]}" y="44" text-anchor="middle" font-size="6.4" fill="rgba(255,255,255,0.4)">${shortQtr(qYoy) || '—'}</text>` +
+                `<text x="${X[1]}" y="44" text-anchor="middle" font-size="6.4" fill="rgba(255,255,255,0.4)">Δ${shortQtr(qPrev).slice(0, 1)}</text>` +
+                `<text x="${X[2]}" y="44" text-anchor="middle" font-size="6.4" fill="rgba(255,255,255,0.4)">Δ${shortQtr(qCur).slice(0, 1)}</text>` +
+                `<text x="${X[3]}" y="44" text-anchor="middle" font-size="6.4" font-weight="800" fill="${cv >= 0 ? '#34d399' : '#fb7185'}">${shortQtr(qCur) || '—'}</text>` +
+                `</svg>`;
+        }
+
+        /* Meter: growth, not size. Two bipolar bars from a centre zero —
+           YoY % and QoQ % — clamped at ±100 % (a cap mark shows when
+           clipped), with the three raw values in a strip underneath. */
+        function buildResultMeterChart(yoyV, prevV, curV, qYoy, qPrev, qCur) {
+            const yv = parseFloat(yoyV) || 0, pv = parseFloat(prevV) || 0, cv = parseFloat(curV) || 0;
+            const pct = (a, b) => b === 0 ? (a === 0 ? 0 : (a > 0 ? Infinity : -Infinity)) : (a - b) / Math.abs(b) * 100;
+            const L = 24, R = 78, C = 51, HALF = R - C;
+            const row = (y, name, val) => {
+                const fin = isFinite(val);
+                const clamp = fin ? Math.max(-100, Math.min(100, val)) : (val > 0 ? 100 : -100);
+                const w = Math.abs(clamp) / 100 * HALF;
+                const pos = clamp >= 0;
+                const col = pos ? '#34d399' : '#fb7185';
+                const txt = fin ? (pos ? '+' : '−') + Math.abs(val).toFixed(Math.abs(val) >= 100 ? 0 : 1) + '%' : (val > 0 ? '+∞' : '−∞');
+                const cap = (!fin || Math.abs(val) > 100) ? `<path d="M${pos ? R + 1 : L - 1},${y - 3} l${pos ? 2 : -2},3 l${pos ? -2 : 2},3" fill="none" stroke="${col}" stroke-width="0.8"/>` : '';
+                return `<text x="2" y="${y + 2.4}" font-size="6.6" font-weight="700" fill="rgba(255,255,255,0.5)">${name}</text>` +
+                    `<rect x="${L}" y="${y - 3}" width="${R - L}" height="6" rx="3" fill="rgba(255,255,255,0.06)"/>` +
+                    `<rect x="${(pos ? C : C - w).toFixed(2)}" y="${y - 3}" width="${Math.max(w, 0.8).toFixed(2)}" height="6" rx="3" fill="${col}"><title>${name}: ${txt}</title></rect>` +
+                    `<line x1="${C}" y1="${y - 5}" x2="${C}" y2="${y + 5}" stroke="rgba(255,255,255,0.45)" stroke-width="0.6"/>` + cap +
+                    `<text x="98" y="${y + 2.4}" text-anchor="end" font-size="7" font-weight="800" fill="${col}">${txt}</text>`;
+            };
+            const strip = `<text x="2" y="43" font-size="6.2" fill="rgba(255,255,255,0.42)">${shortQtr(qYoy)} <tspan fill="rgba(255,255,255,0.7)">${fmt(yv)}</tspan>  →  ${shortQtr(qPrev)} <tspan fill="rgba(255,255,255,0.7)">${fmt(pv)}</tspan>  →  <tspan font-weight="800" fill="#34d399">${shortQtr(qCur)}</tspan> <tspan font-weight="800" fill="#fff">${fmt(cv)}</tspan></text>`;
+            return `<svg class="mc-col-chart" viewBox="0 0 100 47" ${_RS_FONT}>` +
+                row(10, 'YoY', pct(cv, yv)) + row(25, 'QoQ', pct(cv, pv)) +
+                `<line x1="2" y1="34.5" x2="98" y2="34.5" stroke="rgba(255,255,255,0.1)" stroke-width="0.5"/>` + strip + `</svg>`;
+        }
+
+        /* Tiles: three colour-intensity tiles, value inside. The most
+           compact — magnitude is the tint, sign is the hue, current has the
+           white frame, and the arrows between tiles show each step. */
+        function buildResultTilesChart(yoyV, prevV, curV, qYoy, qPrev, qCur) {
+            const vals = [parseFloat(yoyV) || 0, parseFloat(prevV) || 0, parseFloat(curV) || 0];
+            const labels = [shortQtr(qYoy), shortQtr(qPrev), shortQtr(qCur)];
+            const maxAbs = Math.max(...vals.map(Math.abs), 1e-9);
+            const X = [2, 36, 70], W = 28, Y = 5, H = 26;
+            let out = '';
+            vals.forEach((v, i) => {
+                const t = Math.abs(v) / maxAbs;
+                const a = (0.18 + 0.62 * t).toFixed(2);
+                const fill = v < 0 ? `rgba(244,63,94,${a})` : v > 0 ? `rgba(16,185,129,${a})` : 'rgba(148,163,184,0.2)';
+                const isCur = i === 2;
+                out += `<rect x="${X[i]}" y="${Y}" width="${W}" height="${H}" rx="4" fill="${fill}"${isCur ? ' stroke="rgba(255,255,255,0.75)" stroke-width="0.9"' : ' stroke="rgba(255,255,255,0.08)" stroke-width="0.5"'}><title>${labels[i] || '—'}: ${fmt(v)}</title></rect>`;
+                out += `<text x="${X[i] + W / 2}" y="${Y + H / 2 + 3}" text-anchor="middle" font-size="8.4" font-weight="${isCur ? 800 : 700}" fill="#fff">${fmt(v)}</text>`;
+                out += `<text x="${X[i] + W / 2}" y="43" text-anchor="middle" font-size="6.6" font-weight="${isCur ? 800 : 600}" fill="${isCur ? '#34d399' : 'rgba(255,255,255,0.4)'}">${labels[i] || '—'}</text>`;
+                if (i < 2) {
+                    const upStep = vals[i + 1] >= v;
+                    out += `<text x="${X[i] + W + 3}" y="${Y + H / 2 + 2.6}" text-anchor="middle" font-size="7" font-weight="800" fill="${upStep ? '#34d399' : '#fb7185'}">${upStep ? '▲' : '▼'}</text>`;
+                }
+            });
+            return `<svg class="mc-col-chart" viewBox="0 0 100 47" ${_RS_FONT}>${out}</svg>`;
+        }
+
+        /* One metric cell for any of the SVG result styles. Adds a QoQ chip
+           beside the value — the classic cell only showed YoY. Cached per
+           row and per style. */
+        const _RS_BUILDERS = {
+            latest: buildResultColumnChart,
+            slope: buildResultSlopeChart,
+            waterfall: buildResultWaterfallChart,
+            meter: buildResultMeterChart,
+            tiles: buildResultTilesChart
+        };
+        window.RESULT_STYLES = Object.keys(_RS_BUILDERS);
+        function buildResultCells(r, style) {
+            const build = _RS_BUILDERS[style] || _RS_BUILDERS.latest;
+            if (!r._chartsHtmlBy) r._chartsHtmlBy = {};
+            if (r._chartsHtmlBy[style]) return r._chartsHtmlBy[style];
+            const qYoy = r['Qtr Name (YoY)'], qPrev = r['Qtr Name (Previous)'], qCur = r['Qtr Name (Current)'];
+            const pctChip = (cv, base, raw, cls, lbl) => {
+                if (raw == null || raw === '') return `<span class="${cls}">—</span>`;
+                if (base === 0) return `<span class="${cls}">${cv > 0 ? '▲' : cv < 0 ? '▼' : ''}∞</span>`;
+                const pct = (cv - base) / Math.abs(base) * 100;
+                return `<span class="${cls} ${pct >= 0 ? 'yg' : 'yr'}" title="${lbl}">${pct >= 0 ? '▲' : '▼'}${Math.abs(pct) >= 1000 ? (Math.abs(pct) / 1000).toFixed(1) + 'k' : Math.abs(pct).toFixed(0)}%</span>`;
+            };
+            r._chartsHtmlBy[style] = [
+                { l: 'Sales', c: r['Sales (Current)'], p: r['Sales (Previous)'], y: r['Sales (YoY Qtr)'] },
+                { l: 'EBIDT', c: r['EBIDT (Current)'], p: r['EBIDT (Previous)'], y: r['EBIDT (YoY Qtr)'] },
+                { l: 'Net Profit', c: r['Net Profit (Current)'], p: r['Net Profit (Previous)'], y: r['Net Profit (YoY Qtr)'] },
+                { l: 'EPS', c: r['EPS (Current)'], p: r['EPS (Previous)'], y: r['EPS (YoY Qtr)'] }
+            ].map(m => {
+                const cv = parseFloat(m.c) || 0, pv = parseFloat(m.p) || 0, yv = parseFloat(m.y) || 0;
+                const yoy = pctChip(cv, yv, m.y, 'ybadge', 'vs same quarter last year');
+                const qoq = pctChip(cv, pv, m.p, 'mc-qoq', 'vs previous quarter');
+                const chart = build(yv, pv, cv, qYoy, qPrev, qCur);
+                return `<div class="metric-cell mc-v2"><div class="mc-top"><span class="mc-label">${m.l}</span>${yoy}</div><div class="mc-val-row"><span class="mc-val ${valCls(m.c)}">${fmt(m.c)}</span>${qoq}<span class="mc-qoq-lbl">QoQ</span></div>${chart}</div>`;
+            }).join('');
+            return r._chartsHtmlBy[style];
+        }
+        function buildResultCellsV2(r) { return buildResultCells(r, 'latest'); }
+
         /* ── Card-level inline candlestick chart markup (used in "Chart" view mode) ──
            Renders a self-contained chart block with its own 6M/1Y/2Y period
            pills. Actual drawing happens lazily once the wrap scrolls into view
@@ -8602,10 +9711,10 @@
             const selClass = selectedCardTicker === r._ticker ? ' news-selected' : '';
 
             // ── Latest Result vs Chart view (toggle in filter bar) ──
-            const cardViewMode = (window._cardViewMode === 'chart') ? 'chart' : 'latest';
+            const cardViewMode = window._cardViewMode || 'latest';
             const resultSectionHtml = cardViewMode === 'chart'
                 ? buildCardChartSection(r)
-                : `<div class="metrics-full">${cells}</div>`;
+                : `<div class="metrics-full">${cardViewMode === 'classic' ? cells : buildResultCells(r, cardViewMode)}</div>`;
 
             // Top mode extras
             const topMode = window._topState && window._topState.active;
@@ -10196,6 +11305,12 @@
                 minCfopat: document.getElementById('min-cfopat'),
                 sortSelect: document.getElementById('sort-select'),
                 invFilter: document.getElementById('investor-filter'),
+                ipoFilter: document.getElementById('ipo-filter'),
+                near52w: document.getElementById('near-52w'),
+                tightBase: document.getElementById('tight-base'),
+                volSurge: document.getElementById('vol-surge'),
+                minDeliv: document.getElementById('min-deliv'),
+                accumFilter: document.getElementById('accum-filter'),
                 peadFilter: document.getElementById('pead-filter'),
                 vcpFilter: document.getElementById('vcp-filter'),
                 volmsFilter: document.getElementById('volms-filter'),
@@ -10360,6 +11475,23 @@
             const minRevp = parseFloat(dc.minRevp.value);
             const minNpp = parseFloat(dc.minNpp.value);
             const minCfopat = parseFloat(dc.minCfopat.value);
+            const near52w = parseFloat(dc.near52w ? dc.near52w.value : NaN);
+            const tightBase = parseFloat(dc.tightBase ? dc.tightBase.value : NaN);
+            const volSurge = parseFloat(dc.volSurge ? dc.volSurge.value : NaN);
+            const minDeliv = parseFloat(dc.minDeliv ? dc.minDeliv.value : NaN);
+            // Delivery % lives in its own parquet that only the full chart used
+            // to load; fetch it the first time the filter is used, then re-run.
+            if (!isNaN(minDeliv) && !window._delivFieldsReady && typeof window.preloadFsDeliv === 'function') {
+                if (!window._delivFieldsLoading) {
+                    window._delivFieldsLoading = true;
+                    window.preloadFsDeliv().then(function () {
+                        calcDelivFields();
+                        window._delivFieldsReady = true;
+                        window._delivFieldsLoading = false;
+                        doFilter();
+                    }).catch(function () { window._delivFieldsLoading = false; });
+                }
+            }
             const sortMode = dc.sortSelect.value;
             const invQ = dc.invFilter ? dc.invFilter.value : 'all';
             const grades = ['A', 'B', 'C', 'D', 'E'];
@@ -10429,6 +11561,32 @@
                 // VCP filter
                 if (dc.vcpFilter && dc.vcpFilter.checked) {
                     if (!r._vcpFlag) return false;
+                }
+                // IPO / recent listing: history shorter than 1 or 2 years.
+                // _listAgeDays is set by calcOHLCVReturns once OHLCV is in;
+                // until then (or for a ticker with no bars) nothing matches.
+                const ipoQ = dc.ipoFilter ? dc.ipoFilter.value : 'all';
+                if (ipoQ !== 'all') {
+                    const maxDays = ipoQ === '1y' ? 365 : 730;
+                    if (!(r._listAgeDays >= 0) || r._listAgeDays > maxDays) return false;
+                }
+                // Super-stock price/volume filters — fields from calcSuperStockFields
+                // (weekly OHLCV) and calcDelivFields (weekly delivery %).
+                if (!isNaN(near52w)) {
+                    // _ts52wPct: 0 at a new high, negative below it
+                    if (isNaN(r._ts52wPct) || -r._ts52wPct > near52w) return false;
+                }
+                if (!isNaN(tightBase)) {
+                    if (isNaN(r._tight8Pct) || r._tight8Pct > tightBase) return false;
+                }
+                if (!isNaN(volSurge)) {
+                    if (isNaN(r._volSurgeX) || r._volSurgeX < volSurge || !r._volSurgeUp) return false;
+                }
+                if (!isNaN(minDeliv)) {
+                    if (isNaN(r._deliv4) || r._deliv4 < minDeliv || !(r._deliv4 > r._deliv26)) return false;
+                }
+                if (dc.accumFilter && dc.accumFilter.checked) {
+                    if (!r._accumFlag) return false;
                 }
                 // Volume Milestone (Q/Y/E/q/y/e) in last 2 candles filter
                 if (dc.volmsFilter && dc.volmsFilter.checked) {
@@ -10592,8 +11750,17 @@
             }
         };
 
+        /* Result style ('latest' = column chart, 'classic' = horizontal bars)
+           is remembered so a preference survives reloads and Reset All. */
+        const _RESULT_MODES = ['latest', 'slope', 'waterfall', 'meter', 'tiles', 'classic'];
+        window._cardResultStyle = 'latest';
+        try { const sv = localStorage.getItem('card_result_style'); if (_RESULT_MODES.includes(sv)) window._cardResultStyle = sv; } catch (e) { }
         window.setViewMode = function (mode) {
-            mode = (mode === 'chart') ? 'chart' : 'latest';
+            mode = (mode === 'chart') ? 'chart' : (_RESULT_MODES.includes(mode) ? mode : 'latest');
+            if (mode !== 'chart') {
+                window._cardResultStyle = mode;
+                try { localStorage.setItem('card_result_style', mode); } catch (e) { }
+            }
             if (window._cardViewMode === mode) return;
             const sel = document.getElementById('view-mode-filter');
             if (sel && sel.value !== mode) sel.value = mode;
@@ -10957,11 +12124,116 @@
             }
         }
 
-        /* ── Refresh Data button handler: force network fetch + update IDB ── */
+        /* ── Refresh overlay controller ──
+           One row per data source. The loaders call set(id, state) as they
+           go; when the overlay is not open the calls are no-ops, so the same
+           hooks cost nothing during the initial page load. */
+        window._refreshUI = (function () {
+            const SOURCES = [
+                { id: 'results', name: 'Quarterly Results', ico: '📊' },
+                { id: 'screener', name: 'Screener Scores', ico: '🔬' },
+                { id: 'ohlcv', name: 'Weekly OHLCV', ico: '🕯️' },
+                { id: 'indices', name: 'Index Members', ico: '🧭' },
+                { id: 'names', name: 'Company Names', ico: '🏷️' },
+                { id: 'epsales', name: 'EPS / Sales Tech', ico: '📈' },
+                { id: 'superstar', name: 'SuperStar Holdings', ico: '⭐' },
+                { id: 'news', name: 'News', ico: '📰' },
+                { id: 'insights', name: 'Insights', ico: '💡' },
+                { id: 'nsenews', name: 'NSE Announcements', ico: '🏛️' },
+                { id: 'deals', name: 'Deals (Insider · Bulk · Block · SAST)', ico: '🤝' },
+                { id: 'deliv', name: 'Delivery %', ico: '📦' },
+                { id: 'idxhist', name: 'Index History', ico: '📉' }
+            ];
+            const ST_GLYPH = { queued: '·', busy: '', ok: '✓', err: '✕', skip: '–' };
+            let open = false, t0 = 0, tick = null, state = {};
+            const $ = id => document.getElementById(id);
+            function counts() {
+                let done = 0, total = 0;
+                SOURCES.forEach(src => {
+                    const st = state[src.id] || 'queued';
+                    if (st === 'skip') return;
+                    total++;
+                    if (st === 'ok' || st === 'err') done++;
+                });
+                return { done, total };
+            }
+            function paintProgress() {
+                const c = counts();
+                const fill = $('rf-bar-fill'), cnt = $('rf-count');
+                if (fill) fill.style.width = (c.total ? (c.done / c.total) * 100 : 0) + '%';
+                if (cnt) cnt.textContent = c.done + ' / ' + c.total;
+            }
+            return {
+                isOpen: function () { return open; },
+                open: function (title) {
+                    const ov = $('refresh-overlay'), grid = $('rf-grid');
+                    if (!ov || !grid) return;
+                    open = true; state = {}; t0 = performance.now();
+                    ov.classList.remove('done');
+                    $('rf-title').textContent = title || 'Refreshing data';
+                    $('rf-sub').textContent = 'Contacting data sources…';
+                    grid.innerHTML = SOURCES.map(src =>
+                        '<div class="rf-row queued" id="rf-' + src.id + '"><span class="rf-ico">' + src.ico +
+                        '</span><span class="rf-name">' + src.name + '</span><span class="rf-note"></span><span class="rf-st">·</span></div>'
+                    ).join('');
+                    paintProgress();
+                    ov.classList.add('show');
+                    ov.setAttribute('aria-hidden', 'false');
+                    document.body.classList.add('rf-open');
+                    requestAnimationFrame(() => ov.classList.add('in'));
+                    clearInterval(tick);
+                    tick = setInterval(() => {
+                        const el = $('rf-elapsed');
+                        if (el) el.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
+                    }, 100);
+                },
+                set: function (id, st, note) {
+                    if (!open) return;
+                    state[id] = st;
+                    const row = $('rf-' + id);
+                    if (row) {
+                        row.className = 'rf-row ' + st;
+                        const g = row.querySelector('.rf-st'); if (g) g.textContent = ST_GLYPH[st] || '';
+                        const n = row.querySelector('.rf-note'); if (n) n.textContent = note || '';
+                    }
+                    paintProgress();
+                },
+                phase: function (text) {
+                    if (!open) return;
+                    const el = $('rf-sub'); if (el) el.textContent = text;
+                },
+                close: function (ok) {
+                    if (!open) return;
+                    const ov = $('refresh-overlay');
+                    clearInterval(tick);
+                    // Anything still pending is marked, then the card lingers a beat
+                    SOURCES.forEach(src => { if (!state[src.id] || state[src.id] === 'queued' || state[src.id] === 'busy') this.set(src.id, 'skip'); });
+                    const errs = SOURCES.filter(src => state[src.id] === 'err').length;
+                    $('rf-title').textContent = ok && !errs ? 'All data loaded' : (errs ? errs + ' source' + (errs > 1 ? 's' : '') + ' failed' : 'Finished');
+                    $('rf-sub').textContent = 'Done in ' + ((performance.now() - t0) / 1000).toFixed(1) + 's';
+                    if (ov) ov.classList.add('done');
+                    open = false;
+                    setTimeout(() => {
+                        if (!ov) return;
+                        ov.classList.remove('in');
+                        setTimeout(() => { ov.classList.remove('show', 'done'); ov.setAttribute('aria-hidden', 'true'); document.body.classList.remove('rf-open'); }, 260);
+                    }, ok && !errs ? 900 : 2200);
+                }
+            };
+        })();
+
+        /* ── Refresh Data button handler: force network fetch + update IDB ──
+           Refreshes EVERY source, including the ones that normally load on
+           demand (NSE news, deals, delivery %, index history), with the
+           overlay above reporting each one. The initial page load still
+           leaves those four lazy — they are ~20 MB the page may never need. */
         window.refreshDataFromNetwork = async function () {
             if (!window._isUnlocked()) return;
             const btn = document.getElementById('refresh-data-btn');
             if (btn) { btn.disabled = true; btn.innerHTML = '<span class="rdb-spinner"></span>'; }
+            const ui = window._refreshUI;
+            ui.open();
+            let ok = true;
             try {
                 // Force-clear deal IDB cache key so deal data also re-fetches
                 if (window._idbCache) {
@@ -10973,16 +12245,74 @@
                         await new Promise((res, rej) => { txDel.oncomplete = res; txDel.onerror = e => rej(e.target.error); });
                     } catch (e) { /* non-critical */ }
                 }
+
+                // Drop cached parquet bytes first so every source below hits the network
+                if (window._pqBufCacheClear) window._pqBufCacheClear();
+                window._pqForceNet = true;
+
+                // Secondary sources run alongside the main load
+                const side = [];
+                const track = (id, p) => {
+                    ui.set(id, 'busy');
+                    side.push(Promise.resolve(p).then(() => ui.set(id, 'ok'), e => { ok = false; ui.set(id, 'err', (e && e.message) || 'failed'); }));
+                };
+                // Every source, whether or not its pane has been opened yet —
+                // a refresh means all of it is current afterwards.
+                if (typeof fetchNseNewsData === 'function') track('nsenews', fetchNseNewsData(null));
+                else ui.set('nsenews', 'skip', 'unavailable');
+                if (typeof window.dealBlockRefresh === 'function') track('deals', window.dealBlockRefresh());
+                else ui.set('deals', 'skip', 'unavailable');
+                if (typeof window.reloadFsDeliv === 'function') track('deliv', window.reloadFsDeliv());
+                else ui.set('deliv', 'skip', 'unavailable');
+                if (typeof window.reloadIndexHistory === 'function') track('idxhist', window.reloadIndexHistory());
+                else ui.set('idxhist', 'skip', 'unavailable');
+
                 await loadAll(true); // forceNetwork = true for main data
-                // Also force-refresh deal data if already loaded
-                if (typeof window.dealBlockRefresh === 'function') window.dealBlockRefresh();
+                ui.phase('Waiting for remaining sources…');
+                await Promise.all(side);
+            } catch (e) {
+                ok = false;
             } finally {
+                window._pqForceNet = false;
+                ui.close(ok);
                 if (btn) { btn.disabled = false; btn.innerHTML = '↺'; }
             }
         };
 
         async function loadAll(forceNetwork) {
             if (!window._isUnlocked()) return;
+
+            /* The refresh button opens the overlay itself before calling us;
+               a plain page load (cache or first network fetch) opens it here
+               so both paths show the same per-source progress. */
+            const rfOwn = window._refreshUI && !window._refreshUI.isOpen();
+            let rfOk = true;
+            const rfSide = [];
+            if (rfOwn) {
+                const ui = window._refreshUI;
+                ui.open('Loading data');
+                /* The on-demand sources (NSE news, deals, delivery %, index
+                   history) load here too, alongside the main data, so a page
+                   load ends with everything current — same as the ↺ button.
+                   Non-forcing loaders: memoised / IDB-cached where available. */
+                const track = (id, fn) => {
+                    ui.set(id, 'busy');
+                    let p;
+                    try { p = Promise.resolve(fn()); } catch (e) { p = Promise.reject(e); }
+                    rfSide.push(p.then(() => ui.set(id, 'ok'), e => { ui.set(id, 'err', (e && e.message) || 'failed'); }));
+                };
+                if (typeof fetchNseNewsData === 'function') track('nsenews', () => fetchNseNewsData(null));
+                else ui.set('nsenews', 'skip', 'unavailable');
+                if (typeof window.dealBlockLoad === 'function') track('deals', () => window.dealBlockLoad());
+                else ui.set('deals', 'skip', 'unavailable');
+                if (typeof window.preloadFsDeliv === 'function') track('deliv', () => window.preloadFsDeliv().then(idx => {
+                    if (typeof calcDelivFields === 'function' && window._ohlcvTickers) { calcDelivFields(); window._delivFieldsReady = true; }
+                    return idx;
+                }));
+                else ui.set('deliv', 'skip', 'unavailable');
+                if (typeof window._loadIndexHistory === 'function') track('idxhist', () => window._loadIndexHistory());
+                else ui.set('idxhist', 'skip', 'unavailable');
+            }
 
             document.getElementById('loading').style.display = 'block';
             document.getElementById('main').style.display = 'none';
@@ -10993,22 +12323,40 @@
             let resT, idxT, namesT, newsT, insT, ohlcvT, ssT, epSalesT, scrT;
             let loadedFromCache = false;
 
+            const _cacheIds = { results: 'resT', indices: 'idxT', names: 'namesT', news: 'newsT', insights: 'insT', superstar: 'ssT', epsales: 'epSalesT', screener: 'scrT' };
             if (!forceNetwork && window._idbCache) {
+                const rfUI = window._refreshUI;
                 try {
                     sb.textContent = '⚡ Loading from cache…';
+                    if (rfUI) {
+                        rfUI.phase('⚡ Loading from cache…');
+                        Object.keys(_cacheIds).forEach(id => rfUI.set(id, 'busy'));
+                        rfUI.set('ohlcv', 'busy');
+                    }
+                    const t = performance.now();
                     const cached = await window._idbCache.load();
                     if (cached && cached.resT && cached.scrT) {
                         ({ resT, idxT, namesT, newsT, insT, ssT, epSalesT, scrT } = cached);
+                        if (rfUI) Object.keys(_cacheIds).forEach(id => rfUI.set(id, cached[_cacheIds[id]] ? 'ok' : 'err', cached[_cacheIds[id]] ? 'cache' : 'missing'));
                         const db = await window._idbCache.openDB();
                         const pRec = await window._idbCache.idbGet(db, 'ohlc_parquet_v1');
                         if (pRec && pRec.data) {
                             ohlcvT = pRec.data;
                             loadedFromCache = true;
                             window._loadedCacheTs = cached._ts;
+                            if (rfUI) rfUI.set('ohlcv', 'ok', 'cache · ' + ((performance.now() - t) / 1000).toFixed(1) + 's');
                         }
+                    }
+                    if (!loadedFromCache && rfUI) {
+                        rfUI.phase('Cache incomplete — fetching from network…');
+                        Object.keys(_cacheIds).concat(['ohlcv']).forEach(id => rfUI.set(id, 'queued'));
                     }
                 } catch (e) {
                     console.warn('[loadAll] IDB load error, falling back to network:', e.message);
+                    if (rfUI) {
+                        rfUI.phase('Cache unavailable — fetching from network…');
+                        Object.keys(_cacheIds).concat(['ohlcv']).forEach(id => rfUI.set(id, 'queued'));
+                    }
                 }
             }
 
@@ -11026,31 +12374,41 @@
                             <div id="prog-screener">⏳ Screener</div>
                         </div>`;
 
+                    const rfUI = window._refreshUI;
                     const fetchWithProg = async (id, name, promise) => {
+                        if (rfUI) rfUI.set(id, 'busy');
+                        const t = performance.now();
                         try {
                             const res = await promise;
                             const el = document.getElementById('prog-' + id);
                             if (el) el.innerHTML = `✅ ${name}`;
+                            if (rfUI) rfUI.set(id, 'ok', ((performance.now() - t) / 1000).toFixed(1) + 's');
                             return res;
                         } catch (e) {
                             const el = document.getElementById('prog-' + id);
                             if (el) el.innerHTML = `❌ ${name} <span style="font-size:9px;color:var(--pop-red);">(${e.message})</span>`;
+                            if (rfUI) rfUI.set(id, 'err', e.message);
                             throw e;
                         }
                     };
 
                     const fetchWithProgNoThrow = async (id, name, promise) => {
+                        if (rfUI) rfUI.set(id, 'busy');
+                        const t = performance.now();
                         try {
                             const res = await promise;
                             const el = document.getElementById('prog-' + id);
                             if (el) el.innerHTML = `✅ ${name}`;
+                            if (rfUI) rfUI.set(id, 'ok', ((performance.now() - t) / 1000).toFixed(1) + 's');
                             return res;
                         } catch (e) {
                             const el = document.getElementById('prog-' + id);
                             if (el) el.innerHTML = `❌ ${name} <span style="font-size:9px;color:var(--pop-red);">(${e.message})</span>`;
+                            if (rfUI) rfUI.set(id, 'err', e.message);
                             return '';
                         }
                     };
+                    if (rfUI) rfUI.phase('Fetching ' + 9 + ' data files…');
 
                     const fetchOHLCVBinary = async () => {
                         let fetchUrl = 'OHLC.parquet';
@@ -11066,7 +12424,7 @@
                     [resT, idxT, namesT, newsT, insT, ohlcvT, ssT, epSalesT, scrT] = await Promise.all([
                         fetchWithProg('results', 'Results', window._parquetToCSV('Results.parquet')),
                         fetchWithProg('indices', 'Indices', window._parquetToCSV('indices.parquet')),
-                        window._parquetToCSV('namesMap.parquet'),
+                        fetchWithProg('names', 'Names', window._parquetToCSV('namesMap.parquet')),
                         fetchWithProg('news', 'News', window._parquetToCSV('news.parquet')),
                         fetchWithProg('insights', 'Insights', window._parquetToCSV('insights.parquet')),
                         fetchWithProg('ohlcv', 'OHLCV', fetchOHLCVBinary()),
@@ -11115,6 +12473,7 @@
                 }
 
                 sb.textContent = '⏳ Processing data…';
+                if (window._refreshUI) window._refreshUI.phase('Processing data…');
 
                 const res = parseCSV(resT), idx = parseCSV(idxT);
                 const namesData = parseCSV(namesT);
@@ -11277,9 +12636,21 @@
                     }
                 }, 600);
             } catch (err) {
+                rfOk = false;
                 document.getElementById('loading').style.display = 'none';
                 sb.className = 'sbox s-err'; sb.innerHTML = '❌ Error fetching data: ' + err.message;
                 sb.style.display = 'block';
+            }
+            if (rfOwn) {
+                if (rfSide.length) {
+                    window._refreshUI.phase('Loading remaining sources…');
+                    await Promise.all(rfSide);
+                    // Delivery fields need OHLCV, which may have landed after the deliv file did
+                    if (window._fsDelivReady && !window._delivFieldsReady && typeof calcDelivFields === 'function' && window._ohlcvTickers) {
+                        calcDelivFields(); window._delivFieldsReady = true;
+                    }
+                }
+                window._refreshUI.close(rfOk);
             }
         }
 
@@ -11317,8 +12688,25 @@
         /* Calculate returns from OHLCV close prices for all stocks */
         function calcOHLCVReturns() {
             if (!window._ohlcvTickers || !allData.length) return;
+            // Listing age (IPO filter): days from a ticker's first bar to the
+            // newest bar anywhere in the file. The file starts mid-2019, so a
+            // first bar at that floor means "old", not "listed then" — those
+            // rows can never be within a 1y/2y window anyway.
+            let newest = 0;
+            window._ohlcvTickers.forEach(arr => {
+                const last = arr.length ? arr[arr.length - 1].date : null;
+                const t = last instanceof Date ? last.getTime() : (last ? new Date(last).getTime() : 0);
+                if (t > newest) newest = t;
+            });
+            const DAY = 86400000;
             allData.forEach(r => {
                 const arr = window._ohlcvTickers.get(String(r._ticker).toUpperCase());
+                r._listAgeDays = NaN;
+                if (arr && arr.length && newest) {
+                    const first = arr[0].date;
+                    const t0 = first instanceof Date ? first.getTime() : new Date(first).getTime();
+                    if (t0 > 0) r._listAgeDays = Math.round((newest - t0) / DAY);
+                }
                 if (!arr || arr.length < 2) return;
 
                 const lastClose = arr[arr.length - 1].close;
@@ -11387,6 +12775,97 @@
             calcVCPFlags();
             calcVolMilestoneFlags();
             calcTechScreenerFields();
+            calcSuperStockFields();
+            if (window._fsDelivReady) { calcDelivFields(); window._delivFieldsReady = true; }
+        }
+
+        // ══════════════════════════════════════════════════════
+        //   SUPER-STOCK FIELDS — tight base, volume surge, accumulation.
+        //   Weekly OHLCV, computed once per ticker at load time. The
+        //   A/D and OBV arithmetic is the chart's own (drawChartCore).
+        // ══════════════════════════════════════════════════════
+        function calcSuperStockFields() {
+            if (!window._ohlcvTickers || !allData.length) return;
+            allData.forEach(r => {
+                r._tight8Pct = NaN; r._volSurgeX = NaN; r._volSurgeUp = false;
+                r._accumFlag = false; r._accumDetails = '';
+                const arr = window._ohlcvTickers.get(String(r._ticker).toUpperCase());
+                if (!arr || arr.length < 2) return;
+                const n = arr.length, last = arr[n - 1];
+
+                // Tight base: 8-week high-low range as % of the last close
+                if (n >= 8 && last.close > 0) {
+                    let hi = -Infinity, lo = Infinity;
+                    for (let j = n - 8; j < n; j++) { if (arr[j].high > hi) hi = arr[j].high; if (arr[j].low < lo) lo = arr[j].low; }
+                    if (hi > 0 && lo > 0) r._tight8Pct = ((hi - lo) / last.close) * 100;
+                }
+
+                // Volume surge: last week vs the average of the 20 weeks before it, on an up week
+                if (n >= 6) {
+                    let sum = 0, cnt = 0;
+                    for (let j = Math.max(0, n - 21); j < n - 1; j++) { if (arr[j].vol > 0) { sum += arr[j].vol; cnt++; } }
+                    if (cnt && last.vol > 0) r._volSurgeX = last.vol / (sum / cnt);
+                    r._volSurgeUp = last.close > arr[n - 2].close;
+                }
+
+                // Accumulation: A/D or OBV at a 26-week high while price is not
+                if (n >= 10) {
+                    const from = Math.max(0, n - 26);
+                    let ad = 0, obv = 0, adMax = -Infinity, obvMax = -Infinity, closeMax = -Infinity;
+                    for (let j = 0; j < n; j++) {
+                        const b = arr[j], range = b.high - b.low;
+                        const mfm = range > 0 ? ((b.close - b.low) - (b.high - b.close)) / range : 0;
+                        ad += mfm * b.vol;
+                        if (j === 0) obv = b.vol;
+                        else if (b.close > arr[j - 1].close) obv += b.vol;
+                        else if (b.close < arr[j - 1].close) obv -= b.vol;
+                        if (j >= from && j < n - 1) {
+                            if (ad > adMax) adMax = ad;
+                            if (obv > obvMax) obvMax = obv;
+                            if (b.close > closeMax) closeMax = b.close;
+                        }
+                    }
+                    const adHigh = ad >= adMax, obvHigh = obv >= obvMax;
+                    if ((adHigh || obvHigh) && last.close < closeMax) {
+                        r._accumFlag = true;
+                        r._accumDetails = (adHigh ? 'A/D' : '') + (adHigh && obvHigh ? ' + ' : '') + (obvHigh ? 'OBV' : '') +
+                            ' at 26W high, price ' + (((closeMax - last.close) / closeMax) * 100).toFixed(1) + '% below';
+                    }
+                }
+            });
+        }
+
+        // Delivery %: 4-week and 26-week averages from weekly_deliv_per (via
+        // the full chart's index, _fsDelivFor). Weeks with no row count as 0,
+        // the same as the chart's own delivery pane.
+        function calcDelivFields() {
+            if (!window._ohlcvTickers || !allData.length || typeof window._fsDelivFor !== 'function') return;
+            const mondayDay = ms => { const d = Math.floor(ms / 86400000); const dow = (d + 4) % 7; return d + (dow === 0 ? -6 : 1 - dow); };
+            const pctAt = (ser, ms) => {
+                const target = mondayDay(ms), a = ser.day;
+                let lo = 0, hi = a.length - 1;
+                while (lo <= hi) {
+                    const mid = (lo + hi) >> 1;
+                    if (a[mid] === target) { const v = ser.pct[mid]; return Number.isFinite(v) ? v : 0; }
+                    if (a[mid] < target) lo = mid + 1; else hi = mid - 1;
+                }
+                return 0;
+            };
+            allData.forEach(r => {
+                r._deliv4 = NaN; r._deliv26 = NaN;
+                const arr = window._ohlcvTickers.get(String(r._ticker).toUpperCase());
+                const ser = window._fsDelivFor(r._ticker);
+                if (!arr || arr.length < 4 || !ser || !ser.day.length) return;
+                const n = arr.length;
+                let s4 = 0, s26 = 0, c26 = 0;
+                for (let j = Math.max(0, n - 26); j < n; j++) {
+                    const pct = pctAt(ser, arr[j].date.getTime());
+                    s26 += pct; c26++;
+                    if (j >= n - 4) s4 += pct;
+                }
+                r._deliv4 = s4 / 4;
+                r._deliv26 = c26 ? s26 / c26 : NaN;
+            });
         }
 
         // ══════════════════════════════════════════════════════
@@ -13100,8 +14579,28 @@
                 const idxNames = Object.keys(indexDataMap).sort();
                 idxSel.innerHTML = '<option value="all">All Indices</option>' + idxNames.map(i => `<option value="${i}">${i}</option>`).join('');
                 if (window._topState.indexFilter !== 'all') idxSel.value = window._topState.indexFilter;
+                _topFundSync('read');
             }
         }
+
+        /* Fundamentals in the Top panel mirror the main filter bar inputs.
+           'read' pulls the bar's values into the panel; 'write' pushes the
+           panel's values to the bar; 'clear' empties both. */
+        function _topFundSync(mode) {
+            document.querySelectorAll('#top-fund-grid .top-fund-in').forEach(inp => {
+                const main = document.getElementById(inp.dataset.main);
+                if (!main) return;
+                if (mode === 'read') inp.value = main.value;
+                else if (mode === 'write') main.value = inp.value;
+                else if (mode === 'clear') { inp.value = ''; main.value = ''; }
+                inp.classList.toggle('top-fund-set', !!inp.value);
+            });
+        }
+        document.addEventListener('input', function (e) {
+            if (e.target && e.target.classList && e.target.classList.contains('top-fund-in')) {
+                e.target.classList.toggle('top-fund-set', !!e.target.value);
+            }
+        });
 
         function positionTopPanel() {
             const btn = document.getElementById('top-filter-btn');
@@ -13130,6 +14629,7 @@
             window._topState.active = true;
             window._topState.topN = parseInt(document.getElementById('top-n-select').value) || 10;
             window._topState.indexFilter = document.getElementById('top-index-filter').value;
+            _topFundSync('write');
             closeTopPanel();
             updateTopBtnState();
             doFilter();
@@ -13140,6 +14640,7 @@
             window._topState.duration = '3m';
             window._topState.topN = 10;
             window._topState.indexFilter = 'all';
+            _topFundSync('clear');
             closeTopPanel();
             updateTopBtnState();
             // Reset pills UI
@@ -18805,6 +20306,7 @@
                 <span id="peer-popup-title">◈ Real Estate Dvlpmt/Ops</span>
                 <span id="peer-popup-count">132 co.</span>
             </div>
+            <span id="peer-popup-fs" data-nodrag onclick="window.togglePeerFullscreen()" title="Full screen">⛶</span>
             <span id="peer-popup-close" data-nodrag onclick="closePeerPopup()">✕</span>
         </div>
         <div id="peer-params">
@@ -18821,7 +20323,43 @@
             <span class="peer-param-pill" data-param="ebitp">EBIT</span>
             <span class="peer-param-pill" data-param="npp">NP</span>
         </div>
+        <!-- Technical metrics — shown in full-screen mode (see .peer-fs). -->
+        <div id="peer-params-tech">
+            <span class="peer-params-tech-lbl">TECH</span>
+            <span class="peer-param-pill" data-param="ret1m">Ret 1M</span>
+            <span class="peer-param-pill" data-param="ret3m">Ret 3M</span>
+            <span class="peer-param-pill" data-param="ret6m">Ret 6M</span>
+            <span class="peer-param-pill" data-param="ret1y">Ret 1Y</span>
+            <span class="peer-param-pill" data-param="rsi">RSI</span>
+            <span class="peer-param-pill" data-param="adx">ADX</span>
+            <span class="peer-param-pill" data-param="volx">Vol ×50W</span>
+            <span class="peer-param-pill" data-param="volsurge">Vol Surge</span>
+            <span class="peer-param-pill" data-param="off52">52W High</span>
+            <span class="peer-param-pill" data-param="tscore">Tech Score</span>
+            <span class="peer-param-pill" data-param="r2">Trend R²</span>
+            <span class="peer-param-pill" data-param="deliv">Deliv 4W</span>
+        </div>
+        <!-- Chart type + pinned tickers. The type is remembered; pinned
+             tickers (any company, not only the group) ride along in every
+             chart until removed. -->
+        <div id="peer-tools">
+            <div id="peer-chart-types">
+                <span class="peer-ct-pill active" data-ct="ring" title="Ring: one metric, peers around a ring">◈ Ring</span>
+                <span class="peer-ct-pill" data-ct="bars" title="Bars: ranked bars with the group median">▤ Bars</span>
+                <span class="peer-ct-pill" data-ct="spider" title="Spider: 8-metric profile, you vs top peers">✦ Spider</span>
+                <span class="peer-ct-pill" data-ct="heat" title="Heat: every ticker × every metric, colour = rank in group">▦ Heat</span>
+                <span class="peer-ct-pill" data-ct="scatter" title="Quadrant: two metrics, bubble = market cap">⬢ Quad</span>
+            </div>
+            <div id="peer-add-wrap">
+                <select id="peer-y-param" title="Y-axis metric (Quadrant)"></select>
+                <input id="peer-add-inp" type="text" placeholder="+ ticker" autocomplete="off" spellcheck="false">
+                <div id="peer-add-sugg" hidden></div>
+            </div>
+        </div>
+        <div id="peer-extra-chips"></div>
+        <div id="peer-body">
         <div id="peer-octa-wrap">
+            <svg id="peer-alt-svg" xmlns="http://www.w3.org/2000/svg" style="display:none;"></svg>
             <svg id="peer-octa-svg" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
                 <polygon
                     points="100.00,74.50 118.03,81.97 125.50,100.00 118.03,118.03 100.00,125.50 81.97,118.03 74.50,100.00 81.97,81.97"
@@ -18974,6 +20512,7 @@
                 <span class="peer-val">8.2K</span>
             </div>
         </div>
+        </div>
     </div>
 
     <div id="ss-tip" style="
@@ -19114,14 +20653,102 @@
                 balsht: { label: 'Bal Sht', get: r => parseFloat(r['Trendlyne Balance Sheet Score']) || NaN, fmt: v => isNaN(v) ? '—' : Math.round(v) + '' },
                 revp: { label: 'Rev Perf', get: r => parseFloat(r['Revenue Performance']) || NaN, fmt: v => isNaN(v) ? '—' : Math.round(v) + '' },
                 ebitp: { label: 'EBIT P', get: r => parseFloat(r['EBITDA Performance']) || NaN, fmt: v => isNaN(v) ? '—' : Math.round(v) + '' },
-                npp: { label: 'NP Perf', get: r => parseFloat(r['Net Profit Performance']) || NaN, fmt: v => isNaN(v) ? '—' : Math.round(v) + '' }
+                npp: { label: 'NP Perf', get: r => parseFloat(r['Net Profit Performance']) || NaN, fmt: v => isNaN(v) ? '—' : Math.round(v) + '' },
+                /* Technical (full-screen). `neg` = negative values are valid
+                   and must not be dropped as "missing". */
+                ret1m: { label: 'Ret 1M', tech: true, neg: true, get: r => r._ret1m, fmt: v => isNaN(v) ? '—' : (v >= 0 ? '+' : '') + v.toFixed(1) + '%' },
+                ret3m: { label: 'Ret 3M', tech: true, neg: true, get: r => r._ret3m, fmt: v => isNaN(v) ? '—' : (v >= 0 ? '+' : '') + v.toFixed(1) + '%' },
+                ret6m: { label: 'Ret 6M', tech: true, neg: true, get: r => r._ret6m, fmt: v => isNaN(v) ? '—' : (v >= 0 ? '+' : '') + v.toFixed(1) + '%' },
+                ret1y: { label: 'Ret 1Y', tech: true, neg: true, get: r => r._ret1y, fmt: v => isNaN(v) ? '—' : (v >= 0 ? '+' : '') + v.toFixed(0) + '%' },
+                rsi: { label: 'RSI 14', tech: true, get: r => r._tsRSI, fmt: v => isNaN(v) ? '—' : Math.round(v) + '' },
+                adx: { label: 'ADX 14', tech: true, get: r => r._tsADX, fmt: v => isNaN(v) ? '—' : Math.round(v) + '' },
+                volx: { label: 'Vol ×50W', tech: true, get: r => r._tsVolMult, fmt: v => isNaN(v) ? '—' : v.toFixed(1) + '×' },
+                volsurge: { label: 'Vol Surge', tech: true, get: r => r._volSurgeX, fmt: v => isNaN(v) ? '—' : v.toFixed(1) + '×' },
+                off52: { label: '52W High', tech: true, neg: true, get: r => r._ts52wPct, fmt: v => isNaN(v) ? '—' : v.toFixed(1) + '%' },
+                tscore: { label: 'Tech Score', tech: true, get: r => parseFloat(r._techScore), fmt: v => isNaN(v) ? '—' : v.toFixed(1) },
+                r2: { label: 'Trend R²', tech: true, get: r => parseFloat(r._techR2), fmt: v => isNaN(v) ? '—' : v.toFixed(2) },
+                deliv: { label: 'Deliv 4W', tech: true, get: r => r._deliv4, fmt: v => isNaN(v) ? '—' : v.toFixed(0) + '%' }
             };
+            const FUND_KEYS = Object.keys(PARAMS).filter(k => !PARAMS[k].tech);
+            const TECH_KEYS = Object.keys(PARAMS).filter(k => PARAMS[k].tech);
 
             const COLORS = ['#3b82f6', '#10b981', '#f97316', '#f43f5e', '#eab308', '#ec4899', '#a78bfa', '#f472b6'];
             const SELF_CLR = '#22d3ee';
 
             let _currentTicker = null, _currentGroupValue = null, _currentGroupType = 'ind', _currentParam = 'mcap';
             let _peers = [];
+
+            /* ── Chart type (remembered) and pinned extra tickers ── */
+            const CT_KEY = 'peer_chart_type';
+            const CHART_TYPES = ['ring', 'bars', 'spider', 'heat', 'scatter'];
+            let _chartType = 'ring';
+            try { const sv = localStorage.getItem(CT_KEY); if (CHART_TYPES.includes(sv)) _chartType = sv; } catch (e) { }
+            let _yParam = 'gwth';
+            const _extra = new Set();          // tickers pinned into the comparison (any group)
+            // Spider axes / heat columns = every fundamental pill; in full
+            // screen the technical pills join them.
+            const _axes = () => _isFs() ? FUND_KEYS.concat(TECH_KEYS) : FUND_KEYS;
+            const SHORT = { mcap: 'MCap', eps: 'EPS', smr: 'SMR', dur: 'Dur', val: 'Val', gwth: 'Gwth', prof: 'Prof', cons: 'Qlty', balsht: 'BalS', revp: 'Rev', ebitp: 'EBIT', npp: 'NP',
+                ret1m: 'R1M', ret3m: 'R3M', ret6m: 'R6M', ret1y: 'R1Y', rsi: 'RSI', adx: 'ADX', volx: 'Vol×', volsurge: 'Srg', off52: '52W', tscore: 'TSc', r2: 'R²', deliv: 'Dlv' };
+            const esc = t => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+            function _extraRows() {
+                if (!_extra.size || !window._peerAllData) return [];
+                const out = [];
+                _extra.forEach(tk => {
+                    const r = window._peerAllData.find(x => String(x._ticker).toUpperCase() === tk);
+                    if (r) out.push(r);
+                });
+                return out;
+            }
+            function _renderExtraChips() {
+                const el = document.getElementById('peer-extra-chips');
+                if (!el) return;
+                el.classList.toggle('has', _extra.size > 0);
+                el.innerHTML = [..._extra].map(tk => `<span class="peer-extra-chip">📌 ${esc(tk)}<b data-tk="${esc(tk)}" title="Remove">×</b></span>`).join('');
+            }
+            window._peerAddExtra = function (tk) {
+                tk = String(tk || '').trim().toUpperCase();
+                if (!tk || tk === String(_currentTicker).toUpperCase()) return;
+                if (!window._peerAllData || !window._peerAllData.some(r => String(r._ticker).toUpperCase() === tk)) return;
+                _extra.add(tk);
+                _renderExtraChips();
+                refreshParam(_currentParam);
+            };
+            window._peerRemoveExtra = function (tk) {
+                _extra.delete(String(tk).toUpperCase());
+                _renderExtraChips();
+                refreshParam(_currentParam);
+            };
+
+            /* Percentile rank of v inside the group for one param (0..1). */
+            let _rankCache = {};
+            function _groupSorted(param) {
+                if (_rankCache[param]) return _rankCache[param];
+                const pDef = PARAMS[param];
+                const pool = _peers.concat(_extraRows());
+                const arr = pool.map(r => pDef.get(r)).filter(v => !isNaN(v) && v !== null).sort((a, b) => a - b);
+                _rankCache[param] = arr;
+                return arr;
+            }
+            function _pct(param, v) {
+                if (isNaN(v) || v === null) return NaN;
+                const arr = _groupSorted(param);
+                if (arr.length < 2) return 0.5;
+                let lo = 0, hi = arr.length;
+                while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] < v) lo = m + 1; else hi = m; }
+                return lo / (arr.length - 1);
+            }
+            function _heatColor(t) {
+                if (isNaN(t)) return 'rgba(255,255,255,0.05)';
+                const h = Math.round(t * 135);   // 0 red → 135 green
+                return `hsla(${h},70%,45%,0.78)`;
+            }
+            function _median(arr) {
+                if (!arr.length) return NaN;
+                const m = arr.length >> 1;
+                return arr.length % 2 ? arr[m] : (arr[m - 1] + arr[m]) / 2;
+            }
 
             // Global states for hover logic
             window._peerCloseTimer = null;
@@ -19132,7 +20759,11 @@
                 const p = document.getElementById('peer-popup');
                 if (p) {
                     p.style.display = 'none';
-                    p.classList.remove('peer-visible');
+                    p.classList.remove('peer-visible', 'peer-fs');
+                    const fb = document.getElementById('peer-popup-fs');
+                    if (fb) { fb.textContent = '⛶'; fb.title = 'Full screen'; }
+                    try { if (document.fullscreenElement === p && document.exitFullscreen) document.exitFullscreen().catch(() => { }); } catch (e) { }
+                    ['right', 'bottom', 'width', 'height'].forEach(k => { p.style[k] = ''; });
                     // Reset inline position/transform so CSS centering takes effect on next open
                     p.style.left = '';
                     p.style.top = '';
@@ -19226,8 +20857,9 @@
                 document.getElementById('peer-popup-title').textContent = '◈ ' + shortName;
                 document.getElementById('peer-popup-count').textContent = totalCount + ' co.';
 
-                refreshParam(_currentParam);
                 _wirePills(p);
+                _renderExtraChips();
+                refreshParam(_currentParam);
                 updateActivePill(p, _currentParam);
                 _initDrag();
 
@@ -19252,9 +20884,81 @@
 
             /* ── Pill wiring ── */
             let _pillsWired = false;
+            function _wireTools(p) {
+                p.querySelectorAll('.peer-ct-pill').forEach(pill => {
+                    pill.addEventListener('click', function (e) {
+                        e.stopPropagation();
+                        window._peerPinned = true;
+                        _chartType = this.dataset.ct;
+                        try { localStorage.setItem(CT_KEY, _chartType); } catch (err) { }
+                        _syncChartTypeUI(p);
+                        refreshParam(_currentParam);
+                    });
+                });
+                const ySel = document.getElementById('peer-y-param');
+                if (ySel) {
+                    ySel.innerHTML = Object.keys(PARAMS).map(k => `<option value="${k}">Y: ${PARAMS[k].label}</option>`).join('');
+                    ySel.value = _yParam;
+                    ySel.addEventListener('change', function () { _yParam = this.value; window._peerPinned = true; refreshParam(_currentParam); });
+                    ySel.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+                }
+                const inp = document.getElementById('peer-add-inp');
+                const sugg = document.getElementById('peer-add-sugg');
+                if (inp && sugg) {
+                    const hide = () => { sugg.hidden = true; sugg.innerHTML = ''; };
+                    const suggest = () => {
+                        const q = inp.value.trim().toUpperCase();
+                        if (!q || !window._peerAllData) { hide(); return; }
+                        const hits = [];
+                        for (const r of window._peerAllData) {
+                            const tk = String(r._ticker).toUpperCase();
+                            if (tk === String(_currentTicker).toUpperCase() || _extra.has(tk)) continue;
+                            const nm = String(r._coName || '').toUpperCase();
+                            const rank = tk === q ? 0 : tk.startsWith(q) ? 1 : nm.startsWith(q) ? 2 : (tk.includes(q) || nm.includes(q)) ? 3 : -1;
+                            if (rank >= 0) hits.push({ r, rank });
+                            if (hits.length > 60) break;
+                        }
+                        hits.sort((a, b) => a.rank - b.rank);
+                        const top = hits.slice(0, 7);
+                        if (!top.length) { hide(); return; }
+                        sugg.innerHTML = top.map(h => `<div class="peer-sugg-row" data-tk="${esc(h.r._ticker)}"><span class="peer-sugg-tk">${esc(h.r._ticker)}</span><span class="peer-sugg-nm">${esc(h.r._coName)}</span></div>`).join('');
+                        sugg.hidden = false;
+                    };
+                    inp.addEventListener('input', () => { window._peerPinned = true; suggest(); });
+                    inp.addEventListener('focus', () => { window._peerPinned = true; suggest(); });
+                    inp.addEventListener('keydown', function (e) {
+                        e.stopPropagation();
+                        if (e.key === 'Enter') {
+                            const first = sugg.querySelector('.peer-sugg-row');
+                            const tk = first ? first.dataset.tk : inp.value;
+                            window._peerAddExtra(tk);
+                            inp.value = ''; hide();
+                        } else if (e.key === 'Escape') { inp.value = ''; hide(); }
+                    });
+                    inp.addEventListener('blur', () => setTimeout(hide, 180));
+                    sugg.addEventListener('mousedown', function (e) {
+                        const row = e.target.closest('.peer-sugg-row');
+                        if (!row) return;
+                        e.preventDefault(); e.stopPropagation();
+                        window._peerAddExtra(row.dataset.tk);
+                        inp.value = ''; hide();
+                    });
+                }
+                const chips = document.getElementById('peer-extra-chips');
+                if (chips) chips.addEventListener('click', function (e) {
+                    const b = e.target.closest('b[data-tk]');
+                    if (b) { e.stopPropagation(); window._peerRemoveExtra(b.dataset.tk); }
+                });
+            }
+            function _syncChartTypeUI(p) {
+                p.querySelectorAll('.peer-ct-pill').forEach(pl => pl.classList.toggle('active', pl.dataset.ct === _chartType));
+                CHART_TYPES.forEach(ct => p.classList.toggle('peer-ct-' + ct, ct === _chartType));
+            }
             function _wirePills(p) {
                 if (_pillsWired) return;
                 _pillsWired = true;
+                _wireTools(p);
+                _syncChartTypeUI(p);
                 p.querySelectorAll('.peer-param-pill').forEach(pill => {
                     pill.addEventListener('click', function (e) {
                         e.stopPropagation();
@@ -19284,22 +20988,319 @@
             function refreshParam(param) {
                 const pDef = PARAMS[param];
                 if (!pDef || !_peers.length) return;
+                _rankCache = {};
                 const selfRow = _peers.find(r => r._ticker === _currentTicker);
-                const maxOthers = Math.max(2, (window._peerMaxCount || 8) - 1);
+                const cnt = window._peerMaxCount;
+                const maxOthers = cnt === 'all' ? Infinity : Math.max(2, (cnt || 10) - 1);
                 const others = _peers
-                    .filter(r => r._ticker !== _currentTicker && !isNaN(pDef.get(r)) && pDef.get(r) > 0)
+                    .filter(r => { const v = pDef.get(r); return r._ticker !== _currentTicker && !isNaN(v) && v !== null && (pDef.neg || v > 0); })
                     .sort((a, b) => pDef.get(b) - pDef.get(a))
                     .slice(0, maxOthers);
+                const seen = new Set(others.map(r => String(r._ticker).toUpperCase()));
                 const list = [...others];
+                // Pinned tickers always ride along, on top of the count
+                _extraRows().forEach(r => { const tk = String(r._ticker).toUpperCase(); if (!seen.has(tk) && tk !== String(_currentTicker).toUpperCase()) { seen.add(tk); list.push(r); } });
                 if (selfRow) list.push(selfRow);
-                const vals = list.map(r => pDef.get(r) || 0);
+                const vals = list.map(r => { const v = pDef.get(r); return isNaN(v) ? 0 : v; });
                 const maxV = Math.max(...vals, 1);
-                drawOctagon(list, vals, maxV, selfRow?._ticker);
-                drawList(list, vals, maxV, pDef, selfRow?._ticker);
+                const selfTk = selfRow ? selfRow._ticker : null;
+
+                const ring = document.getElementById('peer-octa-svg');
+                const alt = document.getElementById('peer-alt-svg');
+                const listEl = document.getElementById('peer-list');
+                const useRing = _chartType === 'ring';
+                if (ring) ring.style.display = useRing ? '' : 'none';
+                if (alt) alt.style.display = useRing ? 'none' : 'block';
+                if (listEl) listEl.style.display = ((_chartType === 'bars' || _chartType === 'heat') && !_isFs()) ? 'none' : '';
+
+                if (useRing) drawOctagon(list, vals, maxV, selfTk);
+                else if (_chartType === 'bars') drawBars(list, vals, maxV, pDef, selfTk);
+                else if (_chartType === 'spider') drawSpider(list, selfTk, param);
+                else if (_chartType === 'heat') drawHeat(list, selfTk, param);
+                else if (_chartType === 'scatter') drawScatter(list, selfTk, param);
+                if (listEl && listEl.style.display !== 'none') drawList(list, vals, maxV, pDef, selfTk);
+                _fitCharts();
+            }
+
+            /* ── Bars: ranked horizontal bars, group median marked ── */
+            function drawBars(list, vals, maxV, pDef, selfTicker) {
+                const svg = document.getElementById('peer-alt-svg');
+                if (!svg) return;
+                const rows = list.map((r, i) => ({ r, v: vals[i], i })).sort((a, b) => b.v - a.v);
+                const K = _fsK();
+                const W = 316 * K, RH = 17 * K, L = 64 * K, RGT = 44 * K, TOP = 6 * K;
+                const H = TOP + rows.length * RH + 14 * K;
+                const med = _median(_groupSorted(Object.keys(PARAMS).find(k => PARAMS[k] === pDef)));
+                const bw = W - L - RGT;
+                // Negative-capable metrics (returns, 52W distance) get a zero
+                // line inside the track; bars grow left from it for losses.
+                const minV = Math.min(0, ...vals);
+                const span = (maxV - minV) || 1;
+                const zeroX = L + (-minV / span) * bw;
+                let html = '';
+                if (minV < 0) html += `<line x1="${zeroX.toFixed(1)}" y1="${TOP - 2}" x2="${zeroX.toFixed(1)}" y2="${TOP + rows.length * RH}" stroke="rgba(255,255,255,0.35)" stroke-width="0.8"/>`;
+                rows.forEach((it, k) => {
+                    const y = TOP + k * RH;
+                    const isSelf = it.r._ticker === selfTicker;
+                    const isExtra = _extra.has(String(it.r._ticker).toUpperCase());
+                    const clr = isSelf ? SELF_CLR : isExtra ? '#fbbf24' : COLORS[it.i % COLORS.length];
+                    const w = Math.max(2, Math.abs(it.v) / span * bw);
+                    const bx = it.v >= 0 ? zeroX : zeroX - w;
+                    if (isSelf) html += `<rect x="0" y="${y}" width="${W}" height="${RH}" rx="4" fill="rgba(34,211,238,0.08)"/>`;
+                    html += `<text x="${L - 6 * K}" y="${y + RH / 2 + 3}" text-anchor="end" font-size="9" font-weight="${isSelf ? 800 : 600}" fill="${isSelf ? SELF_CLR : isExtra ? '#fbbf24' : 'rgba(255,255,255,0.8)'}" class="peer-svg-link" onclick="_peerFilterByTicker('${esc(it.r._ticker)}')"><title>${esc(it.r._coName)}</title>${esc(String(it.r._ticker).slice(0, K > 1 ? 12 : 9))}</text>`;
+                    html += `<rect x="${bx.toFixed(1)}" y="${y + 4 * K}" width="${w.toFixed(1)}" height="${RH - 8 * K}" rx="3" fill="${it.v < 0 ? '#fb7185' : clr}" opacity="${isSelf ? 1 : 0.85}"><title>${esc(it.r._coName)}: ${pDef.fmt(it.v)}</title></rect>`;
+                    html += `<text x="${(it.v >= 0 ? zeroX + w + 4 * K : zeroX + 4 * K).toFixed(1)}" y="${y + RH / 2 + 3}" font-size="8.5" font-weight="700" fill="${isSelf ? '#fff' : 'rgba(255,255,255,0.7)'}">${pDef.fmt(it.v)}</text>`;
+                });
+                if (!isNaN(med) && med >= minV && med <= maxV) {
+                    const mx = L + (med - minV) / span * bw;
+                    html += `<line x1="${mx.toFixed(1)}" y1="${TOP - 2}" x2="${mx.toFixed(1)}" y2="${TOP + rows.length * RH}" stroke="rgba(255,255,255,0.45)" stroke-width="0.8" stroke-dasharray="2 2"/>`;
+                    html += `<text x="${mx.toFixed(1)}" y="${H - 3 * K}" text-anchor="middle" font-size="7.5" fill="rgba(255,255,255,0.5)">group median ${pDef.fmt(med)}</text>`;
+                }
+                svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+                svg.innerHTML = html;
+            }
+
+            /* ── Spider: 8 metrics as percentile-in-group, self vs top peers ── */
+            function drawSpider(list, selfTicker, param) {
+                const svg = document.getElementById('peer-alt-svg');
+                if (!svg) return;
+                const K = _fsK();
+                const SPIDER_AXES = _axes();
+                const W = 316 * K, H = 262 * K, cx = 158 * K, cy = 128 * K, R = 86 * K, n = SPIDER_AXES.length;
+                const ang = i => (2 * Math.PI * i / n) - Math.PI / 2;
+                let html = '';
+                [0.25, 0.5, 0.75, 1].forEach(f => {
+                    const pts = SPIDER_AXES.map((_, i) => `${(cx + R * f * Math.cos(ang(i))).toFixed(1)},${(cy + R * f * Math.sin(ang(i))).toFixed(1)}`).join(' ');
+                    html += `<polygon points="${pts}" fill="none" stroke="${f === 1 ? 'rgba(34,211,238,0.22)' : 'rgba(255,255,255,0.07)'}" stroke-width="${f === 1 ? 1.2 : 0.7}"/>`;
+                });
+                SPIDER_AXES.forEach((k, i) => {
+                    const x2 = cx + R * Math.cos(ang(i)), y2 = cy + R * Math.sin(ang(i));
+                    const lx = cx + (R + 12 * K) * Math.cos(ang(i)), ly = cy + (R + 12 * K) * Math.sin(ang(i));
+                    const c = Math.cos(ang(i));
+                    const anchor = c > 0.15 ? 'start' : c < -0.15 ? 'end' : 'middle';
+                    const hot = k === param;
+                    html += `<line x1="${cx}" y1="${cy}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="rgba(255,255,255,${hot ? 0.3 : 0.09})" stroke-width="0.8"/>`;
+                    // Axis label doubles as a metric picker (same as the pills above)
+                    html += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="${anchor}" dominant-baseline="middle" font-size="8" font-weight="${hot ? 800 : 600}" fill="${hot ? '#22d3ee' : 'rgba(255,255,255,0.6)'}" class="peer-svg-link" onclick="window._peerSetParam('${k}')">${SHORT[k]}</text>`;
+                });
+                // self last so it paints on top; others limited to 5 for legibility
+                const selfRow = list.find(r => r._ticker === selfTicker);
+                const others = list.filter(r => r._ticker !== selfTicker).slice(0, _isFs() ? 9 : 5);
+                const poly = (r, clr, fillA, sw) => {
+                    const pts = SPIDER_AXES.map((k, i) => {
+                        const t = _pct(k, PARAMS[k].get(r));
+                        const f = isNaN(t) ? 0 : 0.06 + 0.94 * t;
+                        return [cx + R * f * Math.cos(ang(i)), cy + R * f * Math.sin(ang(i))];
+                    });
+                    let h = `<polygon points="${pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')}" fill="${clr}" fill-opacity="${fillA}" stroke="${clr}" stroke-width="${sw}" stroke-linejoin="round"><title>${esc(r._coName)}</title></polygon>`;
+                    pts.forEach(p => { h += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${(sw > 1.5 ? 3 : 2) * K}" fill="${clr}" stroke="#0a0a10" stroke-width="1"/>`; });
+                    return h;
+                };
+                others.forEach((r, i) => { html += poly(r, _extra.has(String(r._ticker).toUpperCase()) ? '#fbbf24' : COLORS[list.indexOf(r) % COLORS.length], 0.05, 1.1); });
+                if (selfRow) html += poly(selfRow, SELF_CLR, 0.2, 2);
+                // legend strip
+                const leg = [selfRow, ...others].filter(Boolean);
+                let lx = 6 * K, ly = H - 12 * K;
+                leg.forEach(r => {
+                    const isSelf = r._ticker === selfTicker;
+                    const clr = isSelf ? SELF_CLR : _extra.has(String(r._ticker).toUpperCase()) ? '#fbbf24' : COLORS[list.indexOf(r) % COLORS.length];
+                    const tk = String(r._ticker).slice(0, 8);
+                    const wdt = 14 + tk.length * 5.2;
+                    if (lx + wdt > W - 4) { lx = 6 * K; ly -= 11; }
+                    html += `<rect x="${lx}" y="${ly}" width="7" height="7" rx="2" fill="${clr}"/><text x="${lx + 10}" y="${ly + 6.5}" font-size="8" font-weight="${isSelf ? 800 : 600}" fill="${isSelf ? SELF_CLR : 'rgba(255,255,255,0.7)'}" class="peer-svg-link" onclick="_peerFilterByTicker('${esc(r._ticker)}')">${esc(tk)}</text>`;
+                    lx += wdt;
+                });
+                html += `<text x="${W - 4}" y="10" text-anchor="end" font-size="7.5" fill="rgba(255,255,255,0.4)">outer edge = best in group</text>`;
+                svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+                svg.innerHTML = html;
+            }
+
+            /* ── Heat: ticker × metric scorecard; colour = percentile rank in group ── */
+            function drawHeat(list, selfTicker, param) {
+                const svg = document.getElementById('peer-alt-svg');
+                if (!svg) return;
+                const pDef = PARAMS[param];
+                const rows = list.slice().sort((a, b) => { const av = pDef.get(a), bv = pDef.get(b); return (isNaN(bv) ? -Infinity : bv) - (isNaN(av) ? -Infinity : av); });
+                const K = _fsK();
+                const HEAT_COLS = _axes();
+                const W = 316 * K, L = 58 * K, HDR = 16 * K, RH = 16 * K, TOP = 2 * K;
+                const cw = (W - L) / HEAT_COLS.length;
+                const H = TOP + HDR + rows.length * RH + 4 * K;
+                let html = '';
+                HEAT_COLS.forEach((k, c) => {
+                    const x = L + c * cw + cw / 2;
+                    const hot = k === param;
+                    html += `<text x="${x.toFixed(1)}" y="${TOP + 11 * K}" text-anchor="middle" font-size="7.5" font-weight="${hot ? 800 : 600}" fill="${hot ? '#22d3ee' : 'rgba(255,255,255,0.55)'}" class="peer-svg-link" onclick="window._peerSetParam('${k}')">${SHORT[k]}${hot ? ' ▾' : ''}</text>`;
+                });
+                rows.forEach((r, i) => {
+                    const y = TOP + HDR + i * RH;
+                    const isSelf = r._ticker === selfTicker;
+                    const isExtra = _extra.has(String(r._ticker).toUpperCase());
+                    if (isSelf) html += `<rect x="0" y="${y}" width="${W}" height="${RH}" rx="3" fill="rgba(34,211,238,0.10)"/>`;
+                    html += `<text x="${L - 5 * K}" y="${y + RH / 2 + 3}" text-anchor="end" font-size="8.5" font-weight="${isSelf ? 800 : 600}" fill="${isSelf ? SELF_CLR : isExtra ? '#fbbf24' : 'rgba(255,255,255,0.8)'}" class="peer-svg-link" onclick="_peerFilterByTicker('${esc(r._ticker)}')"><title>${esc(r._coName)}</title>${esc(String(r._ticker).slice(0, K > 1 ? 11 : 8))}</text>`;
+                    HEAT_COLS.forEach((k, c) => {
+                        const v = PARAMS[k].get(r);
+                        const t = _pct(k, v);
+                        const x = L + c * cw;
+                        html += `<rect x="${(x + 0.8 * K).toFixed(1)}" y="${y + K}" width="${(cw - 1.6 * K).toFixed(1)}" height="${RH - 2 * K}" rx="2" fill="${_heatColor(t)}"${k === param ? ' stroke="rgba(255,255,255,0.35)" stroke-width="0.6"' : ''}><title>${esc(r._ticker)} · ${PARAMS[k].label}: ${PARAMS[k].fmt(v)}${isNaN(t) ? '' : ' (top ' + Math.round((1 - t) * 100) + '%)'}</title></rect>`;
+                        html += `<text x="${(x + cw / 2).toFixed(1)}" y="${y + RH / 2 + 2.8}" text-anchor="middle" font-size="7" font-weight="700" fill="#fff" pointer-events="none">${PARAMS[k].fmt(v)}</text>`;
+                    });
+                });
+                svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+                svg.innerHTML = html;
+            }
+            window._peerSetParam = function (k) {
+                if (!PARAMS[k]) return;
+                _currentParam = k;
+                window._peerPinned = true;
+                const p = document.getElementById('peer-popup');
+                if (p) updateActivePill(p, k);
+                refreshParam(k);
+            };
+
+            /* ── Quadrant: X = current metric, Y = chosen metric, bubble = market cap ── */
+            function drawScatter(list, selfTicker, param) {
+                const svg = document.getElementById('peer-alt-svg');
+                if (!svg) return;
+                const xDef = PARAMS[param], yDef = PARAMS[_yParam] || PARAMS.gwth;
+                const K = _fsK();
+                const W = 316 * K, H = 240 * K, L = 34 * K, RGT = 10 * K, TOP = 12 * K, BOT = 22 * K;
+                const pw = W - L - RGT, ph = H - TOP - BOT;
+                const xLog = param === 'mcap', yLog = _yParam === 'mcap';
+                const tx = v => xLog ? Math.log10(Math.max(v, 1)) : v;
+                const ty = v => yLog ? Math.log10(Math.max(v, 1)) : v;
+                const pts = list.map(r => ({ r, x: xDef.get(r), y: yDef.get(r), m: r._mcap })).filter(p => !isNaN(p.x) && !isNaN(p.y));
+                if (!pts.length) { svg.setAttribute('viewBox', `0 0 ${W} 60`); svg.innerHTML = `<text x="${W / 2}" y="34" text-anchor="middle" font-size="9" fill="rgba(255,255,255,0.5)">No overlapping data for these two metrics</text>`; return; }
+                const xs = pts.map(p => tx(p.x)), ys = pts.map(p => ty(p.y));
+                let x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+                const xp = (x1 - x0 || 1) * 0.12, yp = (y1 - y0 || 1) * 0.15;
+                x0 -= xp; x1 += xp; y0 -= yp; y1 += yp;
+                const X = v => L + (tx(v) - x0) / (x1 - x0) * pw;
+                const Y = v => TOP + ph - (ty(v) - y0) / (y1 - y0) * ph;
+                const ms = pts.map(p => p.m).filter(v => !isNaN(v) && v > 0);
+                const mMax = Math.max(...ms, 1);
+                const rad = m => ((isNaN(m) || m <= 0) ? 4 : 3.5 + 10.5 * Math.sqrt(m / mMax)) * K;
+                const medX = _median(_groupSorted(param)), medY = _median(_groupSorted(_yParam));
+                let html = `<rect x="${L}" y="${TOP}" width="${pw}" height="${ph}" rx="6" fill="rgba(255,255,255,0.025)" stroke="rgba(255,255,255,0.08)"/>`;
+                if (!isNaN(medX)) { const mx = X(medX); if (mx > L && mx < L + pw) html += `<line x1="${mx.toFixed(1)}" y1="${TOP}" x2="${mx.toFixed(1)}" y2="${TOP + ph}" stroke="rgba(255,255,255,0.3)" stroke-width="0.8" stroke-dasharray="3 3"/>`; }
+                if (!isNaN(medY)) { const my = Y(medY); if (my > TOP && my < TOP + ph) html += `<line x1="${L}" y1="${my.toFixed(1)}" x2="${L + pw}" y2="${my.toFixed(1)}" stroke="rgba(255,255,255,0.3)" stroke-width="0.8" stroke-dasharray="3 3"/>`; }
+                html += `<text x="${L + pw - 4 * K}" y="${TOP + 10 * K}" text-anchor="end" font-size="7.5" fill="rgba(52,211,153,0.7)">high ${yDef.label} · high ${xDef.label}</text>`;
+                html += `<text x="${L + 4 * K}" y="${TOP + ph - 4 * K}" font-size="7.5" fill="rgba(251,113,133,0.7)">low · low</text>`;
+                html += `<text x="${L + pw / 2}" y="${H - 6 * K}" text-anchor="middle" font-size="8.5" font-weight="700" fill="rgba(255,255,255,0.6)">${xDef.label} →${xLog ? ' (log)' : ''} · dashed = group median</text>`;
+                html += `<text x="${9 * K}" y="${TOP + ph / 2}" text-anchor="middle" font-size="8.5" font-weight="700" fill="rgba(255,255,255,0.6)" transform="rotate(-90 ${9 * K} ${TOP + ph / 2})">${yDef.label} ↑</text>`;
+                const sorted = pts.slice().sort((a, b) => (isNaN(b.m) ? 0 : b.m) - (isNaN(a.m) ? 0 : a.m));   // big bubbles first, so small ones stay clickable
+                const labelAll = pts.length <= (_isFs() ? 30 : 12);
+                sorted.forEach(p => {
+                    const isSelf = p.r._ticker === selfTicker;
+                    const isExtra = _extra.has(String(p.r._ticker).toUpperCase());
+                    const clr = isSelf ? SELF_CLR : isExtra ? '#fbbf24' : COLORS[list.indexOf(p.r) % COLORS.length];
+                    const cx = X(p.x), cy = Y(p.y), r = rad(p.m);
+                    if (isSelf) html += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(r + 5 * K).toFixed(1)}" fill="${clr}" opacity="0.18"/>`;
+                    html += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" fill="${clr}" fill-opacity="${isSelf ? 0.95 : 0.6}" stroke="${isSelf ? '#fff' : clr}" stroke-width="${isSelf ? 1.5 : 1}" class="peer-svg-link" onclick="_peerFilterByTicker('${esc(p.r._ticker)}')"><title>${esc(p.r._coName)}
+${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PARAMS.mcap.fmt(p.m)}</title></circle>`;
+                    if (labelAll || isSelf || isExtra) html += `<text x="${(cx + r + 2 * K).toFixed(1)}" y="${(cy + 3).toFixed(1)}" font-size="${isSelf ? 8.5 : 7.5}" font-weight="${isSelf ? 800 : 600}" fill="${isSelf ? SELF_CLR : 'rgba(255,255,255,0.75)'}" pointer-events="none">${esc(String(p.r._ticker).slice(0, 9))}</text>`;
+                });
+                svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+                svg.innerHTML = html;
             }
 
             // Expose refresh callback for count change buttons
             window._peerRefreshCurrent = function () { refreshParam(_currentParam); };
+            window._peerGroupSize = function () { return _peers.length; };
+
+            /* ── Full screen: the popup fills the viewport, chart and ranked
+               list sit side by side, every chart type / metric / company
+               count stays available. Drawing scales its geometry (K) while
+               font sizes stay in viewBox units, so text grows with the box. */
+            window.togglePeerFullscreen = function () {
+                const p = document.getElementById('peer-popup');
+                if (!p) return;
+                const on = !p.classList.contains('peer-fs');
+                p.classList.toggle('peer-fs', on);
+                window._peerPinned = true;
+                const b = document.getElementById('peer-popup-fs');
+                if (b) { b.textContent = on ? '🗗' : '⛶'; b.title = on ? 'Exit full screen' : 'Full screen'; }
+                if (!on && PARAMS[_currentParam] && PARAMS[_currentParam].tech) { _currentParam = 'mcap'; updateActivePill(p, 'mcap'); }
+                // The drag helper leaves inline right/bottom/left/top behind;
+                // clear them all so the .peer-fs rules own the geometry.
+                ['left', 'top', 'right', 'bottom', 'width', 'height', 'transform'].forEach(k => { p.style[k] = ''; });
+                // Real browser fullscreen too (hides the address bar / chrome)
+                // where the API exists; the CSS above already fills the viewport
+                // so it is fine when it does not (iOS Safari).
+                try {
+                    if (on && p.requestFullscreen && !document.fullscreenElement) p.requestFullscreen().catch(() => { });
+                    else if (!on && document.fullscreenElement === p && document.exitFullscreen) document.exitFullscreen().catch(() => { });
+                } catch (e) { }
+                if (!on && window.innerWidth > 600) {
+                    const popW = p.offsetWidth || 340, popH = p.offsetHeight || 480;
+                    p.style.left = Math.max(8, Math.round((window.innerWidth - popW) / 2)) + 'px';
+                    p.style.top = Math.max(8, Math.round((window.innerHeight - popH) / 2)) + 'px';
+                    p.style.transform = 'none';
+                }
+                refreshParam(_currentParam);
+            };
+            function _isFs() {
+                const p = document.getElementById('peer-popup');
+                return !!(p && p.classList.contains('peer-fs'));
+            }
+            /* Usable chart area (px) inside #peer-octa-wrap, minus its padding. */
+            function _area() {
+                const wrap = document.getElementById('peer-octa-wrap');
+                if (!wrap || !wrap.clientWidth) return null;
+                let pl = 0, pr = 0, pt = 0, pb = 0;
+                try { const cs = getComputedStyle(wrap); pl = parseFloat(cs.paddingLeft) || 0; pr = parseFloat(cs.paddingRight) || 0; pt = parseFloat(cs.paddingTop) || 0; pb = parseFloat(cs.paddingBottom) || 0; } catch (e) { }
+                return { w: Math.max(120, wrap.clientWidth - pl - pr), h: Math.max(120, wrap.clientHeight - pt - pb) };
+            }
+            /* Drawing scale. Geometry is multiplied by K while font sizes stay
+               in viewBox units, so K is chosen from the REAL screen area: a
+               phone stays at 1 (text ≈ 9-10px), an iPad lands on 2, a desktop
+               on 3-4. Bars/Heat are width-bound (they scroll), the others are
+               bound by the smaller dimension. */
+            function _fsK() {
+                if (!_isFs()) return 1;
+                const a = _area();
+                if (!a) return 2;
+                const wide = _chartType === 'bars' || _chartType === 'heat';
+                const base = wide ? a.w : Math.min(a.w, a.h * 1.2);
+                return Math.max(1, Math.min(4, Math.round(base / 316 / 1.25)));
+            }
+            /* Size the SVG element to the area after each draw. */
+            function _fitCharts() {
+                const ring = document.getElementById('peer-octa-svg');
+                const alt = document.getElementById('peer-alt-svg');
+                if (!ring || !alt) return;
+                if (!_isFs()) { ring.style.width = ''; ring.style.height = ''; alt.style.width = ''; alt.style.height = ''; return; }
+                const a = _area();
+                if (!a) return;
+                if (_chartType === 'ring') {
+                    const sz = Math.max(160, Math.min(a.w, a.h));
+                    ring.style.width = sz + 'px'; ring.style.height = sz + 'px';
+                    return;
+                }
+                const vb = alt.viewBox && alt.viewBox.baseVal;
+                if (!vb || !vb.width) return;
+                const ratio = vb.height / vb.width;
+                let w = Math.min(a.w, a.h / ratio);
+                if (_chartType === 'bars' || _chartType === 'heat') {
+                    // Never squash rows below ~15px to fit the height — scroll instead
+                    const rowPx = 17 * _fsK() * (w / vb.width);
+                    if (rowPx < 15) w = a.w;
+                }
+                alt.style.width = Math.round(w) + 'px';
+                alt.style.height = Math.round(w * ratio) + 'px';
+            }
+            let _fitTimer = null;
+            window.addEventListener('resize', function () {
+                if (!_isFs()) return;
+                clearTimeout(_fitTimer);
+                _fitTimer = setTimeout(function () { refreshParam(_currentParam); }, 120);
+            });
+            document.addEventListener('fullscreenchange', function () {
+                const p = document.getElementById('peer-popup');
+                if (!p) return;
+                if (!document.fullscreenElement && p.classList.contains('peer-fs')) window.togglePeerFullscreen();
+                else if (document.fullscreenElement === p) setTimeout(function () { refreshParam(_currentParam); }, 60);
+            });
 
             // Expose rebuild: re-compute _peers from index filter only, then redraw
             window._peerRebuildPeers = function () {
@@ -19356,9 +21357,10 @@
                     html += `<text x="${lx.toFixed(2)}" y="${ly.toFixed(2)}" text-anchor="${anchor}" dominant-baseline="middle" font-family="Lexend,sans-serif" font-size="9" font-weight="${isSelf ? 700 : 500}" fill="${isSelf ? '#22d3ee' : '#ffffff'}">${tck}</text>`;
                 }
 
+                const minVal = Math.min(0, ...vals), spanV = (maxV - minVal) || 1;
                 const pts = list.map((r, i) => {
                     const ang = (2 * Math.PI * i / n) - Math.PI / 2;
-                    const frac = maxV > 0 ? Math.max(0.05, (vals[i] || 0) / maxV) : 0.05;
+                    const frac = Math.max(0.05, ((vals[i] || 0) - minVal) / spanV);
                     const rad = rMin + (R - rMin) * frac;
                     return { x: cx + rad * Math.cos(ang), y: cy + rad * Math.sin(ang), r, i };
                 });
@@ -19386,7 +21388,7 @@
                 container.innerHTML = indexed.map((item, rank) => {
                     const isSelf = item.r._ticker === selfTicker;
                     const clr = isSelf ? SELF_CLR : COLORS[item.i % COLORS.length];
-                    const barPct = maxV > 0 ? Math.max(3, (item.v || 0) / maxV * 100) : 3;
+                    const barPct = maxV > 0 ? Math.max(3, Math.abs(item.v || 0) / Math.max(maxV, ...vals.map(Math.abs)) * 100) : 3;
                     const name = item.r._ticker || String(item.r._coName).slice(0, 20);
                     const ticker = item.r._ticker;
                     return `<div class="peer-item">
@@ -19485,12 +21487,14 @@
 
                 const ctrl = document.createElement('div');
                 ctrl.id = 'peer-count-ctrl';
+                ctrl.setAttribute('data-nodrag', '');   // header is draggable — without this every press became a drag and the click was lost
                 ctrl.style.cssText = 'display:flex;align-items:center;gap:4px;flex-shrink:0;';
                 ctrl.innerHTML = `
       <span style="font-size:8px;color:rgba(34,211,238,0.6);font-weight:700;letter-spacing:0.04em;white-space:nowrap;">SHOW</span>
       <button id="peer-count-dec" style="width:18px;height:18px;border-radius:4px;background:rgba(34,211,238,0.08);border:1px solid rgba(34,211,238,0.25);color:#22d3ee;font-size:11px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;font-family:'Lexend',sans-serif;flex-shrink:0;">−</button>
-      <span id="peer-count-val" style="font-size:10px;font-weight:800;color:#22d3ee;min-width:16px;text-align:center;font-family:'Lexend',sans-serif;">8</span>
+      <input id="peer-count-val" type="number" min="3" max="300" step="1" value="10" inputmode="numeric" title="Number of companies to compare — type a number and press Enter" style="width:34px;height:18px;padding:0 2px;font-size:10px;font-weight:800;color:#22d3ee;text-align:center;font-family:'Lexend',sans-serif;background:rgba(34,211,238,0.06);border:1px solid rgba(34,211,238,0.35);border-radius:4px;outline:none;-moz-appearance:textfield;">
       <button id="peer-count-inc" style="width:18px;height:18px;border-radius:4px;background:rgba(34,211,238,0.08);border:1px solid rgba(34,211,238,0.25);color:#22d3ee;font-size:11px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;font-family:'Lexend',sans-serif;flex-shrink:0;">+</button>
+      <button id="peer-count-all" title="Compare every company in the group" style="height:18px;padding:0 6px;border-radius:4px;background:rgba(34,211,238,0.08);border:1px solid rgba(34,211,238,0.25);color:#22d3ee;font-size:8.5px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;font-family:'Lexend',sans-serif;flex-shrink:0;letter-spacing:0.04em;">ALL</button>
     `;
 
                 // Insert before close button
@@ -19500,26 +21504,59 @@
 
                 const decBtn = document.getElementById('peer-count-dec');
                 const incBtn = document.getElementById('peer-count-inc');
+                const allBtn = document.getElementById('peer-count-all');
                 const valEl = document.getElementById('peer-count-val');
-
-                decBtn.addEventListener('click', function (e) {
+                const paint = () => {
+                    const all = window._peerMaxCount === 'all';
+                    if (document.activeElement !== valEl) valEl.value = all ? '' : window._peerMaxCount;
+                    valEl.placeholder = all ? 'All' : '';
+                    allBtn.style.background = all ? '#22d3ee' : 'rgba(34,211,238,0.08)';
+                    allBtn.style.color = all ? '#06202a' : '#22d3ee';
+                };
+                window._peerCountPaint = paint;
+                const groupSize = () => (typeof window._peerGroupSize === 'function' ? window._peerGroupSize() : 24);
+                // Typed count: apply on Enter or when leaving the box
+                const applyTyped = () => {
+                    const n = parseInt(valEl.value, 10);
+                    if (isNaN(n)) { paint(); return; }
+                    window._peerMaxCount = Math.max(3, Math.min(300, n));
+                    paint();
+                    if (typeof window._peerRefreshCurrent === 'function') window._peerRefreshCurrent();
+                };
+                valEl.addEventListener('focus', function () { window._peerPinned = true; if (window._peerMaxCount === 'all') valEl.value = ''; });
+                valEl.addEventListener('keydown', function (e) {
                     e.stopPropagation();
-                    const cur = window._peerMaxCount || 8;
-                    if (cur <= 3) return;
-                    window._peerMaxCount = cur - 1;
-                    valEl.textContent = window._peerMaxCount;
+                    if (e.key === 'Enter') { applyTyped(); valEl.blur(); }
+                    else if (e.key === 'Escape') { paint(); valEl.blur(); }
+                });
+                valEl.addEventListener('change', applyTyped);
+                valEl.addEventListener('blur', function () { if (valEl.value === '' && window._peerMaxCount !== 'all') paint(); });
+                valEl.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+                decBtn.addEventListener('click', function (e) {
+                    e.stopPropagation(); window._peerPinned = true;
+                    const cur = window._peerMaxCount === 'all' ? Math.min(groupSize(), 300) : (window._peerMaxCount || 10);
+                    window._peerMaxCount = Math.max(3, cur - 1);
+                    paint();
                     if (typeof window._peerRefreshCurrent === 'function') window._peerRefreshCurrent();
                 });
                 incBtn.addEventListener('click', function (e) {
-                    e.stopPropagation();
-                    const cur = window._peerMaxCount || 8;
-                    window._peerMaxCount = cur + 1;
-                    valEl.textContent = window._peerMaxCount;
+                    e.stopPropagation(); window._peerPinned = true;
+                    if (window._peerMaxCount === 'all') return;
+                    const cur = window._peerMaxCount || 10;
+                    window._peerMaxCount = Math.min(300, cur + 1);
+                    paint();
                     if (typeof window._peerRefreshCurrent === 'function') window._peerRefreshCurrent();
                 });
+                allBtn.addEventListener('click', function (e) {
+                    e.stopPropagation(); window._peerPinned = true;
+                    window._peerMaxCount = window._peerMaxCount === 'all' ? 10 : 'all';
+                    paint();
+                    if (typeof window._peerRefreshCurrent === 'function') window._peerRefreshCurrent();
+                });
+                paint();
             }
 
-            window._peerMaxCount = 8;
+            window._peerMaxCount = 10;
 
             // Observe peer-popup appearing
             const peerPopup = document.getElementById('peer-popup');
@@ -19528,8 +21565,7 @@
                     if (peerPopup.classList.contains('peer-visible') || peerPopup.style.display !== 'none') {
                         injectCountControl();
                         // Sync display value
-                        const valEl = document.getElementById('peer-count-val');
-                        if (valEl) valEl.textContent = window._peerMaxCount || 8;
+                        if (typeof window._peerCountPaint === 'function') window._peerCountPaint();
                     }
                 });
                 obs.observe(peerPopup, { attributes: true, attributeFilter: ['class', 'style'] });
@@ -19768,8 +21804,13 @@
 
             /* ── Public: refresh button handler ── */
             window.dealBlockRefresh = function () {
-                if (_loading) return;
-                loadDealData(true); // force refresh
+                if (_loading) return Promise.resolve();
+                return loadDealData(true); // force refresh
+            };
+            /* Initial load: fetch if not yet loaded, no-op otherwise. */
+            window.dealBlockLoad = function () {
+                if (_loading || _loaded) return Promise.resolve();
+                return loadDealData(false);
             };
 
             /* ── Populate person dropdowns dynamically ── */
@@ -31573,6 +33614,18 @@
                 return _fsDelivPromise;
             };
 
+            /* Main refresh: drop the memoised promise and cached bytes, then load again. */
+            window.reloadFsDeliv = function () {
+                _fsDelivPromise = null;
+                window._fsDelivReady = false;
+                if (window._pqBufCache) delete window._pqBufCache['weekly_deliv_per.parquet'];
+                window._fsDelivCache = {};
+                return window.preloadFsDeliv().then(function (idx) {
+                    if (typeof calcDelivFields === 'function') { calcDelivFields(); window._delivFieldsReady = true; }
+                    return idx;
+                });
+            };
+
             /* Synchronous: the ticker's week/percentage slice, or null. */
             window._fsDelivFor = function (ticker) {
                 if (!window._fsDelivIndex) return null;
@@ -35525,6 +37578,13 @@
             window._idxChartType = 'price';
             let _loadPromise = null;
 
+            /* Main refresh: forget the cache and cached bytes, then load again. */
+            window.reloadIndexHistory = function () {
+                _loadPromise = null;
+                window._indexHistoryCache = null;
+                if (window._pqBufCache) delete window._pqBufCache[IDX_FILE];
+                return window._loadIndexHistory();
+            };
             window._loadIndexHistory = function () {
                 if (_loadPromise) return _loadPromise;
                 if (window._indexHistoryCache) return Promise.resolve(window._indexHistoryCache);
