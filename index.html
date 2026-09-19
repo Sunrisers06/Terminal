@@ -7385,6 +7385,14 @@
                     <option value="latest" selected>Latest Result</option>
                     <option value="chart">Chart</option>
                 </select>
+                <select id="card-chart-period-filter" class="fi w90" style="display:none;"
+                    onchange="setCardChartDefaultPeriod(this.value)"
+                    title="Default duration for every company card chart (the pills on a card still change that card alone)">
+                    <option value="6m">Chart: 6M</option>
+                    <option value="1y" selected>Chart: 1Y</option>
+                    <option value="2y">Chart: 2Y</option>
+                    <option value="3y">Chart: 3Y</option>
+                </select>
                 <select id="col-filter" class="fi w90" onchange="updateColumnCount(this.value)"
                     title="Set number of columns">
                     <option value="auto" selected>Col: Auto</option>
@@ -8529,14 +8537,14 @@
                 const sign = p.v >= 0 ? '+' : '';
                 return `<span class="cch-ret-badge ${cls}"><span class="cch-ret-lbl">${p.lbl}</span>${sign}${p.v.toFixed(1)}%</span>`;
             }).join('');
+            const defP = window._cardChartDefaultPeriod || '1y';
+            const pill = (per, lbl) => `<span class="ccp-pill${per === defP ? ' active' : ''}" data-period="${per}" onclick="setCardChartPeriod(event,this,'${per}')">${lbl}</span>`;
             return `
-    <div class="card-chart-wrap" data-ticker="${escHtml(ticker)}" data-period="1y" onclick="event.stopPropagation()">
+    <div class="card-chart-wrap" data-ticker="${escHtml(ticker)}" data-period="${defP}" onclick="event.stopPropagation()">
       <div class="card-chart-inner">
         <div class="card-chart-head">
           <div class="card-chart-periods">
-            <span class="ccp-pill" data-period="6m" onclick="setCardChartPeriod(event,this,'6m')">6M</span>
-            <span class="ccp-pill active" data-period="1y" onclick="setCardChartPeriod(event,this,'1y')">1Y</span>
-            <span class="ccp-pill" data-period="2y" onclick="setCardChartPeriod(event,this,'2y')">2Y</span>
+            ${pill('6m', '6M')}${pill('1y', '1Y')}${pill('2y', '2Y')}${pill('3y', '3Y')}
           </div>
           <div class="card-chart-ret-strip">${retHtml}</div>
         </div>
@@ -8933,10 +8941,86 @@
         let allInsightsData = [], filteredInsightsData = [], currentInsightsLimit = 100;
         let allNseNewsData = [], filteredNseNewsData = [], currentNseNewsLimit = 100;
 
+        /* ── Exact company filter for the three news panes ──
+           Used while a company card is selected (the "📰 Name ×" chip). The
+           search-box engine below is deliberately fuzzy — "tata" should find
+           every Tata company while you type — but a card click names ONE
+           company, so the panes must not bleed into its neighbours:
+
+           • Insights and NSE rows carry a ticker → exact ticker equality.
+             The old path ran the fuzzy tokens over the ticker (Insights) and
+             over ticker+title+summary (NSE), so "Tata Motors" also pulled in
+             every announcement whose summary mentioned Tata or Motors.
+           • General news has no ticker → the company name must appear as a
+             whole-word phrase in the headline. A generic tail (Company,
+             India, Services, Ltd …) may be dropped as long as two words
+             remain, so "TVS Motor Company" still finds "TVS Motor registers…"
+             while "Adani Enterprises" never collapses to just "Adani".
+             A headline that only names a LONGER listed company containing
+             this phrase ("Tata Motors Passenger Vehicles" when the selected
+             card is "Tata Motors") is excluded — that is another card. */
+        const _NAME_GENERIC_TAIL = new Set(['ltd', 'limited', 'co', 'company', 'corp', 'corporation', 'inc',
+            'india', 'industries', 'enterprises', 'services', 'holdings', 'group', 'pvt', 'private', 'of', 'and', 'the']);
+        function _companyNewsMatcher(ticker, coName) {
+            const tk = String(ticker || '').trim().toUpperCase().replace(/\.NS$/, '');
+            const nameTk = tokenize(coName);
+            const phrases = [];
+            if (nameTk.length) phrases.push(' ' + nameTk.join(' ') + ' ');
+            const trimmed = nameTk.slice();
+            while (trimmed.length > 2 && _NAME_GENERIC_TAIL.has(trimmed[trimmed.length - 1])) trimmed.pop();
+            if (trimmed.length && trimmed.length !== nameTk.length) phrases.push(' ' + trimmed.join(' ') + ' ');
+            const tkTok = tokenize(tk);
+            const tkPhrase = (tkTok.length === 1 && tkTok[0].length >= 3) ? ' ' + tkTok[0] + ' ' : null;
+
+            // Longer company names that contain one of our phrases — a headline
+            // naming only those belongs to that other company, not this one.
+            const longer = [];
+            if (phrases.length && typeof allData !== 'undefined' && Array.isArray(allData)) {
+                const seen = new Set();
+                for (const r of allData) {
+                    if (String(r._ticker || '').toUpperCase() === tk) continue;
+                    const oTk = r._nameTk || tokenize(r._coName);
+                    if (oTk.length <= trimmed.length) continue;
+                    const oPh = ' ' + oTk.join(' ') + ' ';
+                    if (seen.has(oPh)) continue;
+                    if (phrases.some(ph => oPh.includes(ph))) { seen.add(oPh); longer.push(oPh); }
+                }
+            }
+
+            return {
+                ticker: tk,
+                headline(joined) {
+                    let text = ' ' + joined + ' ';
+                    if (tkPhrase && text.includes(tkPhrase)) return true;
+                    if (!phrases.length) return false;
+                    if (!phrases.some(ph => text.includes(ph))) return false;
+                    if (longer.length) {
+                        for (const oPh of longer) { while (text.includes(oPh)) text = text.replace(oPh, ' '); }
+                        return phrases.some(ph => text.includes(ph));
+                    }
+                    return true;
+                }
+            };
+        }
+
         function filterBothNews(forcedQuery = null) {
             const rawQ = (forcedQuery !== null ? forcedQuery : String((_domCache && _domCache.searchInput ? _domCache.searchInput.value : document.getElementById('search-input').value) || '')).trim();
 
-            if (!rawQ) {
+            /* A selected card owns the panes until its chip is cleared, so a
+               sort / filter change (which re-runs doFilter → here with the
+               search-box text) no longer silently swaps the news back to the
+               fuzzy search-box result while the chip still names the card. */
+            const cardTk = (typeof selectedCardTicker !== 'undefined' && selectedCardTicker) ? String(selectedCardTicker).trim() : '';
+            if (cardTk) {
+                const row = (typeof allData !== 'undefined' && Array.isArray(allData))
+                    ? allData.find(r => String(r._ticker || '').toUpperCase() === cardTk.toUpperCase()) : null;
+                const coName = row ? row._coName : (rawQ.split('|')[1] || '').trim();
+                const m = _companyNewsMatcher(cardTk, coName);
+                const tkUp = m.ticker;
+                filteredNewsData = allNewsData.filter(n => m.headline(joinedTok(n)));
+                filteredInsightsData = allInsightsData.filter(n => String(n.ticker || '').trim().toUpperCase().replace(/\.NS$/, '') === tkUp);
+                filteredNseNewsData = allNseNewsData.filter(n => String(n.ticker || '').trim().toUpperCase().replace(/\.NS$/, '') === tkUp);
+            } else if (!rawQ) {
                 // No query — reference the source arrays directly (no spread needed; they are read-only at this point)
                 filteredNewsData = allNewsData;
                 filteredInsightsData = allInsightsData;
@@ -10474,6 +10558,8 @@
             // Smooth fade transition
             cardsEl.style.transition = 'opacity 0.18s ease';
             cardsEl.style.opacity = '0';
+            const perSel = document.getElementById('card-chart-period-filter');
+            if (perSel) perSel.style.display = mode === 'chart' ? '' : 'none';
             setTimeout(() => {
                 window._cardViewMode = mode;
                 cardsEl.classList.toggle('cards-chart-mode', mode === 'chart');
@@ -10483,7 +10569,32 @@
             }, 180);
         };
 
-        /* ── Switch the period (6M/1Y/2Y) for a single card's chart ── */
+        /* ── Default duration for the card charts (6M/1Y/2Y/3Y) ──
+           Picked from the "Chart: …" select that appears in Chart view, and
+           remembered across reloads. Every card renders with it; the pills on
+           a card still switch that one card only. */
+        const _CARD_PERIOD_KEY = 'card_chart_default_period';
+        const _CARD_PERIODS = ['6m', '1y', '2y', '3y'];
+        window._cardChartDefaultPeriod = '1y';
+        try {
+            const saved = localStorage.getItem(_CARD_PERIOD_KEY);
+            if (_CARD_PERIODS.includes(saved)) window._cardChartDefaultPeriod = saved;
+        } catch (e) { }
+        window.setCardChartDefaultPeriod = function (period) {
+            if (!_CARD_PERIODS.includes(period)) return;
+            const sel = document.getElementById('card-chart-period-filter');
+            if (sel && sel.value !== period) sel.value = period;
+            if (window._cardChartDefaultPeriod === period) return;
+            window._cardChartDefaultPeriod = period;
+            try { localStorage.setItem(_CARD_PERIOD_KEY, period); } catch (e) { }
+            if (window._cardViewMode === 'chart' && typeof renderCards === 'function') renderCards();
+        };
+        (function () {
+            const sel = document.getElementById('card-chart-period-filter');
+            if (sel) sel.value = window._cardChartDefaultPeriod;
+        })();
+
+        /* ── Switch the period (6M/1Y/2Y/3Y) for a single card's chart ── */
         window.setCardChartPeriod = function (e, el, period) {
             if (e) e.stopPropagation();
             const wrap = el.closest('.card-chart-wrap');
@@ -15944,6 +16055,33 @@
             window.__delivPctAt = _delivPctAt;              // test hooks
             window.__computeDelivSeries = _computeDelivSeries;
 
+            /* ── Full-chart indicator visibility ──
+               Toggled from the full chart sidebar (Indicators section). Only
+               the full-screen chart reads these; company-card charts always
+               draw everything, so `isFs` gates every lookup. Missing key =
+               visible, so a build that adds an indicator needs no migration. */
+            const _FS_IND_KEY = 'fs_ind_vis';
+            window._fsInd = {};
+            try { window._fsInd = JSON.parse(localStorage.getItem(_FS_IND_KEY) || '{}') || {}; } catch (e) { window._fsInd = {}; }
+            function _fsIndOn(isFs, key) {
+                return !isFs || window._fsInd[key] !== false;
+            }
+            window._fsIndOn = _fsIndOn;
+            window.fsToggleIndicator = function (key) {
+                window._fsInd[key] = window._fsInd[key] === false;
+                try { localStorage.setItem(_FS_IND_KEY, JSON.stringify(window._fsInd)); } catch (e) { }
+                window._fsSyncIndBtns();
+                const m = document.getElementById('fs-chart-modal');
+                if (m && m.style.display === 'flex' && typeof window.renderFullScreenChart === 'function') {
+                    window.renderFullScreenChart({ skipChrome: true });
+                }
+            };
+            window._fsSyncIndBtns = function () {
+                document.querySelectorAll('#fs-ind-row .fs-ind-btn').forEach(b => {
+                    b.classList.toggle('off', window._fsInd[b.dataset.ind] === false);
+                });
+            };
+
             function drawChartCore(ticker, period, pCv, vCv, loadEl, widthEl) {
                 const UC = ticker.toUpperCase();
                 const allRaw = _index ? (_index.get(UC) || []) : [];
@@ -16400,15 +16538,24 @@
                     VH = 0; // hide volume pane in full screen
 
                     if (!window.fsRscvMode) window.fsRscvMode = 'DELIV';
-                    const isRsActive = _rsCvEl !== null;
-                    if (isRsActive) {
+                    /* Sidebar → Indicators lets each lower pane be hidden; a
+                       hidden pane's height goes to the price chart. */
+                    const showAdPane = _fsIndOn(isFs, 'ad');
+                    const isRsActive = _rsCvEl !== null && _fsIndOn(isFs, 'rs');
+                    if (isRsActive && showAdPane) {
                         PH = Math.round(remH * (fsCompact ? 0.76 : 0.80));
                         IH = Math.round(remH * 0.12);
                         RSH = remH - PH - IH;
-                    } else {
+                    } else if (isRsActive) {
+                        PH = Math.round(remH * (fsCompact ? 0.84 : 0.86));
+                        IH = 0;
+                        RSH = remH - PH;
+                    } else if (showAdPane) {
                         IH = Math.round(remH * 0.14);
                         PH = remH - IH;
                         RSH = 0;
+                    } else {
+                        IH = 0; PH = remH; RSH = 0;
                     }
                 } else {
                     PH = Math.round(W * 0.62);   // ~8:5 ratio — taller, more chart real-estate
@@ -16430,8 +16577,11 @@
                     vCv.style.display = 'none';
                 }
 
-                if (indCv) {
+                if (indCv && IH > 0) {
+                    indCv.style.display = 'block';
                     indCv.style.width = W + 'px'; indCv.style.height = IH + 'px'; indCv.width = W * DPR; indCv.height = IH * DPR;
+                } else if (indCv) {
+                    indCv.style.display = 'none';
                 }
                 if (_rsCvEl && RSH > 0) {
                     _rsCvEl.style.width = W + 'px'; _rsCvEl.style.height = RSH + 'px';
@@ -16444,7 +16594,7 @@
 
                 const pc = pCv.getContext('2d');
                 const vc = vCv.getContext('2d');
-                const ic = indCv ? indCv.getContext('2d') : null;
+                const ic = (indCv && IH > 0) ? indCv.getContext('2d') : null;
                 const rsc = (_rsCvEl && RSH > 0) ? _rsCvEl.getContext('2d') : null;
                 pc.scale(DPR, DPR); vc.scale(DPR, DPR);
                 if (ic) ic.scale(DPR, DPR);
@@ -16622,7 +16772,7 @@
                 pc.fillStyle = '#000000'; pc.fillRect(0, 0, W, PH);
 
                 // ── Dim Volume Profile — uses ALL available history, mapped onto visible price range ──
-                {
+                if (_fsIndOn(isFs, 'vp')) {
                     const VP_BINS = 40;
                     const VP_MAX_W = pW * 0.22; // max bar width = 22% of chart area
                     const VP_ALPHA = 0.3;       // dim but visible behind candles
@@ -16766,7 +16916,7 @@
                 // MA10: Gold Bold line
                 pc.strokeStyle = '#ffd700'; pc.lineWidth = 2.0; pc.lineJoin = 'round'; pc.lineCap = 'round'; pc.setLineDash([]);
                 pc.beginPath(); let st = false;
-                raw.forEach((r, i) => {
+                if (_fsIndOn(isFs, 'ma10')) raw.forEach((r, i) => {
                     if (!r.ma10) return;
                     const x = toX(i), y = toY(r.ma10);
                     st ? pc.lineTo(x, y) : (pc.moveTo(x, y), st = true);
@@ -16775,7 +16925,7 @@
                 // MA20: Blue line
                 pc.strokeStyle = '#2563eb'; pc.lineWidth = 1.2; pc.lineJoin = 'round'; pc.lineCap = 'round'; pc.setLineDash([]);
                 pc.beginPath(); st = false;
-                raw.forEach((r, i) => {
+                if (_fsIndOn(isFs, 'ma20')) raw.forEach((r, i) => {
                     if (!r.ma20) return;
                     const x = toX(i), y = toY(r.ma20);
                     st ? pc.lineTo(x, y) : (pc.moveTo(x, y), st = true);
@@ -16784,7 +16934,7 @@
                 // MA30: Lavender line
                 pc.strokeStyle = '#8b5cf6'; pc.lineWidth = 1.2; pc.lineJoin = 'round'; pc.lineCap = 'round'; pc.setLineDash([]);
                 pc.beginPath(); st = false;
-                raw.forEach((r, i) => {
+                if (_fsIndOn(isFs, 'ma30')) raw.forEach((r, i) => {
                     if (!r.ma30) return;
                     const x = toX(i), y = toY(r.ma30);
                     st ? pc.lineTo(x, y) : (pc.moveTo(x, y), st = true);
@@ -16793,7 +16943,7 @@
                 // MA40: Pink Bold line
                 pc.strokeStyle = '#ec4899'; pc.lineWidth = 2.0; pc.lineJoin = 'round'; pc.lineCap = 'round'; pc.setLineDash([]);
                 pc.beginPath(); st = false;
-                raw.forEach((r, i) => {
+                if (_fsIndOn(isFs, 'ma40')) raw.forEach((r, i) => {
                     if (!r.ma40) return;
                     const x = toX(i), y = toY(r.ma40);
                     st ? pc.lineTo(x, y) : (pc.moveTo(x, y), st = true);
@@ -16803,7 +16953,7 @@
                 // Uptrend (line rides below price as support) = RED, per user preference.
                 // Downtrend (line rides above price as resistance) = GREEN, per user preference.
                 // Multiplier is user-selectable (2x/3x) via #fs-atr-mult-toggle.
-                if (isFs && window._fhTickers && window._fhTickers.H && window._fhTickers.H.has(UC) && raw.length > 1) {
+                if (isFs && _fsIndOn(isFs, 'st') && window._fhTickers && window._fhTickers.H && window._fhTickers.H.has(UC) && raw.length > 1) {
                     const ST_MULT = window._fsAtrMult || 3;
                     const lastAbsIdx = actualStart + raw.length - 1;
                     // Walk back far enough before the visible window to seed the band/trend state with real
@@ -16884,7 +17034,7 @@
                 }
 
                 // ── Index Line ──
-                if (raw.length > 0 && !isIdxMain) {
+                if (raw.length > 0 && !isIdxMain && _fsIndOn(isFs, 'idx')) {
                     // Index Line (Low Opacity Gray/Blue)
                     pc.strokeStyle = 'rgba(148, 163, 184, 0.4)'; pc.lineWidth = 1.2; pc.lineJoin = 'round'; pc.lineCap = 'round'; pc.setLineDash([]);
                     pc.beginPath();
@@ -16969,7 +17119,8 @@
 
                 // ── Overlay: Volume inside Price Pane (bottom 15% height) ──
                 let fsVolMilestoneMap = null;
-                if (isFs) {
+                const fsVolOn = isFs && _fsIndOn(isFs, 'vol');
+                if (fsVolOn) {
                     let maxV = 1;
                     let maxVClose = 1;
                     for (const r of raw) {
@@ -17264,7 +17415,7 @@
                                 }
 
                                 // Volume Overlay Tooltips (if hovering in bottom 15% of full screen price pane)
-                                if (isFs && hy >= PP.t + pH * 0.85) {
+                                if (fsVolOn && hy >= PP.t + pH * 0.85) {
                                     // 1. Right-axis Volume Badge
                                     let maxV = 1, maxVClose = 1;
                                     for (const r of raw) { if (r.vol > maxV) { maxV = r.vol; maxVClose = r.close || 1; } }
@@ -28529,6 +28680,49 @@
             border-color: rgba(255, 159, 10, 0.4);
         }
 
+        /* Indicator visibility chips (full chart sidebar → Indicators) */
+        .fs-ind-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+
+        .fs-ind-btn {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 7px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 6px;
+            background: rgba(118, 118, 128, 0.18);
+            color: rgba(235, 235, 245, 0.85);
+            cursor: pointer;
+            font-size: 9.5px;
+            font-weight: 700;
+            font-family: inherit;
+            line-height: 1;
+            white-space: nowrap;
+            letter-spacing: 0.02em;
+            transition: opacity 0.15s, background 0.15s;
+        }
+
+        .fs-ind-btn:hover {
+            background: rgba(118, 118, 128, 0.3);
+        }
+
+        .fs-ind-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+            margin-right: 4px;
+            flex-shrink: 0;
+        }
+
+        .fs-ind-btn.off {
+            opacity: 0.35;
+            text-decoration: line-through;
+        }
+
         .fs-draw-btn:hover {
             background: rgba(118, 118, 128, 0.28);
             color: #fff;
@@ -30190,6 +30384,30 @@
                         Pattern Box: Off</button>
                     <button class="fs-draw-clear" onclick="window.fsClearDrawings()"
                         title="Clear All Drawings (Delete / Backspace key)">🗑 Clear All</button>
+                </div>
+            </div>
+
+            <!-- Indicator visibility. One chip per overlay / pane; a struck-out
+                 chip is hidden. Lives in the sidebar so the chart area stays clean;
+                 the choice is remembered across reloads (fs_ind_vis). -->
+            <div class="fs-section" id="fs-sec-ind">
+                <div class="fs-section-header" onclick="window.toggleFsSection('fs-sec-ind')">
+                    <span class="fs-section-label"><span class="fs-section-ico">📐</span>Indicators</span>
+                    <span class="fs-section-chevron">▼</span>
+                </div>
+                <div class="fs-section-content">
+                    <div class="fs-ind-row" id="fs-ind-row">
+                        <button class="fs-ind-btn" data-ind="ma10" style="color:#ffd700;" onclick="window.fsToggleIndicator('ma10')" title="10-week moving average"><i class="fs-ind-dot"></i>MA10</button>
+                        <button class="fs-ind-btn" data-ind="ma20" style="color:#60a5fa;" onclick="window.fsToggleIndicator('ma20')" title="20-week moving average"><i class="fs-ind-dot"></i>MA20</button>
+                        <button class="fs-ind-btn" data-ind="ma30" style="color:#a78bfa;" onclick="window.fsToggleIndicator('ma30')" title="30-week moving average"><i class="fs-ind-dot"></i>MA30</button>
+                        <button class="fs-ind-btn" data-ind="ma40" style="color:#ec4899;" onclick="window.fsToggleIndicator('ma40')" title="40-week moving average"><i class="fs-ind-dot"></i>MA40</button>
+                        <button class="fs-ind-btn" data-ind="st" onclick="window.fsToggleIndicator('st')" title="ATR SuperTrend band (Holdings only)">SuperTrend</button>
+                        <button class="fs-ind-btn" data-ind="idx" onclick="window.fsToggleIndicator('idx')" title="Benchmark index line">Index</button>
+                        <button class="fs-ind-btn" data-ind="vol" onclick="window.fsToggleIndicator('vol')" title="Volume bars + 9MA + Q/Y/E markers at the bottom of the price chart">Volume</button>
+                        <button class="fs-ind-btn" data-ind="vp" onclick="window.fsToggleIndicator('vp')" title="Volume profile (left side histogram)">Vol Profile</button>
+                        <button class="fs-ind-btn" data-ind="ad" onclick="window.fsToggleIndicator('ad')" title="A/D and OBV pane">A/D · OBV</button>
+                        <button class="fs-ind-btn" data-ind="rs" onclick="window.fsToggleIndicator('rs')" title="Deliv % / Deliv Vol / MRS pane">Deliv · MRS</button>
+                    </div>
                 </div>
             </div>
 
@@ -34332,6 +34550,7 @@
                 }
             };
             window._fsSyncPatternBoxBtn();
+            if (typeof window._fsSyncIndBtns === 'function') window._fsSyncIndBtns();
 
             window.fsToggleQuickTrend = function () {
                 const canvas = document.getElementById('fs-draw-canvas');
