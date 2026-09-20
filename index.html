@@ -497,77 +497,6 @@
             }
         }
 
-        /* Peer popup mobile — full width, centred, fully visible */
-        @media(max-width: 600px) {
-            #peer-popup {
-                position: fixed !important;
-                width: min(420px, 96vw) !important;
-                max-width: 96vw !important;
-                max-height: 88vh !important;
-                overflow-y: auto !important;
-                border-radius: 16px !important;
-                /* No !important on left/top/transform — JS drag must be able to override these */
-                left: 50%;
-                top: 50%;
-                transform: translate(-50%, -50%);
-            }
-
-            #peer-octa-wrap {
-                padding: 8px 6px 2px !important;
-            }
-
-            #peer-octa-svg {
-                width: 200px !important;
-                height: 200px !important;
-            }
-
-            #peer-list {
-                max-height: 180px !important;
-                padding: 4px 10px 10px !important;
-            }
-
-            #peer-params {
-                padding: 6px 10px 5px !important;
-                gap: 3px !important;
-            }
-
-            .peer-param-pill {
-                font-size: 8.5px !important;
-                padding: 4px 8px !important;
-            }
-
-            #peer-popup-header {
-                padding: 10px 12px 8px !important;
-            }
-
-            #peer-popup-title {
-                font-size: 10px !important;
-            }
-
-            .peer-item {
-                padding: 5px 0 !important;
-            }
-
-            .peer-name {
-                font-size: 10px !important;
-            }
-
-            .peer-val {
-                font-size: 10px !important;
-            }
-
-            #peer-count-dec,
-            #peer-count-inc {
-                width: 24px !important;
-                height: 24px !important;
-                font-size: 14px !important;
-            }
-
-            #peer-count-val {
-                font-size: 12px !important;
-                min-width: 20px !important;
-            }
-        }
 
         /* ══════════════════════════════
    APP LAYOUT (ROW-BASED)
@@ -5722,8 +5651,10 @@
             min-height: 0;
             max-height: none;
             height: auto;
-            align-items: center;
-            justify-content: center;
+            /* auto margins on the SVGs centre them when there is room and
+               let the wrap scroll (not clip) when the chart is wider */
+            align-items: flex-start;
+            justify-content: flex-start;
             padding: 10px 14px;
             overflow: auto;
         }
@@ -5732,14 +5663,16 @@
         #peer-popup.peer-fs #peer-octa-svg {
             width: auto;
             height: auto;
-            margin: 0;
+            margin: auto;
+            flex-shrink: 0;
         }
 
         #peer-popup.peer-fs #peer-alt-svg {
             max-width: none;
-            margin: 0;
+            margin: auto;
             display: block;
             height: auto;
+            flex-shrink: 0;
         }
 
         #peer-popup.peer-fs #peer-list {
@@ -6652,6 +6585,405 @@
             height: 100%;
             border-radius: 3px;
             transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* ══════════════════════════════════════════════════════
+           PEER (SECTOR / INDUSTRY) COMPARISON — TOUCH LAYOUTS
+           Phone ≤600px and tablet 601–1100px (or any coarse-pointer
+           screen above 600px). Non-full-screen rules are scoped with
+           :not(.peer-fs) so they never fight the full-screen sizing
+           that _fitCharts() applies inline.
+        ══════════════════════════════════════════════════════ */
+
+        /* ── Shared: pill rows become one swipeable line, no wrapping ── */
+        @media (max-width: 1100px), (pointer: coarse) {
+            #peer-params,
+            #peer-params-tech,
+            #peer-chart-types {
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                overscroll-behavior-x: contain;
+                scrollbar-width: none;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            #peer-params::-webkit-scrollbar,
+            #peer-params-tech::-webkit-scrollbar,
+            #peer-chart-types::-webkit-scrollbar {
+                display: none;
+            }
+
+            /* Chart-type pills take the row; the +ticker box drops to a
+               second line only when it does not fit beside them. */
+            #peer-tools {
+                flex-wrap: wrap;
+                row-gap: 6px;
+            }
+
+            #peer-chart-types {
+                flex: 1 1 auto;
+                min-width: 0;
+                gap: 5px;
+            }
+
+            #peer-add-wrap {
+                margin-left: auto;
+            }
+
+            /* Whole popup never scrolls — the chart box and the ranked
+               list scroll on their own inside it. */
+            #peer-popup:not(.peer-fs) {
+                overflow: hidden;
+            }
+
+            #peer-popup:not(.peer-fs) #peer-body {
+                flex: 1 1 auto;
+                min-height: 0;
+            }
+
+            /* When the card hits its max height the list gives way first
+               (flex-shrink 20 vs 1); the chart box only shrinks — and
+               scrolls — once the list is at its minimum or hidden. */
+            #peer-popup:not(.peer-fs) #peer-octa-wrap {
+                flex: 0 1 auto;
+                min-height: 200px;
+                max-height: none;
+                overflow-y: auto;
+                overscroll-behavior: contain;
+                /* auto margins centre the chart while it fits and let the
+                   box scroll — not clip the top — when it is taller */
+                align-items: flex-start;
+                justify-content: flex-start;
+            }
+
+            #peer-popup:not(.peer-fs) #peer-octa-svg,
+            #peer-popup:not(.peer-fs) #peer-alt-svg {
+                margin: auto;
+                flex-shrink: 0;
+            }
+
+            #peer-popup:not(.peer-fs) #peer-list {
+                flex: 1 20 auto;
+                min-height: 96px;
+                max-height: 260px;
+                overscroll-behavior: contain;
+            }
+
+            #peer-popup:not(.peer-fs) #peer-octa-svg {
+                height: auto;
+                aspect-ratio: 1 / 1;
+            }
+
+            /* Bigger tap targets in the header */
+            #peer-popup-fs,
+            #peer-popup-close {
+                width: 28px;
+                height: 28px;
+                font-size: 15px;
+            }
+        }
+
+        /* Landscape phone (short viewport), card mode: smaller minimums so
+           the chart and a few list rows both stay inside 90vh */
+        @media (max-height: 520px) {
+            #peer-popup:not(.peer-fs) #peer-octa-wrap {
+                min-height: 140px;
+            }
+
+            #peer-popup:not(.peer-fs) #peer-octa-svg {
+                width: min(240px, 46vh);
+            }
+
+            #peer-popup:not(.peer-fs) #peer-list {
+                min-height: 64px;
+            }
+        }
+
+        /* ── Tablet (iPad) — roomier popup, readable text ── */
+        @media (min-width: 601px) and (max-width: 1100px), (min-width: 601px) and (pointer: coarse) {
+            #peer-popup:not(.peer-fs) {
+                width: min(540px, 92vw);
+                max-height: 90vh;
+                border-radius: 18px;
+            }
+
+            #peer-popup-title {
+                font-size: 12px;
+                max-width: 220px;
+            }
+
+            #peer-popup-count {
+                font-size: 10px;
+                padding: 2px 7px;
+            }
+
+            #peer-count-ctrl span {
+                font-size: 9.5px !important;
+            }
+
+            #peer-count-dec,
+            #peer-count-inc {
+                width: 24px !important;
+                height: 24px !important;
+                font-size: 13px !important;
+            }
+
+            #peer-count-val {
+                width: 40px !important;
+                height: 24px !important;
+                font-size: 12px !important;
+            }
+
+            #peer-count-all {
+                height: 24px !important;
+                font-size: 10px !important;
+                padding: 0 8px !important;
+            }
+
+            #peer-params,
+            #peer-params-tech {
+                padding: 8px 14px;
+                gap: 6px;
+            }
+
+            .peer-param-pill {
+                font-size: 11px;
+                padding: 6px 12px;
+            }
+
+            .peer-ct-pill {
+                font-size: 10.5px;
+                padding: 6px 10px;
+            }
+
+            #peer-add-inp {
+                width: 90px;
+                font-size: 11px;
+                padding: 5px 9px;
+            }
+
+            #peer-y-param {
+                font-size: 11px;
+                max-width: 110px;
+                padding: 5px 6px;
+            }
+
+            .peer-extra-chip {
+                font-size: 10px;
+            }
+
+            #peer-popup:not(.peer-fs) #peer-octa-wrap {
+                padding: 12px 16px 6px;
+            }
+
+            #peer-popup:not(.peer-fs) #peer-octa-svg {
+                width: 280px;
+            }
+
+            #peer-popup:not(.peer-fs) #peer-list {
+                padding: 6px 16px 14px;
+            }
+
+            .peer-item {
+                padding: 6px 0;
+                gap: 9px;
+            }
+
+            .peer-rank {
+                font-size: 10.5px;
+                width: 18px;
+            }
+
+            .peer-color-dot {
+                width: 9px;
+                height: 9px;
+            }
+
+            .peer-name,
+            .peer-val {
+                font-size: 12.5px;
+            }
+
+            .peer-bar-wrap {
+                width: 84px;
+                height: 7px;
+            }
+
+            /* Full screen on tablet: list column and text a touch larger */
+            #peer-popup.peer-fs #peer-list {
+                flex-basis: 260px;
+            }
+
+            #peer-popup.peer-fs .peer-name,
+            #peer-popup.peer-fs .peer-val {
+                font-size: 12.5px;
+            }
+
+            #peer-popup.peer-fs .peer-param-pill {
+                font-size: 11px;
+                padding: 6px 12px;
+            }
+        }
+
+        /* ── Phone ≤600px — edge-to-edge card, one control per row ── */
+        @media (max-width: 600px) {
+            #peer-popup:not(.peer-fs) {
+                position: fixed;
+                width: calc(100vw - 16px);
+                max-width: 480px;
+                max-height: 88vh;
+                max-height: 88dvh;
+                border-radius: 16px;
+                /* No !important on left/top/transform — JS drag must be able to override these */
+                left: 50%;
+                top: 50%;
+                transform: translate(-50%, -50%);
+            }
+
+            /* Header wraps: title + buttons on line 1, SHOW control on line 2 */
+            #peer-popup-header {
+                flex-wrap: wrap;
+                row-gap: 6px;
+                padding: 10px 12px 8px;
+            }
+
+            #peer-popup-title-wrap {
+                flex: 1 1 0;
+            }
+
+            #peer-popup-title {
+                font-size: 11px;
+                max-width: none;
+            }
+
+            #peer-popup-count {
+                font-size: 9.5px;
+            }
+
+            #peer-count-ctrl {
+                order: 10;
+                flex-basis: 100%;
+                justify-content: flex-end;
+                gap: 6px !important;
+            }
+
+            #peer-count-ctrl span {
+                font-size: 9px !important;
+            }
+
+            #peer-count-dec,
+            #peer-count-inc {
+                width: 26px !important;
+                height: 26px !important;
+                font-size: 14px !important;
+            }
+
+            #peer-count-val {
+                width: 44px !important;
+                height: 26px !important;
+                font-size: 12px !important;
+            }
+
+            #peer-count-all {
+                height: 26px !important;
+                font-size: 10px !important;
+                padding: 0 9px !important;
+            }
+
+            #peer-params,
+            #peer-params-tech {
+                padding: 8px 12px;
+                gap: 6px;
+            }
+
+            .peer-param-pill {
+                font-size: 10.5px;
+                padding: 6px 11px;
+            }
+
+            #peer-tools {
+                padding: 7px 12px;
+            }
+
+            .peer-ct-pill {
+                font-size: 10px;
+                padding: 6px 10px;
+            }
+
+            #peer-add-inp {
+                width: 84px;
+                font-size: 11px;
+                padding: 5px 9px;
+            }
+
+            #peer-y-param {
+                font-size: 11px;
+                max-width: 120px;
+                padding: 5px 6px;
+            }
+
+            #peer-add-sugg {
+                width: min(260px, calc(100vw - 40px));
+            }
+
+            .peer-sugg-row {
+                font-size: 11px;
+                padding: 7px 10px;
+            }
+
+            .peer-extra-chip {
+                font-size: 10px;
+                padding: 3px 6px 3px 9px;
+            }
+
+            #peer-popup:not(.peer-fs) #peer-octa-wrap {
+                padding: 10px 10px 4px;
+            }
+
+            #peer-popup:not(.peer-fs) #peer-octa-svg {
+                width: min(240px, calc((100vw - 36px) * 0.68));
+            }
+
+            #peer-popup:not(.peer-fs) #peer-list {
+                padding: 4px 12px 12px;
+            }
+
+            .peer-item {
+                padding: 6px 0;
+                gap: 8px;
+            }
+
+            .peer-rank {
+                font-size: 10px;
+                width: 16px;
+            }
+
+            .peer-color-dot {
+                width: 8px;
+                height: 8px;
+            }
+
+            .peer-name,
+            .peer-val {
+                font-size: 11.5px;
+            }
+
+            .peer-bar-wrap {
+                width: 56px;
+                height: 6px;
+            }
+
+            /* Full screen on a phone: same text sizes as the card */
+            #peer-popup.peer-fs .peer-name,
+            #peer-popup.peer-fs .peer-val {
+                font-size: 11.5px;
+            }
+
+            #peer-popup.peer-fs .peer-param-pill,
+            #peer-popup.peer-fs .peer-ct-pill {
+                font-size: 10.5px;
+                padding: 6px 11px;
+            }
         }
 
         /* ── Safe-area insets for notched phones ── */
@@ -8935,7 +9267,15 @@
             window._pqBufCacheClear = function () { Object.keys(_pqBufCache).forEach(k => { delete _pqBufCache[k]; }); };
             window._pqForceNet = false;
             const _pqUrl = f => window._pqForceNet ? f + '?_nc=' + Date.now() : f;
-            window._parquetToCSV = async function (filename) {
+            /* Both converters below read the Arrow result COLUMN by column
+               (vector.get(i)) rather than through result.toArray(), which
+               builds a proxy object per row — for the 130k-row deal files
+               that proxy churn was most of the time. They also yield to
+               the event loop every CHUNK rows, so a big file converting in
+               the background no longer freezes scrolling and clicks. */
+            const PQ_CHUNK = 20000;
+            const _yield = () => new Promise(r => setTimeout(r, 0));
+            async function _pqQuery(filename) {
                 if (!_pqBufCache[filename]) {
                     const r = await fetch(_pqUrl(filename));
                     if (!r.ok) throw new Error('HTTP ' + r.status + ' loading ' + filename);
@@ -8945,49 +9285,46 @@
                 await db.registerFileBuffer(filename, new Uint8Array(_pqBufCache[filename].slice(0)));
                 const result = await conn.query(`SELECT * FROM '${filename}'`);
                 const cols = result.schema.fields.map(f => f.name);
-                const rows = result.toArray();
+                return { result, cols, vecs: cols.map(c => result.getChild(c)), n: result.numRows };
+            }
+            const _pqStr = v => {
+                if (v === null || v === undefined) return '';
+                if (typeof v === 'bigint') return String(Number(v));
+                if (v instanceof Date) return v.toISOString().slice(0, 10);
+                return String(v);
+            };
+
+            window._parquetToCSV = async function (filename) {
+                const { cols, vecs, n } = await _pqQuery(filename);
                 const esc = v => {
-                    if (v === null || v === undefined) return '';
-                    let s;
-                    if (typeof v === 'bigint') s = String(Number(v));
-                    else if (v instanceof Date) s = v.toISOString().slice(0, 10);
-                    else s = String(v);
+                    const s = _pqStr(v);
                     return (s.includes(',') || s.includes('"') || s.includes('\n'))
                         ? '"' + s.replace(/"/g, '""') + '"' : s;
                 };
-                let csv = cols.join(',') + '\n';
-                for (const row of rows) {
-                    csv += cols.map(c => esc(row[c])).join(',') + '\n';
+                const parts = [cols.join(',')];
+                const nc = vecs.length;
+                for (let i = 0; i < n; i++) {
+                    const cells = new Array(nc);
+                    for (let c = 0; c < nc; c++) cells[c] = esc(vecs[c].get(i));
+                    parts.push(cells.join(','));
+                    if ((i + 1) % PQ_CHUNK === 0) await _yield();
                 }
-                return csv;
+                return parts.join('\n') + '\n';
             };
 
             // ── _parquetToRows: fetch a local .parquet file and return array of objects directly ──
             // Skips CSV serialization for high performance loading of large datasets like deals.
             window._parquetToRows = async function (filename) {
-                if (!_pqBufCache[filename]) {
-                    const r = await fetch(_pqUrl(filename));
-                    if (!r.ok) throw new Error('HTTP ' + r.status + ' loading ' + filename);
-                    _pqBufCache[filename] = await r.arrayBuffer();
-                }
-                const { db, conn } = await window._getDuckDB();
-                await db.registerFileBuffer(filename, new Uint8Array(_pqBufCache[filename].slice(0)));
-                const result = await conn.query(`SELECT * FROM '${filename}'`);
-
-                const esc = v => {
-                    if (v === null || v === undefined) return '';
-                    if (typeof v === 'bigint') return String(Number(v));
-                    if (v instanceof Date) return v.toISOString().slice(0, 10);
-                    return String(v);
-                };
-
-                const cols = result.schema.fields.map(f => f.name);
-                const rawRows = result.toArray();
-                return rawRows.map(row => {
+                const { cols, vecs, n } = await _pqQuery(filename);
+                const out = new Array(n);
+                const nc = vecs.length;
+                for (let i = 0; i < n; i++) {
                     const obj = {};
-                    cols.forEach(c => obj[c] = esc(row[c]));
-                    return obj;
-                });
+                    for (let c = 0; c < nc; c++) obj[cols[c]] = _pqStr(vecs[c].get(i));
+                    out[i] = obj;
+                    if ((i + 1) % PQ_CHUNK === 0) await _yield();
+                }
+                return out;
             };
 
             const app = document.getElementById('app-container');
@@ -10402,7 +10739,18 @@
             document.getElementById('nsenews-list').insertAdjacentHTML('beforeend', html);
         }
 
-        async function fetchNseNewsData(btn) {
+        /* NSE_news.parquet is the largest file here (12.6 MB). A background
+           load (btn == null) is shared: a second caller while one is in
+           flight, or after one finished, gets that result instead of
+           parsing the file again. The ↻ button (btn set) always re-fetches. */
+        let _nseNewsP = null;
+        function fetchNseNewsData(btn) {
+            if (!btn && _nseNewsP) return _nseNewsP;
+            const p = _fetchNseNewsData(btn);
+            _nseNewsP = p.then(() => { }, () => { _nseNewsP = null; });
+            return p;
+        }
+        async function _fetchNseNewsData(btn) {
             if (btn) btn.innerHTML = '⏳';
             try {
                 const text = await window._parquetToCSV('NSE_news.parquet');
@@ -10485,7 +10833,9 @@
             }
         }
 
-        fetchNseNewsData();
+        /* NSE announcements load from _loadSecondarySources() after the
+           cards are up — the bare fetchNseNewsData() that used to sit here
+           parsed the 12.6 MB file before anything else could use DuckDB. */
 
         /* ══════════════════════════════════════════════════════
            SIDEBAR TAB SWITCHER
@@ -12250,32 +12600,30 @@
                 if (window._pqBufCacheClear) window._pqBufCacheClear();
                 window._pqForceNet = true;
 
-                // Secondary sources run alongside the main load
-                const side = [];
-                const track = (id, p) => {
-                    ui.set(id, 'busy');
-                    side.push(Promise.resolve(p).then(() => ui.set(id, 'ok'), e => { ok = false; ui.set(id, 'err', (e && e.message) || 'failed'); }));
-                };
-                // Every source, whether or not its pane has been opened yet —
-                // a refresh means all of it is current afterwards.
-                if (typeof fetchNseNewsData === 'function') track('nsenews', fetchNseNewsData(null));
-                else ui.set('nsenews', 'skip', 'unavailable');
-                if (typeof window.dealBlockRefresh === 'function') track('deals', window.dealBlockRefresh());
-                else ui.set('deals', 'skip', 'unavailable');
-                if (typeof window.reloadFsDeliv === 'function') track('deliv', window.reloadFsDeliv());
-                else ui.set('deliv', 'skip', 'unavailable');
-                if (typeof window.reloadIndexHistory === 'function') track('idxhist', window.reloadIndexHistory());
-                else ui.set('idxhist', 'skip', 'unavailable');
-
+                /* Main data first — the cards come back as soon as it is
+                   in. The four secondary sources are then re-fetched one
+                   after another in the background (same order as a page
+                   load) so they never queue ahead of the OHLCV query. */
+                ['nsenews', 'deals', 'deliv', 'idxhist'].forEach(id => ui.set(id, 'queued', 'after main data'));
                 await loadAll(true); // forceNetwork = true for main data
-                ui.phase('Waiting for remaining sources…');
-                await Promise.all(side);
+                ui.close(ok);
+                if (btn) { btn.disabled = false; btn.innerHTML = '↺'; }
+                const side = [];
+                const track = (id, p) => side.push(Promise.resolve(p).catch(e => { console.warn('[refresh] ' + id + ' failed:', e && e.message); }));
+                const idle = () => new Promise(r => (typeof requestIdleCallback === 'function' ? requestIdleCallback(r, { timeout: 1500 }) : setTimeout(r, 200)));
+                const spin = on => { if (btn && !btn.disabled) { btn.innerHTML = on ? '<span class="rdb-spinner"></span>' : '↺'; btn.title = on ? 'Refreshing secondary sources in background…' : 'Refresh data'; } };
+                spin(true);
+                await idle(); if (typeof window.reloadFsDeliv === 'function') track('deliv', window.reloadFsDeliv()); await side[side.length - 1];
+                await idle(); if (typeof window.dealBlockRefresh === 'function') track('deals', window.dealBlockRefresh()); await side[side.length - 1];
+                await idle(); if (typeof fetchNseNewsData === 'function') track('nsenews', fetchNseNewsData(null)); await side[side.length - 1];
+                await idle(); if (typeof window.reloadIndexHistory === 'function') track('idxhist', window.reloadIndexHistory()); await side[side.length - 1];
+                spin(false);
             } catch (e) {
                 ok = false;
             } finally {
                 window._pqForceNet = false;
-                ui.close(ok);
-                if (btn) { btn.disabled = false; btn.innerHTML = '↺'; }
+                if (ui.isOpen()) ui.close(ok);
+                if (btn) { btn.disabled = false; btn.innerHTML = '↺'; btn.title = 'Refresh data'; }
             }
         };
 
@@ -12287,31 +12635,17 @@
                so both paths show the same per-source progress. */
             const rfOwn = window._refreshUI && !window._refreshUI.isOpen();
             let rfOk = true;
-            const rfSide = [];
             if (rfOwn) {
                 const ui = window._refreshUI;
                 ui.open('Loading data');
-                /* The on-demand sources (NSE news, deals, delivery %, index
-                   history) load here too, alongside the main data, so a page
-                   load ends with everything current — same as the ↺ button.
-                   Non-forcing loaders: memoised / IDB-cached where available. */
-                const track = (id, fn) => {
-                    ui.set(id, 'busy');
-                    let p;
-                    try { p = Promise.resolve(fn()); } catch (e) { p = Promise.reject(e); }
-                    rfSide.push(p.then(() => ui.set(id, 'ok'), e => { ui.set(id, 'err', (e && e.message) || 'failed'); }));
-                };
-                if (typeof fetchNseNewsData === 'function') track('nsenews', () => fetchNseNewsData(null));
-                else ui.set('nsenews', 'skip', 'unavailable');
-                if (typeof window.dealBlockLoad === 'function') track('deals', () => window.dealBlockLoad());
-                else ui.set('deals', 'skip', 'unavailable');
-                if (typeof window.preloadFsDeliv === 'function') track('deliv', () => window.preloadFsDeliv().then(idx => {
-                    if (typeof calcDelivFields === 'function' && window._ohlcvTickers) { calcDelivFields(); window._delivFieldsReady = true; }
-                    return idx;
-                }));
-                else ui.set('deliv', 'skip', 'unavailable');
-                if (typeof window._loadIndexHistory === 'function') track('idxhist', () => window._loadIndexHistory());
-                else ui.set('idxhist', 'skip', 'unavailable');
+                /* The four heavy secondary sources (NSE news, deals, delivery
+                   %, index history — ~30 MB) used to start right here, in
+                   parallel with the main data. They all funnel through the
+                   ONE DuckDB connection, so the OHLCV query the cards are
+                   waiting on sat in that queue: a cache hit at 0.7 s still
+                   showed the first card at ~15 s. They now start from
+                   _loadSecondarySources() once the cards are on screen. */
+                ['nsenews', 'deals', 'deliv', 'idxhist'].forEach(id => ui.set(id, 'queued', 'after main data'));
             }
 
             document.getElementById('loading').style.display = 'block';
@@ -12339,12 +12673,27 @@
                         ({ resT, idxT, namesT, newsT, insT, ssT, epSalesT, scrT } = cached);
                         if (rfUI) Object.keys(_cacheIds).forEach(id => rfUI.set(id, cached[_cacheIds[id]] ? 'ok' : 'err', cached[_cacheIds[id]] ? 'cache' : 'missing'));
                         const db = await window._idbCache.openDB();
-                        const pRec = await window._idbCache.idbGet(db, 'ohlc_parquet_v1');
-                        if (pRec && pRec.data) {
-                            ohlcvT = pRec.data;
+                        /* The OHLCV index is cached ready-made (typed arrays,
+                           see _ohlcvPack): rebuilding the Map from it takes
+                           ~0.2 s, against ~2 s to run the 657k-row DuckDB
+                           query on the cached parquet — and DuckDB itself
+                           drops off the critical path of a cached load. The
+                           parquet record is only read from caches written
+                           before the index existed. */
+                        const iRec = await window._idbCache.idbGet(db, 'ohlc_index_v1');
+                        if (iRec && iRec.pk && typeof window._ohlcvInjectPacked === 'function' && window._ohlcvInjectPacked(iRec.pk)) {
+                            ohlcvT = null;
                             loadedFromCache = true;
                             window._loadedCacheTs = cached._ts;
                             if (rfUI) rfUI.set('ohlcv', 'ok', 'cache · ' + ((performance.now() - t) / 1000).toFixed(1) + 's');
+                        } else {
+                            const pRec = await window._idbCache.idbGet(db, 'ohlc_parquet_v1');
+                            if (pRec && pRec.data) {
+                                ohlcvT = pRec.data;
+                                loadedFromCache = true;
+                                window._loadedCacheTs = cached._ts;
+                                if (rfUI) rfUI.set('ohlcv', 'ok', 'cache · ' + ((performance.now() - t) / 1000).toFixed(1) + 's');
+                            }
                         }
                     }
                     if (!loadedFromCache && rfUI) {
@@ -12437,21 +12786,33 @@
                     if (window._idbCache) {
                         window._idbCache.save({ resT, idxT, namesT, newsT, insT, ssT, epSalesT, scrT })
                             .catch(e => console.warn('[loadAll] IDB save error (non-critical):', e.message));
-                        const bufferCopy = ohlcvT.slice(0);
-                        (async () => {
-                            try {
-                                const db = await window._idbCache.openDB();
-                                await window._idbCache.idbSet(db, 'ohlc_parquet_v1', { ts: Date.now(), data: bufferCopy });
-                                console.info('[IDB] Cached OHLC.parquet binary successfully.');
-                            } catch (e) {
-                                console.warn('[loadAll] IDB parquet save error:', e.message);
-                            }
-                        })();
                     }
                 }
 
                 // Inject OHLCV data into chart engine immediately — hover charts are now instant
                 if (ohlcvT && window._ohlcvInject) await window._ohlcvInject(ohlcvT);
+
+                /* Cache the built OHLCV index after a fresh load — or after
+                   a cached load that still had to go through the old raw
+                   parquet record, which is then deleted so the store does
+                   not carry both. Runs after the cards are painted. */
+                if ((!loadedFromCache || ohlcvT) && window._idbCache && typeof window._ohlcvPack === 'function') {
+                    setTimeout(async () => {
+                        try {
+                            const pk = window._ohlcvPack();
+                            if (!pk) return;
+                            const db = await window._idbCache.openDB();
+                            await window._idbCache.idbSet(db, 'ohlc_index_v1', { ts: Date.now(), pk });
+                            try {
+                                const tx = db.transaction('csv_blobs', 'readwrite');
+                                tx.objectStore('csv_blobs').delete('ohlc_parquet_v1');
+                            } catch (e) { }
+                            console.info('[IDB] Cached OHLCV index (' + pk.tickers.length + ' tickers, ' + pk.c.length + ' bars).');
+                        } catch (e) {
+                            console.warn('[loadAll] IDB OHLCV index save error:', e.message);
+                        }
+                    }, 1200);
+                }
 
                 /* Warm the index-history parquet once the main load is done and
                    the browser is idle, so even the FIRST index chart of a
@@ -12605,6 +12966,14 @@
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('main').style.display = 'block';
 
+                /* The terminal is usable from here. The overlay closes now
+                   (on a page load it is ours; the ↺ button closes its own)
+                   and the secondary sources load behind the cards. */
+                if (rfOwn) window._refreshUI.close(true);
+                // A beat later, so the overlay fades and the first scroll or
+                // click is not fighting the deals parse for the main thread.
+                setTimeout(window._loadSecondarySources, 1500);
+
                 // Load F/H tickers early so buttons are ready
                 if (typeof window.loadFHTickers === 'function') window.loadFHTickers();
 
@@ -12641,18 +13010,53 @@
                 sb.className = 'sbox s-err'; sb.innerHTML = '❌ Error fetching data: ' + err.message;
                 sb.style.display = 'block';
             }
-            if (rfOwn) {
-                if (rfSide.length) {
-                    window._refreshUI.phase('Loading remaining sources…');
-                    await Promise.all(rfSide);
-                    // Delivery fields need OHLCV, which may have landed after the deliv file did
-                    if (window._fsDelivReady && !window._delivFieldsReady && typeof calcDelivFields === 'function' && window._ohlcvTickers) {
-                        calcDelivFields(); window._delivFieldsReady = true;
-                    }
-                }
-                window._refreshUI.close(rfOk);
-            }
+            if (rfOwn && window._refreshUI.isOpen()) window._refreshUI.close(rfOk);
         }
+
+        /* ── Secondary sources, loaded after the cards are visible ──
+           Delivery % → deals → NSE announcements → index history, one at a
+           time: they share one DuckDB connection and one main thread, so
+           running them together only made each other (and any chart the
+           user opens meanwhile) slower. Each loader is memoised, so a pane
+           opened before its turn simply gets it sooner. The ↺ button shows a
+           spinner while this runs and lists what is still coming. */
+        let _secondaryP = null;
+        window._loadSecondarySources = function (force) {
+            if (_secondaryP && !force) return _secondaryP;
+            const steps = [
+                ['deliv', 'delivery %', () => typeof window.preloadFsDeliv === 'function' && window.preloadFsDeliv().then(idx => {
+                    if (typeof calcDelivFields === 'function' && window._ohlcvTickers && !window._delivFieldsReady) { calcDelivFields(); window._delivFieldsReady = true; }
+                    return idx;
+                })],
+                ['deals', 'deals', () => typeof window.dealBlockLoad === 'function' && window.dealBlockLoad()],
+                ['nsenews', 'NSE announcements', () => typeof fetchNseNewsData === 'function' && fetchNseNewsData(null)],
+                ['idxhist', 'index history', () => typeof window._loadIndexHistory === 'function' && window._loadIndexHistory()]
+            ];
+            const btn = document.getElementById('refresh-data-btn');
+            const idle = () => new Promise(r => (typeof requestIdleCallback === 'function' ? requestIdleCallback(r, { timeout: 1500 }) : setTimeout(r, 200)));
+            _secondaryP = (async () => {
+                const pending = steps.map(st => st[1]);
+                const paint = () => { if (btn && !btn.disabled) { btn.innerHTML = pending.length ? '<span class="rdb-spinner"></span>' : '↺'; btn.title = pending.length ? 'Loading in background: ' + pending.join(', ') : 'Refresh data'; } };
+                paint();
+                for (const [id, label, fn] of steps) {
+                    await idle();
+                    const ui = window._refreshUI;
+                    if (ui) ui.set(id, 'busy');
+                    const t = performance.now();
+                    try {
+                        const p = fn();
+                        if (p) await p;
+                        if (ui) ui.set(id, 'ok', ((performance.now() - t) / 1000).toFixed(1) + 's');
+                    } catch (e) {
+                        console.warn('[loadAll] secondary source failed:', id, e && e.message);
+                        if (ui) ui.set(id, 'err', (e && e.message) || 'failed');
+                    }
+                    pending.splice(pending.indexOf(label), 1);
+                    paint();
+                }
+            })();
+            return _secondaryP;
+        };
 
         function _appReload() {
             if (window._isUnlocked()) loadAll();
@@ -15845,19 +16249,67 @@
                unexpected query plan can only cost time, never correctness. */
             const OHLC_QUERY = "SELECT * FROM 'OHLC.parquet' ORDER BY Ticker, Date";
 
-            // Allow loadAll() to inject already-fetched OHLCV parquet ArrayBuffer
+            // Allow loadAll() to inject already-fetched OHLCV parquet ArrayBuffer.
+            // Shares the in-flight promise with ensureData(), so a chart opened
+            // before the inject lands waits for this run instead of starting a
+            // second 657k-row query behind it.
             window._ohlcvInject = async function (parquetBuf) {
+                if (_index) return;
+                if (_fetchP) { try { await _fetchP; } catch (e) { } return; }
+                _fetchP = (async () => {
+                    try {
+                        const { db, conn } = await window._getDuckDB();
+                        await db.registerFileBuffer('OHLC.parquet', new Uint8Array(parquetBuf));
+                        const res = await conn.query(OHLC_QUERY);
+                        _index = buildIndexFromParquetRows(res);
+                        window._ohlcvTickers = _index;
+                    } catch (e) {
+                        console.error('[_ohlcvInject] Error loading parquet via DuckDB:', e);
+                    }
+                    _fetchP = null;
+                })();
+                await _fetchP;
+            };
+
+            /* ── Packed form of the index for IndexedDB ──
+               One typed array per field plus a ticker list with offsets;
+               structured-clone friendly and rebuilt into the same
+               {date, open, high, low, close, vol} bars on the way back in. */
+            window._ohlcvPack = function () {
+                if (!_index || !_index.size) return null;
+                const tickers = [], offsets = [];
+                let n = 0;
+                _index.forEach((arr, tk) => { tickers.push(tk); offsets.push(n); n += arr.length; });
+                offsets.push(n);
+                const d = new Float64Array(n), o = new Float64Array(n), h = new Float64Array(n), l = new Float64Array(n), c = new Float64Array(n), v = new Float64Array(n);
+                let i = 0;
+                _index.forEach(arr => {
+                    for (let k = 0; k < arr.length; k++, i++) {
+                        const b = arr[k];
+                        d[i] = b.date.getTime(); o[i] = b.open; h[i] = b.high; l[i] = b.low; c[i] = b.close; v[i] = b.vol;
+                    }
+                });
+                return { v1: true, tickers, offsets: Int32Array.from(offsets), d, o, h, l, c, v };
+            };
+            window._ohlcvInjectPacked = function (pk) {
                 try {
-                    const { db, conn } = await window._getDuckDB();
-                    await db.registerFileBuffer('OHLC.parquet', new Uint8Array(parquetBuf));
-                    const res = await conn.query(OHLC_QUERY);
-                    const rows = res.toArray();
-                    _index = buildIndexFromParquetRows(rows);
-                    window._ohlcvTickers = _index;
+                    if (!pk || !pk.v1 || !pk.tickers || !pk.offsets || pk.offsets.length !== pk.tickers.length + 1) return false;
+                    const idx = new Map();
+                    for (let k = 0; k < pk.tickers.length; k++) {
+                        const s = pk.offsets[k], e = pk.offsets[k + 1];
+                        const arr = new Array(e - s);
+                        for (let i = s; i < e; i++) arr[i - s] = { date: new Date(pk.d[i]), open: pk.o[i], high: pk.h[i], low: pk.l[i], close: pk.c[i], vol: pk.v[i] };
+                        idx.set(pk.tickers[k], arr);
+                    }
+                    if (!idx.size) return false;
+                    _index = idx;
+                    window._ohlcvTickers = idx;
+                    _fetchP = null;
+                    return true;
                 } catch (e) {
-                    console.error('[_ohlcvInject] Error loading parquet via DuckDB:', e);
+                    console.warn('[OHLCV] packed index rejected:', e && e.message);
+                    return false;
                 }
-                _fetchP = null;
             };
 
             // Check if a ticker has OHLCV data — called from buildCard
@@ -15872,9 +16324,9 @@
                chart — 657k rows of OHLC.parquet — so what it does per row is
                what the user waits for. Measured 980 ms -> 166 ms (5.9x) on the
                real row count, byte-identical output. Three things changed: */
-            function buildIndexFromParquetRows(rows) {
+            function buildIndexFromParquetRows(table) {
                 const idx = new Map();
-                if (!rows || !rows.length) return idx;
+                if (!table || !table.numRows) return idx;
                 const safeNum = val => {
                     if (val === null || val === undefined) return 0;
                     if (typeof val === 'bigint') return Number(val);
@@ -15882,26 +16334,30 @@
                     return isNaN(n) ? 0 : n;
                 };
 
-                /* (1) Column names are resolved ONCE. The old loop walked every
-                   row's keys with `for (const key in r)` and lowercased each
-                   one — 657k rows x 7 keys = 4.6 million toLowerCase() calls to
-                   re-learn a mapping that cannot change between rows of a
-                   single query. */
+                /* (1) Columns are read straight from the Arrow table. The
+                   previous version went through table.toArray(), which
+                   materialises a proxy object for every one of the 657k rows
+                   and then reads each field through that proxy — most of
+                   the time this step took. Column vectors are addressed by
+                   index instead; the names are resolved once. */
                 const K = { ticker: null, date: null, open: null, high: null, low: null, close: null, vol: null };
-                for (const key in rows[0]) {
-                    const kl = key.toLowerCase();
-                    if (kl === 'ticker') K.ticker = key;
-                    else if (kl === 'date') K.date = key;
-                    else if (kl === 'open') K.open = key;
-                    else if (kl === 'high') K.high = key;
-                    else if (kl === 'low') K.low = key;
-                    else if (kl === 'close') K.close = key;
-                    else if (kl === 'volume' || kl === 'vol') K.vol = key;
-                }
+                table.schema.fields.forEach(f => {
+                    const kl = f.name.toLowerCase();
+                    if (kl === 'ticker') K.ticker = f.name;
+                    else if (kl === 'date') K.date = f.name;
+                    else if (kl === 'open') K.open = f.name;
+                    else if (kl === 'high') K.high = f.name;
+                    else if (kl === 'low') K.low = f.name;
+                    else if (kl === 'close') K.close = f.name;
+                    else if (kl === 'volume' || kl === 'vol') K.vol = f.name;
+                });
                 if (!K.ticker || !K.date || !K.close) {
-                    console.error('[OHLCV] Required column missing — got', Object.keys(rows[0]));
+                    console.error('[OHLCV] Required column missing — got', table.schema.fields.map(f => f.name));
                     return idx;
                 }
+                const col = name => name ? table.getChild(name) : null;
+                const cT = col(K.ticker), cD = col(K.date), cO = col(K.open), cH = col(K.high), cL = col(K.low), cC = col(K.close), cV = col(K.vol);
+                const N = table.numRows;
 
                 /* (3) Ordering is VERIFIED, not assumed. OHLC_QUERY asks SQL to
                    group by ticker and sort by date, which makes the old
@@ -15912,26 +16368,30 @@
                    Ordered input costs one number comparison per row and zero
                    sorts; unordered input still comes out right. */
                 const needsSort = new Set();
-                let lastTicker = null, lastArr = null, lastT = -Infinity;
+                let lastTicker = null, lastRawT = null, lastNormT = '', lastArr = null, lastT = -Infinity;
 
-                for (let i = 0; i < rows.length; i++) {
-                    const r = rows[i];
-
-                    const ticker = String(r[K.ticker] || '').trim().toUpperCase();
+                for (let i = 0; i < N; i++) {
+                    const rawT = cT.get(i);
+                    if (rawT === null || rawT === undefined) continue;
+                    // Rows arrive grouped by ticker, so the (trim + upper) is
+                    // only paid when the raw value changes.
+                    let ticker;
+                    if (rawT === lastRawT) ticker = lastNormT;
+                    else { ticker = String(rawT).trim().toUpperCase(); lastRawT = rawT; lastNormT = ticker; }
                     if (!ticker) continue;
 
-                    const c = safeNum(r[K.close]);
+                    const c = safeNum(cC.get(i));
                     if (!isFinite(c) || c <= 0) continue;
 
-                    const rawDate = r[K.date];
+                    const rawDate = cD.get(i);
                     if (rawDate === null || rawDate === undefined) continue;
                     const dt = (rawDate instanceof Date) ? rawDate
                         : new Date(typeof rawDate === 'bigint' ? Number(rawDate) : rawDate);
                     const t = dt.getTime();
                     if (isNaN(t)) continue;
 
-                    let o = safeNum(r[K.open]), h = safeNum(r[K.high]), l = safeNum(r[K.low]);
-                    const v = K.vol ? safeNum(r[K.vol]) : 0;
+                    let o = safeNum(cO ? cO.get(i) : 0), h = safeNum(cH ? cH.get(i) : 0), l = safeNum(cL ? cL.get(i) : 0);
+                    const v = cV ? safeNum(cV.get(i)) : 0;
 
                     if (!isFinite(o) || o <= 0) o = c;
                     if (!isFinite(h) || h <= 0) h = Math.max(o, c);
@@ -15972,22 +16432,11 @@
                 return await res.arrayBuffer();
             }
 
-            /* ─── Prefetch: kick off immediately, no delay ─── */
-            function prefetch() {
-                if (_index || _fetchP) return;
-                _fetchP = (async () => {
-                    const buf = await fetchOHLCV();
-                    const { db, conn } = await window._getDuckDB();
-                    await db.registerFileBuffer('OHLC.parquet', new Uint8Array(buf));
-                    const res = await conn.query(OHLC_QUERY);
-                    const rows = res.toArray();
-                    _index = buildIndexFromParquetRows(rows);
-                    window._ohlcvTickers = _index;
-                })().catch(e => {
-                    console.error('[prefetch] Error prefetching OHLCV:', e);
-                    _fetchP = null;
-                });
-            }
+            /* The old DOMContentLoaded prefetch() is gone: it ran the full
+               OHLC query on its own, and loadAll's _ohlcvInject ran it AGAIN
+               right behind it — 657k rows twice, both on the critical path
+               of the first card. loadAll now owns the load; ensureData()
+               below covers a chart opened before it lands. */
 
             /* ─── Ensure data ready (returns Promise) — with single in-flight dedupe ─── */
             function ensureData() {
@@ -15998,8 +16447,7 @@
                     const { db, conn } = await window._getDuckDB();
                     await db.registerFileBuffer('OHLC.parquet', new Uint8Array(buf));
                     const res = await conn.query(OHLC_QUERY);
-                    const rows = res.toArray();
-                    _index = buildIndexFromParquetRows(rows);
+                    _index = buildIndexFromParquetRows(res);
                     window._ohlcvTickers = _index;
                     _fetchP = null;
                 })().catch(e => {
@@ -20022,13 +20470,8 @@
                 if (_closeTimer) { clearTimeout(_closeTimer); _closeTimer = null; }
             };
 
-            /* ── OHLCV data is now fetched inside loadAll() via Promise.all and injected via window._ohlcvInject.
-                  The prefetch below acts as a safety fallback in case the chart popup is opened before login. ── */
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', prefetch);
-            } else {
-                prefetch(); // Already loaded — fire instantly
-            }
+            /* OHLCV is fetched inside loadAll() and injected via window._ohlcvInject;
+               ensureData() is the fallback for a chart opened before that. */
 
             /* ── Wire candlestick popup drag (mouse + touch, desktop + mobile) ── */
             (function wireCspDrag() {
@@ -21028,7 +21471,8 @@
                 if (!svg) return;
                 const rows = list.map((r, i) => ({ r, v: vals[i], i })).sort((a, b) => b.v - a.v);
                 const K = _fsK();
-                const W = 316 * K, RH = 17 * K, L = 64 * K, RGT = 44 * K, TOP = 6 * K;
+                const RH = _rowUnits(rows.length, K, 17);
+                const W = 316 * K, L = 64 * K, RGT = 44 * K, TOP = 6 * K;
                 const H = TOP + rows.length * RH + 14 * K;
                 const med = _median(_groupSorted(Object.keys(PARAMS).find(k => PARAMS[k] === pDef)));
                 const bw = W - L - RGT;
@@ -21048,7 +21492,7 @@
                     const bx = it.v >= 0 ? zeroX : zeroX - w;
                     if (isSelf) html += `<rect x="0" y="${y}" width="${W}" height="${RH}" rx="4" fill="rgba(34,211,238,0.08)"/>`;
                     html += `<text x="${L - 6 * K}" y="${y + RH / 2 + 3}" text-anchor="end" font-size="9" font-weight="${isSelf ? 800 : 600}" fill="${isSelf ? SELF_CLR : isExtra ? '#fbbf24' : 'rgba(255,255,255,0.8)'}" class="peer-svg-link" onclick="_peerFilterByTicker('${esc(it.r._ticker)}')"><title>${esc(it.r._coName)}</title>${esc(String(it.r._ticker).slice(0, K > 1 ? 12 : 9))}</text>`;
-                    html += `<rect x="${bx.toFixed(1)}" y="${y + 4 * K}" width="${w.toFixed(1)}" height="${RH - 8 * K}" rx="3" fill="${it.v < 0 ? '#fb7185' : clr}" opacity="${isSelf ? 1 : 0.85}"><title>${esc(it.r._coName)}: ${pDef.fmt(it.v)}</title></rect>`;
+                    html += `<rect x="${bx.toFixed(1)}" y="${(y + RH * 0.22).toFixed(1)}" width="${w.toFixed(1)}" height="${(RH * 0.56).toFixed(1)}" rx="3" fill="${it.v < 0 ? '#fb7185' : clr}" opacity="${isSelf ? 1 : 0.85}"><title>${esc(it.r._coName)}: ${pDef.fmt(it.v)}</title></rect>`;
                     html += `<text x="${(it.v >= 0 ? zeroX + w + 4 * K : zeroX + 4 * K).toFixed(1)}" y="${y + RH / 2 + 3}" font-size="8.5" font-weight="700" fill="${isSelf ? '#fff' : 'rgba(255,255,255,0.7)'}">${pDef.fmt(it.v)}</text>`;
                 });
                 if (!isNaN(med) && med >= minV && med <= maxV) {
@@ -21123,27 +21567,30 @@
                 const rows = list.slice().sort((a, b) => { const av = pDef.get(a), bv = pDef.get(b); return (isNaN(bv) ? -Infinity : bv) - (isNaN(av) ? -Infinity : av); });
                 const K = _fsK();
                 const HEAT_COLS = _axes();
-                const W = 316 * K, L = 58 * K, HDR = 16 * K, RH = 16 * K, TOP = 2 * K;
+                const RH = _rowUnits(rows.length, K, 16);
+                const W = 316 * K, L = 58 * K, HDR = Math.max(14, RH), TOP = 2 * K;
+                const fv = Math.min(8, Math.max(6.6, RH * 0.42));      // cell value
+                const ft = Math.min(9.5, Math.max(8, RH * 0.5));       // ticker
                 const cw = (W - L) / HEAT_COLS.length;
                 const H = TOP + HDR + rows.length * RH + 4 * K;
                 let html = '';
                 HEAT_COLS.forEach((k, c) => {
                     const x = L + c * cw + cw / 2;
                     const hot = k === param;
-                    html += `<text x="${x.toFixed(1)}" y="${TOP + 11 * K}" text-anchor="middle" font-size="7.5" font-weight="${hot ? 800 : 600}" fill="${hot ? '#22d3ee' : 'rgba(255,255,255,0.55)'}" class="peer-svg-link" onclick="window._peerSetParam('${k}')">${SHORT[k]}${hot ? ' ▾' : ''}</text>`;
+                    html += `<text x="${x.toFixed(1)}" y="${(TOP + HDR * 0.7).toFixed(1)}" text-anchor="middle" font-size="${K < 1 ? 6.6 : 7.5}" font-weight="${hot ? 800 : 600}" fill="${hot ? '#22d3ee' : 'rgba(255,255,255,0.55)'}" class="peer-svg-link" onclick="window._peerSetParam('${k}')">${SHORT[k]}${hot ? ' ▾' : ''}</text>`;
                 });
                 rows.forEach((r, i) => {
                     const y = TOP + HDR + i * RH;
                     const isSelf = r._ticker === selfTicker;
                     const isExtra = _extra.has(String(r._ticker).toUpperCase());
                     if (isSelf) html += `<rect x="0" y="${y}" width="${W}" height="${RH}" rx="3" fill="rgba(34,211,238,0.10)"/>`;
-                    html += `<text x="${L - 5 * K}" y="${y + RH / 2 + 3}" text-anchor="end" font-size="8.5" font-weight="${isSelf ? 800 : 600}" fill="${isSelf ? SELF_CLR : isExtra ? '#fbbf24' : 'rgba(255,255,255,0.8)'}" class="peer-svg-link" onclick="_peerFilterByTicker('${esc(r._ticker)}')"><title>${esc(r._coName)}</title>${esc(String(r._ticker).slice(0, K > 1 ? 11 : 8))}</text>`;
+                    html += `<text x="${L - 5 * K}" y="${(y + RH / 2 + ft * 0.35).toFixed(1)}" text-anchor="end" font-size="${ft}" font-weight="${isSelf ? 800 : 600}" fill="${isSelf ? SELF_CLR : isExtra ? '#fbbf24' : 'rgba(255,255,255,0.8)'}" class="peer-svg-link" onclick="_peerFilterByTicker('${esc(r._ticker)}')"><title>${esc(r._coName)}</title>${esc(String(r._ticker).slice(0, K > 1 ? 11 : 8))}</text>`;
                     HEAT_COLS.forEach((k, c) => {
                         const v = PARAMS[k].get(r);
                         const t = _pct(k, v);
                         const x = L + c * cw;
-                        html += `<rect x="${(x + 0.8 * K).toFixed(1)}" y="${y + K}" width="${(cw - 1.6 * K).toFixed(1)}" height="${RH - 2 * K}" rx="2" fill="${_heatColor(t)}"${k === param ? ' stroke="rgba(255,255,255,0.35)" stroke-width="0.6"' : ''}><title>${esc(r._ticker)} · ${PARAMS[k].label}: ${PARAMS[k].fmt(v)}${isNaN(t) ? '' : ' (top ' + Math.round((1 - t) * 100) + '%)'}</title></rect>`;
-                        html += `<text x="${(x + cw / 2).toFixed(1)}" y="${y + RH / 2 + 2.8}" text-anchor="middle" font-size="7" font-weight="700" fill="#fff" pointer-events="none">${PARAMS[k].fmt(v)}</text>`;
+                        html += `<rect x="${(x + 0.8 * K).toFixed(1)}" y="${(y + RH * 0.08).toFixed(1)}" width="${(cw - 1.6 * K).toFixed(1)}" height="${(RH * 0.84).toFixed(1)}" rx="2" fill="${_heatColor(t)}"${k === param ? ' stroke="rgba(255,255,255,0.35)" stroke-width="0.6"' : ''}><title>${esc(r._ticker)} · ${PARAMS[k].label}: ${PARAMS[k].fmt(v)}${isNaN(t) ? '' : ' (top ' + Math.round((1 - t) * 100) + '%)'}</title></rect>`;
+                        html += `<text x="${(x + cw / 2).toFixed(1)}" y="${(y + RH / 2 + fv * 0.38).toFixed(1)}" text-anchor="middle" font-size="${fv}" font-weight="700" fill="#fff" pointer-events="none">${PARAMS[k].fmt(v)}</text>`;
                     });
                 });
                 svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
@@ -21256,24 +21703,66 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                phone stays at 1 (text ≈ 9-10px), an iPad lands on 2, a desktop
                on 3-4. Bars/Heat are width-bound (they scroll), the others are
                bound by the smaller dimension. */
+            /* Phones go the other way: the card is only ~340px wide, so
+               K drops below 1 — geometry tightens, the fixed-size text
+               renders ~20% larger and the Bars / Heat / Spider / Quad
+               charts stay readable without a horizontal scroll. */
+            const PHONE_K = 0.82;
+            const _isPhone = () => Math.min(window.innerWidth, window.innerHeight) <= 600;
             function _fsK() {
-                if (!_isFs()) return 1;
+                if (!_isFs()) return _isPhone() ? PHONE_K : 1;
                 const a = _area();
                 if (!a) return 2;
                 const wide = _chartType === 'bars' || _chartType === 'heat';
                 const base = wide ? a.w : Math.min(a.w, a.h * 1.2);
-                return Math.max(1, Math.min(4, Math.round(base / 316 / 1.25)));
+                let k = base / 316 / 1.25;
+                if (k < 1) k = _isPhone() ? PHONE_K : 1;
+                else k = Math.min(4, Math.round(k));
+                // Heat: 12 columns fit a 316-unit box at K=1; with the tech
+                // metrics (24 columns) the box must be twice as wide or the
+                // values overrun their cells. A narrow screen then scrolls
+                // sideways (see _fitCharts) instead of squashing the grid.
+                if (_chartType === 'heat') k = Math.max(k, _axes().length / 12);
+                return k;
+            }
+            /* Row height (viewBox units) for the Bars / Heat grids. Rows are
+               NOT multiplied by K — that made 50 peers either a wall of
+               60px rows or, once squeezed to fit, 2px text. In full screen
+               the chart fills the width, so a unit is a known number of
+               pixels; rows grow from `base` up to 2× to use the height,
+               and when the rows still do not fit the chart box scrolls. */
+            function _rowUnits(nRows, K, base) {
+                if (!_isFs()) return base * K;
+                const a = _area();
+                if (!a) return base;
+                const pxPerUnit = a.w / (316 * K);
+                const availUnits = a.h / pxPerUnit - 30 * K;
+                return Math.max(base, Math.min(base * 2, availUnits / Math.max(1, nRows)));
             }
             /* Size the SVG element to the area after each draw. */
             function _fitCharts() {
                 const ring = document.getElementById('peer-octa-svg');
                 const alt = document.getElementById('peer-alt-svg');
                 if (!ring || !alt) return;
-                if (!_isFs()) { ring.style.width = ''; ring.style.height = ''; alt.style.width = ''; alt.style.height = ''; return; }
+                if (!_isFs()) {
+                    alt.style.width = ''; alt.style.height = '';
+                    // Radial-label ring (many peers) carries its labels inside
+                    // an enlarged viewBox, so give it the whole card width.
+                    if (_chartType === 'ring' && ring._ringPad) {
+                        const a = _area();
+                        const sz = a ? Math.min(a.w, 480) : 320;
+                        ring.style.width = sz + 'px'; ring.style.height = sz + 'px';
+                    } else { ring.style.width = ''; ring.style.height = ''; }
+                    return;
+                }
                 const a = _area();
                 if (!a) return;
                 if (_chartType === 'ring') {
-                    const sz = Math.max(160, Math.min(a.w, a.h));
+                    // Ticker labels sit outside the 200-unit viewBox (~1.45×
+                    // its width in total), so width-bound screens (phones)
+                    // size the ring from the label extent, not the box —
+                    // unless the radial layout already padded the viewBox.
+                    const sz = Math.max(160, Math.min(a.w / (ring._ringPad ? 1 : 1.45), a.h));
                     ring.style.width = sz + 'px'; ring.style.height = sz + 'px';
                     return;
                 }
@@ -21282,16 +21771,25 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                 const ratio = vb.height / vb.width;
                 let w = Math.min(a.w, a.h / ratio);
                 if (_chartType === 'bars' || _chartType === 'heat') {
-                    // Never squash rows below ~15px to fit the height — scroll instead
-                    const rowPx = 17 * _fsK() * (w / vb.width);
-                    if (rowPx < 15) w = a.w;
+                    // Width-bound grids: fill the width, rows were sized by
+                    // _rowUnits, anything taller than the box scrolls.
+                    w = a.w;
+                }
+                if (_chartType === 'heat') {
+                    // ...nor cells below ~24px wide — the wrap scrolls sideways
+                    const K = _fsK(), cols = _axes().length;
+                    const cellPx = (258 * K / cols) * (w / vb.width);
+                    if (cellPx < 24) w = w * 24 / cellPx;
                 }
                 alt.style.width = Math.round(w) + 'px';
                 alt.style.height = Math.round(w * ratio) + 'px';
             }
             let _fitTimer = null;
             window.addEventListener('resize', function () {
-                if (!_isFs()) return;
+                // Redraw whenever the popup is open: full screen refits the
+                // chart, and a phone rotating across 600px changes K.
+                const p = document.getElementById('peer-popup');
+                if (!p || !p.classList.contains('peer-visible')) return;
                 clearTimeout(_fitTimer);
                 _fitTimer = setTimeout(function () { refreshParam(_currentParam); }, 120);
             });
@@ -21343,16 +21841,36 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                     html += `<polygon points="${poly}" fill="none" stroke="${outer ? 'rgba(34,211,238,0.22)' : 'rgba(255,255,255,0.06)'}" stroke-width="${outer ? 1.2 : 0.8}"/>`;
                 });
 
+                // Past ~16 peers the horizontal labels at the top and bottom
+                // of the ring pile onto each other. Switch to radial labels
+                // (each one runs along its own spoke, left half flipped so
+                // it still reads left-to-right), shrink the font to the arc
+                // spacing, and pad the viewBox so nothing is clipped.
+                const radial = n > 16;
+                const labelR = radial ? R + 6 : R + 14;
+                const fsz = radial ? Math.max(4.5, Math.min(9, (2 * Math.PI * labelR / n) * 0.85)) : 9;
+                const maxChars = radial ? list.reduce((m, r) => Math.max(m, String(r._ticker || '').length), 0) : 0;
+                const pad = radial ? Math.ceil(6 + maxChars * fsz * 0.64) : 0;
+                svg.setAttribute('viewBox', pad ? `${-pad} ${-pad} ${200 + 2 * pad} ${200 + 2 * pad}` : '0 0 200 200');
+                svg._ringPad = pad;
+                const dotR = n > 30 ? 3.2 : 4.5;
+
                 const outerPts = ringPoints(1.0);
                 for (let i = 0; i < n; i++) {
                     const [x2, y2] = outerPts[i];
                     html += `<line x1="${cx}" y1="${cy}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="rgba(255,255,255,0.09)" stroke-width="0.8"/>`;
                     const ang = (2 * Math.PI * i / n) - Math.PI / 2;
-                    const lx = cx + (R + 14) * Math.cos(ang);
-                    const ly = cy + (R + 14) * Math.sin(ang);
+                    const lx = cx + labelR * Math.cos(ang);
+                    const ly = cy + labelR * Math.sin(ang);
                     const tck = list[i] ? String(list[i]._ticker) : '';
                     const isSelf = list[i] && list[i]._ticker === selfTicker;
                     const cosA = Math.cos(ang);
+                    if (radial) {
+                        const deg = ang * 180 / Math.PI;
+                        const flip = cosA < 0;
+                        html += `<text x="${lx.toFixed(2)}" y="${ly.toFixed(2)}" transform="rotate(${(flip ? deg + 180 : deg).toFixed(2)} ${lx.toFixed(2)} ${ly.toFixed(2)})" text-anchor="${flip ? 'end' : 'start'}" dominant-baseline="middle" font-family="Lexend,sans-serif" font-size="${fsz.toFixed(1)}" font-weight="${isSelf ? 700 : 500}" fill="${isSelf ? '#22d3ee' : 'rgba(255,255,255,0.85)'}"><title>${esc(list[i] ? list[i]._coName : '')}</title>${esc(tck)}</text>`;
+                        continue;
+                    }
                     const anchor = cosA > 0.15 ? 'start' : cosA < -0.15 ? 'end' : 'middle';
                     html += `<text x="${lx.toFixed(2)}" y="${ly.toFixed(2)}" text-anchor="${anchor}" dominant-baseline="middle" font-family="Lexend,sans-serif" font-size="9" font-weight="${isSelf ? 700 : 500}" fill="${isSelf ? '#22d3ee' : '#ffffff'}">${tck}</text>`;
                 }
@@ -21373,7 +21891,7 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                     const isSelf = p.r._ticker === selfTicker;
                     const clr = isSelf ? SELF_CLR : COLORS[i % COLORS.length];
                     if (isSelf) html += `<circle cx="${p.x.toFixed(2)}" cy="${p.y.toFixed(2)}" r="${10}" fill="${clr}" opacity="0.18"/>`;
-                    html += `<circle cx="${p.x.toFixed(2)}" cy="${p.y.toFixed(2)}" r="${isSelf ? 6.5 : 4.5}" fill="${clr}" stroke="#0a0a10" stroke-width="1.5"/>`;
+                    html += `<circle cx="${p.x.toFixed(2)}" cy="${p.y.toFixed(2)}" r="${isSelf ? 6.5 : dotR}" fill="${clr}" stroke="#0a0a10" stroke-width="1.5"><title>${esc(p.r._coName)}</title></circle>`;
                 });
 
                 svg.innerHTML = html;
