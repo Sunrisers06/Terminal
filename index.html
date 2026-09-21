@@ -33241,12 +33241,18 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
             box-shadow: 0 2px 12px rgba(245, 158, 11, 0.35);
         }
 
-        /* ATR SL multiplier toggle - orange tint when active, matches the ATR stop line color */
+        /* ATR SuperTrend multiplier chips (Indicators row) - orange when active, matches the band color */
+        .fs-atr-btn {
+            padding: 4px 6px;
+            margin-left: -2px;
+        }
+
         #fs-atr-2x.active-idx-btn,
         #fs-atr-3x.active-idx-btn {
             background: rgba(255, 159, 10, 0.88);
             border-color: rgba(255, 159, 10, 0.95);
-            box-shadow: 0 2px 12px rgba(255, 159, 10, 0.35);
+            color: #fff;
+            box-shadow: 0 0 8px rgba(255, 159, 10, 0.35);
         }
 
         /* PB button - purple tint when active */
@@ -33625,6 +33631,11 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                         <button class="fs-ind-btn" data-ind="ma30" style="color:#a78bfa;" onclick="window.fsToggleIndicator('ma30')" title="30-week moving average"><i class="fs-ind-dot"></i>MA30</button>
                         <button class="fs-ind-btn" data-ind="ma40" style="color:#ec4899;" onclick="window.fsToggleIndicator('ma40')" title="40-week moving average"><i class="fs-ind-dot"></i>MA40</button>
                         <button class="fs-ind-btn" data-ind="st" onclick="window.fsToggleIndicator('st')" title="ATR SuperTrend band (Holdings only)">SuperTrend</button>
+                        <!-- ATR multiplier for the SuperTrend band (shown only when the ticker is marked HOLD) -->
+                        <span id="fs-atr-mult-toggle" style="display:none; gap:3px; align-items:center;">
+                            <button id="fs-atr-2x" class="fs-ind-btn fs-atr-btn" onclick="window.setFsAtrMult(2)" title="2x ATR SuperTrend">2x</button>
+                            <button id="fs-atr-3x" class="fs-ind-btn fs-atr-btn active-idx-btn" onclick="window.setFsAtrMult(3)" title="3x ATR SuperTrend (default)">3x</button>
+                        </span>
                         <button class="fs-ind-btn" data-ind="idx" onclick="window.fsToggleIndicator('idx')" title="Benchmark index line">Index</button>
                         <button class="fs-ind-btn" data-ind="vol" onclick="window.fsToggleIndicator('vol')" title="Volume bars + 9MA + Q/Y/E markers at the bottom of the price chart">Volume</button>
                         <button class="fs-ind-btn" data-ind="vp" onclick="window.fsToggleIndicator('vp')" title="Volume profile (left side histogram)">Vol Profile</button>
@@ -33978,17 +33989,6 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                         title="Price-to-Book Ratio">📗 PB</button>
                     <button id="fs-idx-btn-divy" class="fs-idx-chart-btn" onclick="window.setIndexChartType('divy')"
                         title="Dividend Yield %">💰 Div Yield</button>
-                </div>
-
-                <!-- ATR SuperTrend multiplier toggle (visible only when ticker is marked HOLD) -->
-                <div id="fs-atr-mult-toggle"
-                    style="display:none; position:absolute; right:12px; top:12px; z-index:26; gap:5px; align-items:center; pointer-events:auto;">
-                    <span
-                        style="font-size:9.5px; font-weight:700; color:rgba(148,163,184,0.9); letter-spacing:0.3px; margin-right:2px;">SuperTrend</span>
-                    <button id="fs-atr-2x" class="fs-idx-chart-btn" onclick="window.setFsAtrMult(2)"
-                        title="2x ATR SuperTrend">2x</button>
-                    <button id="fs-atr-3x" class="fs-idx-chart-btn active-idx-btn" onclick="window.setFsAtrMult(3)"
-                        title="3x ATR SuperTrend (default)">3x</button>
                 </div>
 
                 <!-- Index chart canvas (used for index line charts) -->
