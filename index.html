@@ -5551,7 +5551,8 @@
             margin: 0;
         }
 
-        #peer-popup-fs {
+        #peer-popup-fs,
+        #peer-popup-lg {
             cursor: pointer;
             color: var(--text3);
             font-size: 12px;
@@ -5566,9 +5567,56 @@
             transition: all .15s;
         }
 
-        #peer-popup-fs:hover {
+        #peer-popup-fs:hover,
+        #peer-popup-lg:hover,
+        #peer-popup-lg.on {
             color: #22d3ee;
             background: rgba(34, 211, 238, 0.12);
+        }
+
+        /* Enlarged card (⤢): a size between the small card and full
+           screen — wider box, bigger ring, taller list, and the charts
+           draw at K≈1.6 (see _fsK) so they gain room, not just zoom. */
+        #peer-popup.peer-lg:not(.peer-fs) {
+            width: min(640px, 94vw);
+        }
+
+        #peer-popup.peer-lg:not(.peer-fs) #peer-octa-svg {
+            width: 320px;
+            height: 320px;
+        }
+
+        #peer-popup.peer-lg:not(.peer-fs) #peer-octa-wrap {
+            max-height: 66vh;
+        }
+
+        #peer-popup.peer-lg:not(.peer-fs) #peer-list {
+            max-height: 300px;
+        }
+
+        #peer-popup.peer-fs #peer-popup-lg {
+            display: none;
+        }
+
+        /* Quadrant hover: hovered bubble pops, its label shows even when
+           the chart is too crowded to label everyone. */
+        #peer-alt-svg g.peer-sp text.peer-sp-lbl.hide {
+            display: none;
+        }
+
+        #peer-alt-svg g.peer-sp.hot text.peer-sp-lbl.hide {
+            display: block;
+        }
+
+        #peer-alt-svg g.peer-sp.hot circle.peer-sp-dot {
+            stroke: #fff;
+            stroke-width: 2;
+            fill-opacity: 1;
+        }
+
+        #peer-alt-svg g.peer-sp.hot text.peer-sp-lbl {
+            fill: #fff;
+            font-weight: 800;
         }
 
         #peer-body {
@@ -5638,6 +5686,96 @@
             border-color: #a855f7;
             color: #c084fc;
             box-shadow: 0 0 8px rgba(168, 85, 247, 0.25);
+        }
+
+        /* Axes family selector (All / Fund / Tech) — right end of the TECH row */
+        .peer-axes-wrap {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            margin-left: auto;
+            padding-left: 8px;
+        }
+
+        .peer-axes-lbl {
+            font-size: 8px;
+            font-weight: 800;
+            letter-spacing: 0.1em;
+            color: rgba(255, 255, 255, 0.35);
+            margin-right: 2px;
+        }
+
+        .peer-axes-pill {
+            padding: 2px 7px;
+            border-radius: 20px;
+            font-size: 8.5px;
+            font-weight: 700;
+            cursor: pointer;
+            letter-spacing: 0.04em;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text3);
+            white-space: nowrap;
+            transition: all .15s;
+        }
+
+        .peer-axes-pill:hover {
+            border-color: rgba(34, 211, 238, 0.5);
+            color: #22d3ee;
+        }
+
+        .peer-axes-pill.active {
+            background: rgba(34, 211, 238, 0.15);
+            border-color: #22d3ee;
+            color: #22d3ee;
+        }
+
+        /* Spider hover: the hovered ticker's polygon goes bold, everything
+           else (except the current ticker) fades so the two can be read
+           against each other. Driven by .hot on the <g> and .has-hot on
+           the svg (see _peerSetHot). */
+        #peer-alt-svg g.peer-sp polygon,
+        #peer-alt-svg g.peer-sp circle,
+        #peer-alt-svg g.peer-sp {
+            transition: opacity .15s, stroke-width .15s, fill-opacity .15s;
+        }
+
+        #peer-alt-svg.has-hot g.peer-sp:not(.hot):not(.self) {
+            opacity: 0.22;
+        }
+
+        /* Quadrant bubbles are already translucent and overlap — a light
+           fade is enough to single out the hovered one. */
+        #peer-alt-svg.has-hot g.peer-sp.peer-sp-q:not(.hot):not(.self) {
+            opacity: 0.6;
+        }
+
+        #peer-alt-svg.has-hot g.peer-sp.self:not(.hot) polygon {
+            stroke-width: 1.2;
+            fill-opacity: 0.08;
+        }
+
+        #peer-alt-svg g.peer-sp.hot polygon {
+            stroke-width: 2.6;
+            fill-opacity: 0.28;
+        }
+
+        #peer-alt-svg g.peer-sp.hot circle {
+            r: 3.2;
+        }
+
+        #peer-alt-svg text.peer-sp-leg.hot {
+            fill: #fff;
+            font-weight: 800;
+        }
+
+        .peer-item.hot {
+            background: rgba(255, 255, 255, 0.06);
+            border-radius: 4px;
+        }
+
+        .peer-item.hot .peer-name {
+            color: #fff;
         }
 
         #peer-popup.peer-fs #peer-body {
@@ -5789,6 +5927,7 @@
             }
 
             #peer-popup.peer-fs #peer-popup-fs,
+            #peer-popup.peer-fs #peer-popup-lg,
             #peer-popup.peer-fs #peer-popup-close {
                 width: 28px;
                 height: 28px;
@@ -6676,6 +6815,7 @@
 
             /* Bigger tap targets in the header */
             #peer-popup-fs,
+            #peer-popup-lg,
             #peer-popup-close {
                 width: 28px;
                 height: 28px;
@@ -18074,6 +18214,219 @@
                 });
             };
 
+            /* ── Trade-log markers (full chart only) ──
+               Reads the published trade-log CSV (Date,Ticker,Action,UNITS,
+               TRADE PRICE,NET_AMOUNT,PORTFOLIO), groups fills by ticker and
+               paints a BUY (▲ below the low) / SELL (▼ above the high) pill
+               with the unit count on the candle whose bar covers the fill
+               date. Toggled from the sidebar Indicators row ("Trades") —
+               same fs_ind_vis mechanism as the other chips, so a missing
+               key means visible. The CSV text is cached in localStorage so
+               the markers come up offline / before the network answers. */
+            const _FS_TRADES_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTklvEXaXfeuvK2kScWmrvfQebjtdsX5k7GFedQuoXQeMlXSuWSI7vbA_5Vl87_Tx-lYpa8arY2pTfo/pub?gid=0&single=true&output=csv';
+            const _FS_TRADES_CACHE_KEY = 'fs_tradelog_csv';
+            window._fsTrades = new Map();   // TICKER → [{ts,date,side,qty,price,amount,portfolio}] sorted by ts
+            window._fsTradesLoaded = false;
+
+            // Sheet dates are DD/MM/YYYY (Indian locale); ISO is accepted as a fallback.
+            function _fsTradeDate(s) {
+                s = String(s || '').trim();
+                let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
+                if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
+                m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+                if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+                const d = new Date(s);
+                return isNaN(d) ? null : d;
+            }
+
+            function _fsParseTrades(text) {
+                const rows = parseCSV(text);
+                const map = new Map();
+                rows.forEach(r => {
+                    const tk = String(r['Ticker'] || '').trim().toUpperCase();
+                    const side = String(r['Action'] || '').trim().toUpperCase();
+                    const d = _fsTradeDate(r['Date']);
+                    const qty = parseFloat(String(r['UNITS'] || '').replace(/,/g, ''));
+                    const price = parseFloat(String(r['TRADE PRICE'] || '').replace(/,/g, ''));
+                    if (!tk || !d || !(qty > 0) || (side !== 'BUY' && side !== 'SELL')) return;
+                    const amount = parseFloat(String(r['NET_AMOUNT'] || r['Gross_Amount'] || '').replace(/,/g, ''));
+                    if (!map.has(tk)) map.set(tk, []);
+                    map.get(tk).push({
+                        ts: d.getTime(), date: d, side, qty,
+                        price: isFinite(price) ? price : null,
+                        amount: isFinite(amount) ? amount : (isFinite(price) ? qty * price : null),
+                        portfolio: String(r['PORTFOLIO'] || '').trim()
+                    });
+                });
+                map.forEach(arr => arr.sort((a, b) => a.ts - b.ts));
+                return map;
+            }
+
+            function _fsApplyTrades(text) {
+                const map = _fsParseTrades(text);
+                if (!map.size && window._fsTrades.size) return; // never replace good data with an empty sheet
+                window._fsTrades = map;
+                window._fsTradesLoaded = true;
+                const m = document.getElementById('fs-chart-modal');
+                if (m && m.style.display === 'flex' && typeof window.renderFullScreenChart === 'function') {
+                    window.renderFullScreenChart({ skipChrome: true });
+                }
+            }
+
+            window.loadFsTrades = function () {
+                try {
+                    const cached = localStorage.getItem(_FS_TRADES_CACHE_KEY);
+                    if (cached) _fsApplyTrades(cached);
+                } catch (e) { }
+                return fetch(_FS_TRADES_URL + '&_=' + Date.now(), { cache: 'no-store' })
+                    .then(r => { if (!r.ok) throw new Error('trade log HTTP ' + r.status); return r.text(); })
+                    .then(text => {
+                        if (!/Ticker/i.test(text.split('\n')[0] || '')) throw new Error('trade log: unexpected header');
+                        try { localStorage.setItem(_FS_TRADES_CACHE_KEY, text); } catch (e) { }
+                        _fsApplyTrades(text);
+                    })
+                    .catch(err => console.warn('[trades] load failed:', err && err.message ? err.message : err));
+            };
+            (document.readyState === 'loading')
+                ? document.addEventListener('DOMContentLoaded', () => window.loadFsTrades())
+                : setTimeout(() => window.loadFsTrades(), 0);
+
+            /* Paints the markers on the price pane. `raw` is the visible slice;
+               a fill lands on the last candle whose date <= fill date (candles
+               are dated at bar open, Monday for weekly), so a Wednesday fill
+               sits on that week's bar. Fills newer than `maxTs` belong to a
+               candle scrolled off the right edge and are skipped. Returns the
+               per-index groups so the hover box can list the fills. */
+            function _fsDrawTradeMarkers(ctx, opts) {
+                const { ticker, raw, toX, toY, PP, pH, W, compact, maxTs, hoverIdx } = opts;
+                const trades = window._fsTrades.get(String(ticker || '').toUpperCase());
+                if (!trades || !trades.length || !raw || !raw.length) return null;
+
+                const firstTs = raw[0].date.getTime();
+                const groups = new Map(); // idx → { buy:{qty,amt,n,fills[]}, sell:{...} }
+                let lo = 0;
+                for (const t of trades) {
+                    if (t.ts < firstTs || t.ts >= maxTs) continue;
+                    // raw and trades are both sorted → resume the scan from the last hit
+                    while (lo + 1 < raw.length && raw[lo + 1].date.getTime() <= t.ts) lo++;
+                    let g = groups.get(lo);
+                    if (!g) { g = { buy: null, sell: null }; groups.set(lo, g); }
+                    const k = t.side === 'BUY' ? 'buy' : 'sell';
+                    if (!g[k]) g[k] = { qty: 0, amt: 0, n: 0, fills: [] };
+                    g[k].qty += t.qty;
+                    g[k].amt += (t.price || 0) * t.qty;
+                    g[k].n++;
+                    g[k].fills.push(t);
+                }
+                if (!groups.size) return null;
+
+                const BUY = { fill: '#00e676', text: '#052e16' };
+                const SELL = { fill: '#ff1744', text: '#ffffff' };
+                const fontPx = compact ? 9 : 10.5;
+                const tri = compact ? 5 : 6.5;      // triangle half-width
+                const padX = compact ? 4 : 5, pillH = fontPx + (compact ? 5 : 7);
+                const top = PP.t + 2, bot = PP.t + pH - 2;
+                const fmtQ = q => Number.isInteger(q) ? String(q) : q.toFixed(2);
+                const fmtPx = p => p == null ? '' : (p >= 1000 ? p.toLocaleString('en-IN', { maximumFractionDigits: 0 }) : p.toFixed(p < 10 ? 2 : 1));
+
+                ctx.save();
+                ctx.font = 'bold ' + fontPx + 'px "Lexend",monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.lineJoin = 'round';
+
+                const roundRect = (x, y, w, h, r) => {
+                    ctx.beginPath();
+                    ctx.moveTo(x + r, y);
+                    ctx.arcTo(x + w, y, x + w, y + h, r);
+                    ctx.arcTo(x + w, y + h, x, y + h, r);
+                    ctx.arcTo(x, y + h, x, y, r);
+                    ctx.arcTo(x, y, x + w, y, r);
+                    ctx.closePath();
+                };
+
+                const drawMarker = (x, anchorY, g, isBuy, hot) => {
+                    const c = isBuy ? BUY : SELL;
+                    const avg = g.qty ? g.amt / g.qty : null;
+                    // Minimal by default (units only); the average price joins on hover.
+                    const label = (isBuy ? 'B ' : 'S ') + fmtQ(g.qty) + (hot && avg != null ? ' @' + fmtPx(avg) : '');
+                    const tw = ctx.measureText(label).width;
+                    const pillW = tw + padX * 2;
+                    // BUY hangs below the low, SELL floats above the high.
+                    const dir = isBuy ? 1 : -1;
+                    let apexY = anchorY + dir * 3;
+                    let baseY = apexY + dir * tri * 1.6;
+                    let pillY = isBuy ? baseY + 1 : baseY - 1 - pillH;
+                    // keep inside the price pane
+                    if (isBuy && pillY + pillH > bot) { const s = pillY + pillH - bot; apexY -= s; baseY -= s; pillY -= s; }
+                    if (!isBuy && pillY < top) { const s = top - pillY; apexY += s; baseY += s; pillY += s; }
+                    let px = x - pillW / 2;
+                    px = Math.max(PP.l + 1, Math.min(W - PP.r - pillW - 1, px));
+
+                    ctx.shadowColor = c.fill; ctx.shadowBlur = hot ? 12 : 4;
+                    ctx.fillStyle = c.fill;
+                    ctx.beginPath();
+                    ctx.moveTo(x, apexY);
+                    ctx.lineTo(x - tri, baseY);
+                    ctx.lineTo(x + tri, baseY);
+                    ctx.closePath();
+                    ctx.fill();
+                    roundRect(px, pillY, pillW, pillH, 3);
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+                    ctx.lineWidth = 1;
+                    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+                    ctx.stroke();
+                    ctx.fillStyle = c.text;
+                    ctx.fillText(label, px + pillW / 2, pillY + pillH / 2 + 0.5);
+                    return { x: px, y: pillY, w: pillW, h: pillH };
+                };
+
+                let hotBox = null, hotGroup = null;
+                groups.forEach((g, i) => {
+                    const x = toX(i), r = raw[i];
+                    const hot = hoverIdx === i;
+                    if (g.buy) { const b = drawMarker(x, toY(r.low), g.buy, true, hot); if (hot) hotBox = b; }
+                    if (g.sell) { const b = drawMarker(x, toY(r.high), g.sell, false, hot); if (hot) hotBox = hotBox || b; }
+                    if (hot) hotGroup = g;
+                });
+
+                // Hover: when the pill merges several fills, list them next to it.
+                // A single fill is already fully described by the expanded pill.
+                const fills = hotGroup
+                    ? [].concat(hotGroup.buy ? hotGroup.buy.fills : [], hotGroup.sell ? hotGroup.sell.fills : []).sort((a, b) => a.ts - b.ts)
+                    : [];
+                if (hotBox && fills.length > 1) {
+                    const lineH = fontPx + 6;
+                    const lines = fills.map(t => ({
+                        color: t.side === 'BUY' ? BUY.fill : SELL.fill,
+                        text: t.date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) + '  ' +
+                            (t.side === 'BUY' ? 'BUY ' : 'SELL ') + fmtQ(t.qty) +
+                            (t.price != null ? ' @ ' + fmtPx(t.price) : '') +
+                            (t.amount != null ? '  ₹' + Math.round(t.amount).toLocaleString('en-IN') : '')
+                    }));
+                    ctx.font = (compact ? 8.5 : 10) + 'px "Lexend",monospace';
+                    ctx.textAlign = 'left';
+                    const bw = Math.max(...lines.map(l => ctx.measureText(l.text).width)) + 16;
+                    const bh = lines.length * lineH + 8;
+                    let bx = hotBox.x + hotBox.w + 6;
+                    if (bx + bw > W - PP.r) bx = hotBox.x - bw - 6;
+                    bx = Math.max(PP.l, bx);
+                    let by = hotBox.y + hotBox.h / 2 - bh / 2;
+                    by = Math.max(top, Math.min(bot - bh, by));
+                    ctx.fillStyle = 'rgba(12,12,16,0.92)';
+                    roundRect(bx, by, bw, bh, 5);
+                    ctx.fill();
+                    ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 1; ctx.stroke();
+                    lines.forEach((l, k) => {
+                        ctx.fillStyle = l.color;
+                        ctx.fillText(l.text, bx + 8, by + 4 + lineH * k + lineH / 2);
+                    });
+                }
+                ctx.restore();
+                return groups;
+            }
+
             function drawChartCore(ticker, period, pCv, vCv, loadEl, widthEl) {
                 const UC = ticker.toUpperCase();
                 const allRaw = _index ? (_index.get(UC) || []) : [];
@@ -19173,6 +19526,16 @@
                         ticker,
                         isFs
                     }).map;
+                }
+
+                // ── Trade-log BUY/SELL markers (full chart only, sidebar → Indicators → Trades) ──
+                if (isFs && _fsIndOn(isFs, 'trades')) {
+                    _fsDrawTradeMarkers(pc, {
+                        ticker: UC, raw, toX, toY, PP, pH, W,
+                        compact: fsCompact,
+                        maxTs: actualEnd < currentData.length ? currentData[actualEnd].date.getTime() : Infinity,
+                        hoverIdx: pCv._hoverCanvas ? pCv._hoverIdx : null
+                    });
                 }
 
                 // ── Last close: dashed horizontal line + price tag ──
@@ -20749,6 +21112,7 @@
                 <span id="peer-popup-title">◈ Real Estate Dvlpmt/Ops</span>
                 <span id="peer-popup-count">132 co.</span>
             </div>
+            <span id="peer-popup-lg" data-nodrag onclick="window.togglePeerLarge()" title="Enlarge">⤢</span>
             <span id="peer-popup-fs" data-nodrag onclick="window.togglePeerFullscreen()" title="Full screen">⛶</span>
             <span id="peer-popup-close" data-nodrag onclick="closePeerPopup()">✕</span>
         </div>
@@ -20781,6 +21145,13 @@
             <span class="peer-param-pill" data-param="tscore">Tech Score</span>
             <span class="peer-param-pill" data-param="r2">Trend R²</span>
             <span class="peer-param-pill" data-param="deliv">Deliv 4W</span>
+            <!-- Which metric family the Spider axes / Heat columns show. -->
+            <span class="peer-axes-wrap" id="peer-axes-wrap" title="Spider axes / Heat columns: fundamentals + technicals, fundamentals only, or technicals only">
+                <span class="peer-axes-lbl">AXES</span>
+                <span class="peer-axes-pill active" data-axes="all">All</span>
+                <span class="peer-axes-pill" data-axes="fund">Fund</span>
+                <span class="peer-axes-pill" data-axes="tech">Tech</span>
+            </span>
         </div>
         <!-- Chart type + pinned tickers. The type is remembered; pinned
              tickers (any company, not only the group) ride along in every
@@ -21129,8 +21500,54 @@
             let _yParam = 'gwth';
             const _extra = new Set();          // tickers pinned into the comparison (any group)
             // Spider axes / heat columns = every fundamental pill; in full
-            // screen the technical pills join them.
-            const _axes = () => _isFs() ? FUND_KEYS.concat(TECH_KEYS) : FUND_KEYS;
+            // screen the technical pills join them, and the AXES selector on
+            // the TECH row can narrow that to one family (remembered).
+            const AXES_KEY = 'peer_axes_mode';
+            let _axesMode = 'all';           // 'all' | 'fund' | 'tech'
+            try { const sv = localStorage.getItem(AXES_KEY); if (['all', 'fund', 'tech'].includes(sv)) _axesMode = sv; } catch (e) { }
+            const _axes = () => {
+                if (!_isFs()) return FUND_KEYS;
+                return _axesMode === 'tech' ? TECH_KEYS : _axesMode === 'fund' ? FUND_KEYS : FUND_KEYS.concat(TECH_KEYS);
+            };
+            function _syncAxesPills() {
+                document.querySelectorAll('#peer-axes-wrap .peer-axes-pill').forEach(el => el.classList.toggle('active', el.dataset.axes === _axesMode));
+            }
+            window._peerSetAxes = function (mode) {
+                if (!['all', 'fund', 'tech'].includes(mode)) return;
+                _axesMode = mode;
+                try { localStorage.setItem(AXES_KEY, mode); } catch (e) { }
+                _syncAxesPills();
+                window._peerPinned = true;
+                refreshParam(_currentParam);
+            };
+            document.querySelectorAll('#peer-axes-wrap .peer-axes-pill').forEach(el => {
+                el.addEventListener('click', e => { e.stopPropagation(); window._peerSetAxes(el.dataset.axes); });
+            });
+            _syncAxesPills();
+
+            /* Spider ⇄ list hover link. One ticker is "hot" at a time: its
+               polygon/legend entry in the spider and its row in the list
+               both light up, everything else fades (CSS on .hot/.has-hot).
+               Pure class toggling — no redraw — so it is cheap on mousemove. */
+            let _hotTk = null;
+            window._peerSetHot = function (tk) {
+                tk = tk ? String(tk).toUpperCase() : null;
+                if (tk === _hotTk) return;
+                _hotTk = tk;
+                const svg = document.getElementById('peer-alt-svg');
+                if (svg) {
+                    svg.classList.toggle('has-hot', !!tk && (_chartType === 'spider' || _chartType === 'scatter'));
+                    let hotG = null;
+                    svg.querySelectorAll('g.peer-sp, text.peer-sp-leg').forEach(el => {
+                        const on = !!tk && el.dataset.tk === tk;
+                        el.classList.toggle('hot', on);
+                        if (on && el.tagName === 'g') hotG = el;
+                    });
+                    // SVG paints in DOM order — lift the hot polygon above the rest.
+                    if (hotG) svg.appendChild(hotG);
+                }
+                document.querySelectorAll('#peer-list .peer-item').forEach(el => el.classList.toggle('hot', !!tk && el.dataset.tk === tk));
+            };
             const SHORT = { mcap: 'MCap', eps: 'EPS', smr: 'SMR', dur: 'Dur', val: 'Val', gwth: 'Gwth', prof: 'Prof', cons: 'Qlty', balsht: 'BalS', revp: 'Rev', ebitp: 'EBIT', npp: 'NP',
                 ret1m: 'R1M', ret3m: 'R3M', ret6m: 'R6M', ret1y: 'R1Y', rsi: 'RSI', adx: 'ADX', volx: 'Vol×', volsurge: 'Srg', off52: '52W', tscore: 'TSc', r2: 'R²', deliv: 'Dlv' };
             const esc = t => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -21530,18 +21947,23 @@
                 // self last so it paints on top; others limited to 5 for legibility
                 const selfRow = list.find(r => r._ticker === selfTicker);
                 const others = list.filter(r => r._ticker !== selfTicker).slice(0, _isFs() ? 9 : 5);
-                const poly = (r, clr, fillA, sw) => {
+                // Others draw thin so the current ticker (bold) and whichever
+                // row is hovered (bold via .hot) stand out; each polygon is a
+                // <g data-tk> so hover can target it without a redraw.
+                const poly = (r, clr, fillA, sw, isSelf) => {
+                    const tk = String(r._ticker).toUpperCase();
                     const pts = SPIDER_AXES.map((k, i) => {
                         const t = _pct(k, PARAMS[k].get(r));
                         const f = isNaN(t) ? 0 : 0.06 + 0.94 * t;
                         return [cx + R * f * Math.cos(ang(i)), cy + R * f * Math.sin(ang(i))];
                     });
-                    let h = `<polygon points="${pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')}" fill="${clr}" fill-opacity="${fillA}" stroke="${clr}" stroke-width="${sw}" stroke-linejoin="round"><title>${esc(r._coName)}</title></polygon>`;
-                    pts.forEach(p => { h += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${(sw > 1.5 ? 3 : 2) * K}" fill="${clr}" stroke="#0a0a10" stroke-width="1"/>`; });
-                    return h;
+                    let h = `<g class="peer-sp${isSelf ? ' self' : ''}" data-tk="${esc(tk)}" onmouseenter="window._peerSetHot('${esc(tk)}')" onmouseleave="window._peerSetHot(null)">`;
+                    h += `<polygon points="${pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')}" fill="${clr}" fill-opacity="${fillA}" stroke="${clr}" stroke-width="${sw}" stroke-linejoin="round"><title>${esc(r._coName)}</title></polygon>`;
+                    pts.forEach(p => { h += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${(sw > 1.5 ? 3 : 1.6) * K}" fill="${clr}" stroke="#0a0a10" stroke-width="1"/>`; });
+                    return h + '</g>';
                 };
-                others.forEach((r, i) => { html += poly(r, _extra.has(String(r._ticker).toUpperCase()) ? '#fbbf24' : COLORS[list.indexOf(r) % COLORS.length], 0.05, 1.1); });
-                if (selfRow) html += poly(selfRow, SELF_CLR, 0.2, 2);
+                others.forEach((r, i) => { html += poly(r, _extra.has(String(r._ticker).toUpperCase()) ? '#fbbf24' : COLORS[list.indexOf(r) % COLORS.length], 0.03, 0.7, false); });
+                if (selfRow) html += poly(selfRow, SELF_CLR, 0.2, 2.2, true);
                 // legend strip
                 const leg = [selfRow, ...others].filter(Boolean);
                 let lx = 6 * K, ly = H - 12 * K;
@@ -21551,12 +21973,15 @@
                     const tk = String(r._ticker).slice(0, 8);
                     const wdt = 14 + tk.length * 5.2;
                     if (lx + wdt > W - 4) { lx = 6 * K; ly -= 11; }
-                    html += `<rect x="${lx}" y="${ly}" width="7" height="7" rx="2" fill="${clr}"/><text x="${lx + 10}" y="${ly + 6.5}" font-size="8" font-weight="${isSelf ? 800 : 600}" fill="${isSelf ? SELF_CLR : 'rgba(255,255,255,0.7)'}" class="peer-svg-link" onclick="_peerFilterByTicker('${esc(r._ticker)}')">${esc(tk)}</text>`;
+                    const tkU = esc(String(r._ticker).toUpperCase());
+                    html += `<rect x="${lx}" y="${ly}" width="7" height="7" rx="2" fill="${clr}"/><text x="${lx + 10}" y="${ly + 6.5}" font-size="8" font-weight="${isSelf ? 800 : 600}" fill="${isSelf ? SELF_CLR : 'rgba(255,255,255,0.7)'}" class="peer-svg-link peer-sp-leg" data-tk="${tkU}" onmouseenter="window._peerSetHot('${tkU}')" onmouseleave="window._peerSetHot(null)" onclick="_peerFilterByTicker('${esc(r._ticker)}')">${esc(tk)}</text>`;
                     lx += wdt;
                 });
                 html += `<text x="${W - 4}" y="10" text-anchor="end" font-size="7.5" fill="rgba(255,255,255,0.4)">outer edge = best in group</text>`;
                 svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
                 svg.innerHTML = html;
+                svg.classList.remove('has-hot');
+                if (_hotTk) { const keep = _hotTk; _hotTk = null; window._peerSetHot(keep); }
             }
 
             /* ── Heat: ticker × metric scorecard; colour = percentile rank in group ── */
@@ -21611,7 +22036,7 @@
                 if (!svg) return;
                 const xDef = PARAMS[param], yDef = PARAMS[_yParam] || PARAMS.gwth;
                 const K = _fsK();
-                const W = 316 * K, H = 240 * K, L = 34 * K, RGT = 10 * K, TOP = 12 * K, BOT = 22 * K;
+                const W = 316 * K, H = 246 * K, L = 40 * K, RGT = 10 * K, TOP = 12 * K, BOT = 30 * K;
                 const pw = W - L - RGT, ph = H - TOP - BOT;
                 const xLog = param === 'mcap', yLog = _yParam === 'mcap';
                 const tx = v => xLog ? Math.log10(Math.max(v, 1)) : v;
@@ -21628,27 +22053,92 @@
                 const mMax = Math.max(...ms, 1);
                 const rad = m => ((isNaN(m) || m <= 0) ? 4 : 3.5 + 10.5 * Math.sqrt(m / mMax)) * K;
                 const medX = _median(_groupSorted(param)), medY = _median(_groupSorted(_yParam));
-                let html = `<rect x="${L}" y="${TOP}" width="${pw}" height="${ph}" rx="6" fill="rgba(255,255,255,0.025)" stroke="rgba(255,255,255,0.08)"/>`;
-                if (!isNaN(medX)) { const mx = X(medX); if (mx > L && mx < L + pw) html += `<line x1="${mx.toFixed(1)}" y1="${TOP}" x2="${mx.toFixed(1)}" y2="${TOP + ph}" stroke="rgba(255,255,255,0.3)" stroke-width="0.8" stroke-dasharray="3 3"/>`; }
-                if (!isNaN(medY)) { const my = Y(medY); if (my > TOP && my < TOP + ph) html += `<line x1="${L}" y1="${my.toFixed(1)}" x2="${L + pw}" y2="${my.toFixed(1)}" stroke="rgba(255,255,255,0.3)" stroke-width="0.8" stroke-dasharray="3 3"/>`; }
-                html += `<text x="${L + pw - 4 * K}" y="${TOP + 10 * K}" text-anchor="end" font-size="7.5" fill="rgba(52,211,153,0.7)">high ${yDef.label} · high ${xDef.label}</text>`;
-                html += `<text x="${L + 4 * K}" y="${TOP + ph - 4 * K}" font-size="7.5" fill="rgba(251,113,133,0.7)">low · low</text>`;
-                html += `<text x="${L + pw / 2}" y="${H - 6 * K}" text-anchor="middle" font-size="8.5" font-weight="700" fill="rgba(255,255,255,0.6)">${xDef.label} →${xLog ? ' (log)' : ''} · dashed = group median</text>`;
-                html += `<text x="${9 * K}" y="${TOP + ph / 2}" text-anchor="middle" font-size="8.5" font-weight="700" fill="rgba(255,255,255,0.6)" transform="rotate(-90 ${9 * K} ${TOP + ph / 2})">${yDef.label} ↑</text>`;
-                const sorted = pts.slice().sort((a, b) => (isNaN(b.m) ? 0 : b.m) - (isNaN(a.m) ? 0 : a.m));   // big bubbles first, so small ones stay clickable
-                const labelAll = pts.length <= (_isFs() ? 30 : 12);
+                const mx = isNaN(medX) ? null : X(medX), my = isNaN(medY) ? null : Y(medY);
+                const mxIn = mx !== null && mx > L && mx < L + pw, myIn = my !== null && my > TOP && my < TOP + ph;
+                const f1 = v => v.toFixed(1);
+                let html = '';
+
+                // Quadrant tints — only meaningful when both medians split the box.
+                // Top-right (better on both) green, bottom-left red, the mixed
+                // quadrants stay near-neutral so the diagonal reads at a glance.
+                if (mxIn && myIn) {
+                    html += `<rect x="${f1(L)}" y="${f1(TOP)}" width="${f1(mx - L)}" height="${f1(my - TOP)}" fill="rgba(96,165,250,0.05)"/>`;
+                    html += `<rect x="${f1(mx)}" y="${f1(TOP)}" width="${f1(L + pw - mx)}" height="${f1(my - TOP)}" fill="rgba(52,211,153,0.09)"/>`;
+                    html += `<rect x="${f1(L)}" y="${f1(my)}" width="${f1(mx - L)}" height="${f1(TOP + ph - my)}" fill="rgba(251,113,133,0.09)"/>`;
+                    html += `<rect x="${f1(mx)}" y="${f1(my)}" width="${f1(L + pw - mx)}" height="${f1(TOP + ph - my)}" fill="rgba(251,191,36,0.05)"/>`;
+                }
+                html += `<rect x="${L}" y="${TOP}" width="${pw}" height="${ph}" rx="6" fill="none" stroke="rgba(255,255,255,0.10)"/>`;
+
+                // Axis ticks: 4 evenly spaced values per axis (log axes tick in
+                // log space, so the labels still read as real values).
+                const inv = (t, log) => log ? Math.pow(10, t) : t;
+                const tickFont = K < 1 ? 6.4 : 6.8;
+                for (let i = 0; i <= 3; i++) {
+                    const t = x0 + (x1 - x0) * i / 3, px = L + pw * i / 3;
+                    html += `<line x1="${f1(px)}" y1="${f1(TOP + ph)}" x2="${f1(px)}" y2="${f1(TOP + ph + 3 * K)}" stroke="rgba(255,255,255,0.3)" stroke-width="0.7"/>`;
+                    html += `<text x="${f1(px)}" y="${f1(TOP + ph + 9.5 * K)}" text-anchor="${i === 0 ? 'start' : i === 3 ? 'end' : 'middle'}" font-size="${tickFont}" fill="rgba(255,255,255,0.45)">${xDef.fmt(inv(t, xLog))}</text>`;
+                    const u = y0 + (y1 - y0) * i / 3, py = TOP + ph - ph * i / 3;
+                    html += `<line x1="${f1(L - 3 * K)}" y1="${f1(py)}" x2="${f1(L)}" y2="${f1(py)}" stroke="rgba(255,255,255,0.3)" stroke-width="0.7"/>`;
+                    html += `<text x="${f1(L - 5 * K)}" y="${f1(py + 2.3)}" text-anchor="end" font-size="${tickFont}" fill="rgba(255,255,255,0.45)">${yDef.fmt(inv(u, yLog))}</text>`;
+                }
+
+                // Median cross-hairs with their values tagged at the edge
+                if (mxIn) {
+                    html += `<line x1="${f1(mx)}" y1="${TOP}" x2="${f1(mx)}" y2="${f1(TOP + ph)}" stroke="rgba(255,255,255,0.32)" stroke-width="0.8" stroke-dasharray="3 3"/>`;
+                    html += `<text x="${f1(mx)}" y="${f1(TOP - 3 * K)}" text-anchor="middle" font-size="6.8" font-weight="700" fill="rgba(255,255,255,0.5)">med ${xDef.fmt(medX)}</text>`;
+                }
+                if (myIn) {
+                    html += `<line x1="${L}" y1="${f1(my)}" x2="${f1(L + pw)}" y2="${f1(my)}" stroke="rgba(255,255,255,0.32)" stroke-width="0.8" stroke-dasharray="3 3"/>`;
+                    html += `<text x="${f1(L + pw + 2 * K)}" y="${f1(my + 2.3)}" font-size="6.8" font-weight="700" fill="rgba(255,255,255,0.5)" transform="rotate(-90 ${f1(L + pw + 2 * K)} ${f1(my + 2.3)})" text-anchor="middle">med ${yDef.fmt(medY)}</text>`;
+                }
+
+                // Corner labels with how many companies sit in each quadrant
+                if (mxIn && myIn) {
+                    const q = { tl: 0, tr: 0, bl: 0, br: 0 };
+                    pts.forEach(p => { const r = p.x >= medX, u = p.y >= medY; q[(u ? 't' : 'b') + (r ? 'r' : 'l')]++; });
+                    const cf = K < 1 ? 6.6 : 7.2;
+                    html += `<text x="${f1(L + pw - 4 * K)}" y="${f1(TOP + 9 * K)}" text-anchor="end" font-size="${cf}" font-weight="700" fill="rgba(52,211,153,0.85)">↑${yDef.label} · ↑${xDef.label} (${q.tr})</text>`;
+                    html += `<text x="${f1(L + 4 * K)}" y="${f1(TOP + 9 * K)}" font-size="${cf}" fill="rgba(147,197,253,0.7)">↑${yDef.label} · ↓${xDef.label} (${q.tl})</text>`;
+                    html += `<text x="${f1(L + 4 * K)}" y="${f1(TOP + ph - 4 * K)}" font-size="${cf}" font-weight="700" fill="rgba(251,113,133,0.85)">↓ · ↓ (${q.bl})</text>`;
+                    html += `<text x="${f1(L + pw - 4 * K)}" y="${f1(TOP + ph - 4 * K)}" text-anchor="end" font-size="${cf}" fill="rgba(251,191,36,0.7)">↓${yDef.label} · ↑${xDef.label} (${q.br})</text>`;
+                }
+
+                // Axis titles
+                html += `<text x="${f1(L + pw / 2)}" y="${f1(H - 4 * K)}" text-anchor="middle" font-size="8.5" font-weight="700" fill="rgba(255,255,255,0.6)">${xDef.label} →${xLog ? ' (log)' : ''} · bubble = mkt cap · dashed = group median</text>`;
+                html += `<text x="${f1(8 * K)}" y="${f1(TOP + ph / 2)}" text-anchor="middle" font-size="8.5" font-weight="700" fill="rgba(255,255,255,0.6)" transform="rotate(-90 ${f1(8 * K)} ${f1(TOP + ph / 2)})">${yDef.label} ↑${yLog ? ' (log)' : ''}</text>`;
+
+                // Current ticker: guide lines to both axes so its position reads as numbers
+                const selfPt = pts.find(p => p.r._ticker === selfTicker);
+                if (selfPt) {
+                    const sx = X(selfPt.x), sy = Y(selfPt.y);
+                    html += `<line x1="${f1(sx)}" y1="${f1(sy)}" x2="${f1(sx)}" y2="${f1(TOP + ph)}" stroke="${SELF_CLR}" stroke-width="0.7" stroke-dasharray="2 2" opacity="0.55"/>`;
+                    html += `<line x1="${f1(L)}" y1="${f1(sy)}" x2="${f1(sx)}" y2="${f1(sy)}" stroke="${SELF_CLR}" stroke-width="0.7" stroke-dasharray="2 2" opacity="0.55"/>`;
+                    html += `<text x="${f1(sx)}" y="${f1(TOP + ph + 16.5 * K)}" text-anchor="middle" font-size="7" font-weight="800" fill="${SELF_CLR}">${xDef.fmt(selfPt.x)}</text>`;
+                    html += `<text x="${f1(L - 5 * K)}" y="${f1(sy - 4 * K)}" text-anchor="end" font-size="7" font-weight="800" fill="${SELF_CLR}">${yDef.fmt(selfPt.y)}</text>`;
+                }
+
+                // Bubbles — big first so small ones stay clickable. Each is a
+                // <g data-tk> so the list hover (_peerSetHot) can light it up.
+                const sorted = pts.slice().sort((a, b) => (isNaN(b.m) ? 0 : b.m) - (isNaN(a.m) ? 0 : a.m));
+                const labelAll = pts.length <= (_isFs() ? 30 : _isLg() ? 20 : 12);
                 sorted.forEach(p => {
                     const isSelf = p.r._ticker === selfTicker;
                     const isExtra = _extra.has(String(p.r._ticker).toUpperCase());
+                    const tkU = esc(String(p.r._ticker).toUpperCase());
                     const clr = isSelf ? SELF_CLR : isExtra ? '#fbbf24' : COLORS[list.indexOf(p.r) % COLORS.length];
                     const cx = X(p.x), cy = Y(p.y), r = rad(p.m);
-                    if (isSelf) html += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(r + 5 * K).toFixed(1)}" fill="${clr}" opacity="0.18"/>`;
-                    html += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" fill="${clr}" fill-opacity="${isSelf ? 0.95 : 0.6}" stroke="${isSelf ? '#fff' : clr}" stroke-width="${isSelf ? 1.5 : 1}" class="peer-svg-link" onclick="_peerFilterByTicker('${esc(p.r._ticker)}')"><title>${esc(p.r._coName)}
+                    html += `<g class="peer-sp peer-sp-q${isSelf ? ' self' : ''}" data-tk="${tkU}" onmouseenter="window._peerSetHot('${tkU}')" onmouseleave="window._peerSetHot(null)">`;
+                    if (isSelf) html += `<circle cx="${f1(cx)}" cy="${f1(cy)}" r="${f1(r + 5 * K)}" fill="${clr}" opacity="0.18"/>`;
+                    html += `<circle class="peer-sp-dot peer-svg-link" cx="${f1(cx)}" cy="${f1(cy)}" r="${f1(r)}" fill="${clr}" fill-opacity="${isSelf ? 0.95 : 0.55}" stroke="${isSelf ? '#fff' : clr}" stroke-width="${isSelf ? 1.5 : 1}" onclick="_peerFilterByTicker('${esc(p.r._ticker)}')"><title>${esc(p.r._coName)}
 ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PARAMS.mcap.fmt(p.m)}</title></circle>`;
-                    if (labelAll || isSelf || isExtra) html += `<text x="${(cx + r + 2 * K).toFixed(1)}" y="${(cy + 3).toFixed(1)}" font-size="${isSelf ? 8.5 : 7.5}" font-weight="${isSelf ? 800 : 600}" fill="${isSelf ? SELF_CLR : 'rgba(255,255,255,0.75)'}" pointer-events="none">${esc(String(p.r._ticker).slice(0, 9))}</text>`;
+                    const showLbl = labelAll || isSelf || isExtra;
+                    html += `<text class="peer-sp-lbl${showLbl ? '' : ' hide'}" x="${f1(cx + r + 2 * K)}" y="${f1(cy + 3)}" font-size="${isSelf ? 8.5 : 7.5}" font-weight="${isSelf ? 800 : 600}" fill="${isSelf ? SELF_CLR : 'rgba(255,255,255,0.75)'}" pointer-events="none">${esc(String(p.r._ticker).slice(0, 9))}</text>`;
+                    html += '</g>';
                 });
                 svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
                 svg.innerHTML = html;
+                svg.classList.remove('has-hot');
+                if (_hotTk) { const keep = _hotTk; _hotTk = null; window._peerSetHot(keep); }
             }
 
             // Expose refresh callback for count change buttons
@@ -21690,6 +22180,37 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                 const p = document.getElementById('peer-popup');
                 return !!(p && p.classList.contains('peer-fs'));
             }
+            /* ── Enlarged card (⤢) — remembered; ignored while in full screen ── */
+            const LG_KEY = 'peer_size_lg';
+            function _isLg() {
+                const p = document.getElementById('peer-popup');
+                return !!(p && p.classList.contains('peer-lg') && !p.classList.contains('peer-fs'));
+            }
+            window.togglePeerLarge = function (force) {
+                const p = document.getElementById('peer-popup');
+                if (!p) return;
+                const on = typeof force === 'boolean' ? force : !p.classList.contains('peer-lg');
+                p.classList.toggle('peer-lg', on);
+                try { localStorage.setItem(LG_KEY, on ? '1' : '0'); } catch (e) { }
+                const b = document.getElementById('peer-popup-lg');
+                if (b) { b.classList.toggle('on', on); b.textContent = on ? '⤡' : '⤢'; b.title = on ? 'Shrink' : 'Enlarge'; }
+                if (!p.classList.contains('peer-visible') || _isFs()) return;
+                window._peerPinned = true;
+                refreshParam(_currentParam);
+                // The card just changed size — keep it on screen.
+                if (window.innerWidth > 600) {
+                    const w = p.offsetWidth || 340, h = p.offsetHeight || 480;
+                    let left = parseFloat(p.style.left), top = parseFloat(p.style.top);
+                    if (isNaN(left)) left = (window.innerWidth - w) / 2;
+                    if (isNaN(top)) top = (window.innerHeight - h) / 2;
+                    left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+                    top = Math.max(8, Math.min(top, window.innerHeight - h - 8));
+                    p.style.left = Math.round(left) + 'px';
+                    p.style.top = Math.round(top) + 'px';
+                    p.style.transform = 'none';
+                }
+            };
+            try { if (localStorage.getItem(LG_KEY) === '1') window.togglePeerLarge(true); } catch (e) { }
             /* Usable chart area (px) inside #peer-octa-wrap, minus its padding. */
             function _area() {
                 const wrap = document.getElementById('peer-octa-wrap');
@@ -21710,7 +22231,7 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
             const PHONE_K = 0.82;
             const _isPhone = () => Math.min(window.innerWidth, window.innerHeight) <= 600;
             function _fsK() {
-                if (!_isFs()) return _isPhone() ? PHONE_K : 1;
+                if (!_isFs()) return _isPhone() ? PHONE_K : _isLg() ? 1.6 : 1;
                 const a = _area();
                 if (!a) return 2;
                 const wide = _chartType === 'bars' || _chartType === 'heat';
@@ -21909,7 +22430,8 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                     const barPct = maxV > 0 ? Math.max(3, Math.abs(item.v || 0) / Math.max(maxV, ...vals.map(Math.abs)) * 100) : 3;
                     const name = item.r._ticker || String(item.r._coName).slice(0, 20);
                     const ticker = item.r._ticker;
-                    return `<div class="peer-item">
+                    const tkU = esc(String(ticker).toUpperCase());
+                    return `<div class="peer-item" data-tk="${tkU}" onmouseenter="window._peerSetHot('${tkU}')" onmouseleave="window._peerSetHot(null)">
         <span class="peer-rank">${rank + 1}</span>
         <span class="peer-color-dot" style="background:${clr}"></span>
         <span class="peer-name${isSelf ? ' self' : ''}" title="Click to filter: ${item.r._coName}" onclick="(function(e){e.stopPropagation();_peerFilterByTicker('${ticker}');})(event)">${name}${isSelf ? ' ★' : ''}</span>
@@ -33108,6 +33630,7 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                         <button class="fs-ind-btn" data-ind="vp" onclick="window.fsToggleIndicator('vp')" title="Volume profile (left side histogram)">Vol Profile</button>
                         <button class="fs-ind-btn" data-ind="ad" onclick="window.fsToggleIndicator('ad')" title="A/D and OBV pane">A/D · OBV</button>
                         <button class="fs-ind-btn" data-ind="rs" onclick="window.fsToggleIndicator('rs')" title="Deliv % / Deliv Vol / MRS pane">Deliv · MRS</button>
+                        <button class="fs-ind-btn" data-ind="trades" style="color:#00e676;" onclick="window.fsToggleIndicator('trades')" title="Your BUY (▲ below low) / SELL (▼ above high) fills from the trade log — units only; hover a pill for price and every fill."><i class="fs-ind-dot"></i>Trades</button>
                     </div>
                 </div>
             </div>
