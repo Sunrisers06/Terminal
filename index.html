@@ -286,6 +286,118 @@
             justify-content: center;
         }
 
+        /* Peer return-rank inside the Sector/Industry button: label and
+           rank/total are both centred; nowrap + align-self:center makes any
+           longer text spill evenly left and right (like Excel's centre). Only the vertical padding is
+           trimmed, so the button keeps its height/width and the row does not grow. */
+        .peer-btn { position: relative; }
+        .card-action-btns .peer-btn.has-rank {
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            padding-top: 2px !important;
+            padding-bottom: 2px !important;
+        }
+        .peer-btn.has-rank .pr-lbl {
+            align-self: center;
+            text-align: center;
+            white-space: nowrap;
+            line-height: 1;
+        }
+        .pchip-rank {
+            align-self: center;
+            font-size: 7px;
+            font-weight: 600;
+            line-height: 1;
+            letter-spacing: 0;
+            white-space: nowrap;
+            color: #fff;
+            font-variant-numeric: tabular-nums;
+        }
+        .pchip-rank b { font-weight: 800; font-size: 8px; }
+        .pchip-rank.pr-top b { color: #4ade80; }
+        .pchip-rank.pr-mid b { color: #22d3ee; }
+        .pchip-rank.pr-low b { color: #fbbf24; }
+        .pchip-rank.pr-bot b { color: #f87171; }
+
+        /* ── Signal row (Trend Template · 10W · RS line · Insider · SuperStar · News) ──
+           One compact wrapping row under the score tiles. Colour = meaning:
+           green good, cyan fine, amber caution, red bad, gold = standout. */
+        .sig-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 4px;
+            margin-top: 5px;
+            width: 100%;
+        }
+        .sig-row[hidden] { display: none; }
+        .sig {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            height: 17px;
+            padding: 0 6px;
+            border-radius: 4px;
+            font-family: 'Lexend', sans-serif;
+            font-size: 9px;
+            font-weight: 600;
+            line-height: 1;
+            white-space: nowrap;
+            color: #e4e4e7;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            cursor: help;
+            font-variant-numeric: tabular-nums;
+        }
+        .sig .sg-k { font-weight: 500; color: #a1a1aa; letter-spacing: 0.02em; }
+        .sig b { font-weight: 800; }
+        .sig .sg-sub {
+            font-weight: 500;
+            color: #d4d4d8;
+            max-width: 78px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .sig.sg-good { background: rgba(34, 197, 94, 0.12); border-color: rgba(34, 197, 94, 0.45); }
+        .sig.sg-good b { color: #4ade80; }
+        .sig.sg-ok { background: rgba(34, 211, 238, 0.10); border-color: rgba(34, 211, 238, 0.40); }
+        .sig.sg-ok b { color: #22d3ee; }
+        .sig.sg-warn { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.45); }
+        .sig.sg-warn b { color: #fbbf24; }
+        .sig.sg-bad { background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.45); }
+        .sig.sg-bad b { color: #f87171; }
+        .sig.sg-star { background: rgba(250, 204, 21, 0.14); border-color: rgba(250, 204, 21, 0.55); }
+        .sig.sg-star b { color: #facc15; }
+        .sig .up { color: #4ade80; font-weight: 800; }
+        .sig .dn { color: #f87171; font-weight: 800; }
+
+        /* Tap/hover detail bubble for a signal chip (works on touch too) */
+        #sig-tip {
+            position: fixed;
+            z-index: 100000;
+            max-width: min(300px, calc(100vw - 24px));
+            padding: 8px 10px;
+            border-radius: 8px;
+            background: #18181f;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+            color: #e4e4e7;
+            font: 500 11px/1.45 'Lexend', sans-serif;
+            white-space: pre-line;
+            pointer-events: none;
+            display: none;
+        }
+
+        @media (max-width: 1400px) {
+            .sig { height: 19px; font-size: 9.5px; }
+            .sig .sg-sub { max-width: 70px; }
+        }
+        @media (min-width: 2680px) {
+            .sig { height: 24px; font-size: 12px; padding: 0 9px; border-radius: 6px; }
+            .sig .sg-sub { max-width: 120px; }
+        }
+
         .peer-btn:hover {
             background: rgba(34, 211, 238, 0.25);
             border-color: rgba(34, 211, 238, 0.6);
@@ -8734,6 +8846,13 @@
                     <option value="2y">Chart: 2Y</option>
                     <option value="3y">Chart: 3Y</option>
                 </select>
+                <select id="peer-rank-dur-filter" class="fi w90" onchange="setPeerRankDuration(this.value)"
+                    title="Return period used for the Sector / Industry rank badges on each card">
+                    <option value="1m">Rank: 1M</option>
+                    <option value="3m">Rank: 3M</option>
+                    <option value="6m" selected>Rank: 6M</option>
+                    <option value="1y">Rank: 1Y</option>
+                </select>
                 <select id="col-filter" class="fi w90" onchange="updateColumnCount(this.value)"
                     title="Set number of columns">
                     <option value="auto" selected>Col: Auto</option>
@@ -10329,6 +10448,7 @@
         ${r._master ? `<div class="iscore ${getChipColor('Master Score', r._master)}"><span class="iscore-label">MS</span><span class="iscore-val">${r._master}</span></div>` : ''}
         ${r._demand ? `<div class="iscore ${getChipColor('Buyer Demand', r._demand)}"><span class="iscore-label">AD</span><span class="iscore-val">${r._demand}</span></div>` : ''}
       </div>
+      ${sigRowHtml(r)}
       <div style="width: 100%; border-top: 1px solid rgba(255, 255, 255, 0.08); margin-top: 6px; padding-top: 6px;">
         <div class="card-action-btns">
           <a class="investor-link-btn" href="https://ticker.finology.in/company/${r._ticker}?mode=C" target="_blank" rel="noopener" onclick="event.stopPropagation()">Investor</a>
@@ -10338,8 +10458,8 @@
             onmouseleave="scheduleCandleClose()"
             ontouchstart="event.stopPropagation(); openCandleChart('${r._ticker.replace(/'/g, "\\'")}','${escHtml(r._coName).replace(/'/g, "\\'")}',event)"
             title="">Chart</span>` : ''}
-          ${r._sec ? `<span class="peer-btn" onmouseenter="showPeerChart(event,'${r._ticker.replace(/'/g, "\\'")}','${r._sec.replace(/'/g, "\\'")}','sec')" onmouseleave="schedulePeerClose()" onclick="event.stopPropagation();showPeerChart(event,'${r._ticker.replace(/'/g, "\\'")}','${r._sec.replace(/'/g, "\\'")}','sec')" title="Sector Peer Comparison">Sector</span>` : ''}
-          ${r._ind ? `<span class="peer-btn" onmouseenter="showPeerChart(event,'${r._ticker.replace(/'/g, "\\'")}','${r._ind.replace(/'/g, "\\'")}','ind')" onmouseleave="schedulePeerClose()" onclick="event.stopPropagation();showPeerChart(event,'${r._ticker.replace(/'/g, "\\'")}','${r._ind.replace(/'/g, "\\'")}','ind')" title="Industry Peer Comparison">Industry</span>` : ''}
+          ${r._sec ? `<span class="peer-btn${r._secRank ? ' has-rank' : ''}" onmouseenter="showPeerChart(event,'${r._ticker.replace(/'/g, "\\'")}','${r._sec.replace(/'/g, "\\'")}','sec')" onmouseleave="schedulePeerClose()" onclick="event.stopPropagation();showPeerChart(event,'${r._ticker.replace(/'/g, "\\'")}','${r._sec.replace(/'/g, "\\'")}','sec')" title="Sector Peer Comparison"><span class="pr-lbl">Sector</span>${peerRankBadge(r, 'sec')}</span>` : ''}
+          ${r._ind ? `<span class="peer-btn${r._indRank ? ' has-rank' : ''}" onmouseenter="showPeerChart(event,'${r._ticker.replace(/'/g, "\\'")}','${r._ind.replace(/'/g, "\\'")}','ind')" onmouseleave="schedulePeerClose()" onclick="event.stopPropagation();showPeerChart(event,'${r._ticker.replace(/'/g, "\\'")}','${r._ind.replace(/'/g, "\\'")}','ind')" title="Industry Peer Comparison"><span class="pr-lbl">Industry</span>${peerRankBadge(r, 'ind')}</span>` : ''}
           <span class="fav-toggle-btn fav-toggle-${r._ticker}${window._fhTickers && window._fhTickers.F.has(String(r._ticker).toUpperCase()) ? ' is-fav' : ''}" 
             onclick="window.toggleRemoteFH('${r._ticker}', 'F', event)" title="Toggle Favorite">
             <span class="fav-icon">★</span> Fav
@@ -13229,6 +13349,355 @@
             return NaN;
         }
 
+        /* ── Sector / Industry return rank ──
+           Ranks every stock inside its sector and industry by return over the
+           chosen duration (default 6M, set from the "Rank: …" select and
+           remembered). Only stocks with a valid return are counted in the total. */
+        const _PEER_RANK_KEY = 'peer_rank_duration';
+        const _PEER_RANK_DURS = ['1m', '3m', '6m', '1y'];
+        window._peerRankDur = '6m';
+        try {
+            const saved = localStorage.getItem(_PEER_RANK_KEY);
+            if (_PEER_RANK_DURS.includes(saved)) window._peerRankDur = saved;
+        } catch (e) { }
+
+        function calcPeerRanks() {
+            const dur = window._peerRankDur;
+            const groups = { sec: {}, ind: {} };
+            allData.forEach(r => {
+                r._secRank = r._secTotal = r._indRank = r._indTotal = NaN;
+                const v = getReturnValue(r, dur);
+                if (isNaN(v)) return;
+                if (r._sec) (groups.sec[r._sec] = groups.sec[r._sec] || []).push([v, r]);
+                if (r._ind) (groups.ind[r._ind] = groups.ind[r._ind] || []).push([v, r]);
+            });
+            ['sec', 'ind'].forEach(k => {
+                Object.values(groups[k]).forEach(list => {
+                    list.sort((a, b) => b[0] - a[0]);
+                    list.forEach(([, r], i) => { r['_' + k + 'Rank'] = i + 1; r['_' + k + 'Total'] = list.length; });
+                });
+            });
+        }
+
+        function peerRankBadge(r, k) {
+            const rank = r['_' + k + 'Rank'], total = r['_' + k + 'Total'];
+            if (isNaN(rank) || !total) return '';
+            const pct = total === 1 ? 0 : (rank - 1) / (total - 1);
+            const cls = pct <= 0.2 ? 'pr-top' : (pct <= 0.5 ? 'pr-mid' : (pct < 0.8 ? 'pr-low' : 'pr-bot'));
+            const label = k === 'sec' ? 'sector' : 'industry';
+            return `<span class="pchip-rank ${cls}" title="#${rank} of ${total} in ${label} by ${window._peerRankDur.toUpperCase()} return"><b>${rank}</b>/${total}</span>`;
+        }
+
+        window.setPeerRankDuration = function (dur) {
+            if (!_PEER_RANK_DURS.includes(dur)) return;
+            const sel = document.getElementById('peer-rank-dur-filter');
+            if (sel && sel.value !== dur) sel.value = dur;
+            if (window._peerRankDur === dur) return;
+            window._peerRankDur = dur;
+            try { localStorage.setItem(_PEER_RANK_KEY, dur); } catch (e) { }
+            calcPeerRanks();
+            if (typeof renderCards === 'function') renderCards();
+        };
+        (function () {
+            const sel = document.getElementById('peer-rank-dur-filter');
+            if (sel) sel.value = window._peerRankDur;
+        })();
+
+        /* ══ CARD SIGNAL ROW ══
+           Trend Template (x/8), distance from the 10-week average, RS line vs
+           Nifty 500 at a 52-week high, insider net buying (1 year), SuperStar
+           stake changes, and insight-tag news (6 months). Price-based parts
+           come from the weekly OHLC bars; RS line and insider values arrive
+           later (index history / deals load in the background) and patch the
+           rows already on screen in place, so nothing re-renders or jumps. */
+        const _DAY = 86400000;
+        const _wkKey = d => Math.floor(((d instanceof Date ? d.getTime() : +new Date(d)) / _DAY + 3.5) / 7);
+        function _smaClose(arr, end, n) {
+            if (end - n + 1 < 0) return NaN;
+            let s = 0;
+            for (let i = end - n + 1; i <= end; i++) s += arr[i].close;
+            return s / n;
+        }
+        function _barsOf(r) {
+            const a = window._ohlcvTickers && window._ohlcvTickers.get(String(r._ticker).toUpperCase());
+            return Array.isArray(a) ? a : null;
+        }
+
+        /* Minervini Trend Template on weekly bars (30W ≈ 150D, 40W ≈ 200D, 10W ≈ 50D).
+           RS rating = percentile (1–99) of 2×13W + 26W + 39W + 52W performance. */
+        const _TT_LABELS = [
+            'Price above 30W & 40W average',
+            '30W average above 40W average',
+            '40W average rising (vs 4 weeks ago)',
+            '10W average above 30W & 40W',
+            'Price above 10W average',
+            'At least 30% above 52-week low',
+            'Within 25% of 52-week high',
+            'RS rating 70 or more'
+        ];
+        function calcTrendSignals() {
+            if (!window._ohlcvTickers) return;
+            const perf = [];
+            allData.forEach(r => {
+                r._tt = NaN; r._ttPass = null; r._d10w = NaN; r._rsRating = NaN;
+                const arr = _barsOf(r);
+                if (!arr || arr.length < 53) return;
+                const i = arr.length - 1, c = arr[i].close, p = w => arr[i - w].close;
+                const sc = 2 * (c / p(13)) + c / p(26) + c / p(39) + c / p(52);
+                if (isFinite(sc)) perf.push([sc, r]);
+            });
+            perf.sort((a, b) => a[0] - b[0]);
+            const n = perf.length;
+            perf.forEach(([, r], k) => { r._rsRating = n > 1 ? Math.round(1 + (k / (n - 1)) * 98) : 50; });
+
+            allData.forEach(r => {
+                const arr = _barsOf(r);
+                if (!arr || arr.length < 10) return;
+                const i = arr.length - 1, c = arr[i].close;
+                const m10 = _smaClose(arr, i, 10);
+                if (m10 > 0) r._d10w = (c / m10 - 1) * 100;
+                if (arr.length < 44) return;
+                const m30 = _smaClose(arr, i, 30), m40 = _smaClose(arr, i, 40), m40p = _smaClose(arr, i - 4, 40);
+                let hi = -Infinity, lo = Infinity;
+                for (let j = Math.max(0, i - 51); j <= i; j++) {
+                    if (arr[j].high > hi) hi = arr[j].high;
+                    if (arr[j].low < lo) lo = arr[j].low;
+                }
+                const pass = [
+                    c > m30 && c > m40,
+                    m30 > m40,
+                    m40 > m40p,
+                    m10 > m30 && m10 > m40,
+                    c > m10,
+                    c >= lo * 1.3,
+                    c >= hi * 0.75,
+                    r._rsRating >= 70
+                ];
+                r._ttPass = pass;
+                r._tt = pass.filter(Boolean).length;
+            });
+        }
+
+        /* RS line = stock close ÷ Nifty 500 close, week by week, over the last 52 weeks. */
+        function calcRSLineSignals() {
+            const cache = window._indexHistoryCache;
+            const idx = cache && (cache['Nifty 500'] || cache['NIFTY 500']);
+            if (!idx || !idx.length || !window._ohlcvTickers) return false;
+            const ic = new Map();
+            idx.forEach(b => { if (b.close > 0) ic.set(_wkKey(b.date), b.close); });
+            allData.forEach(r => {
+                r._rsNH = false; r._rsLead = false; r._rsOffHi = NaN;
+                const arr = _barsOf(r);
+                if (!arr || arr.length < 30) return;
+                const lastKey = _wkKey(arr[arr.length - 1].date);
+                const rs = [], px = [];
+                let lastAligned = -Infinity;
+                for (let j = Math.max(0, arr.length - 52); j < arr.length; j++) {
+                    const k = _wkKey(arr[j].date), v = ic.get(k);
+                    if (!v) continue;
+                    rs.push(arr[j].close / v); px.push(arr[j].close);
+                    lastAligned = k;
+                }
+                // Index data must reach the stock's latest week (1 week of slack)
+                if (rs.length < 26 || lastAligned < lastKey - 1) return;
+                const L = rs.length - 1;
+                let rsMax = -Infinity, pxMax = -Infinity;
+                for (let j = 0; j < L; j++) { if (rs[j] > rsMax) rsMax = rs[j]; if (px[j] > pxMax) pxMax = px[j]; }
+                r._rsOffHi = (rs[L] / Math.max(rsMax, rs[L]) - 1) * 100;
+                r._rsNH = rs[L] >= rsMax;
+                r._rsLead = r._rsNH && px[L] < pxMax;
+            });
+            return true;
+        }
+
+        /* Insider trades, last 1 year: Bought − Sold in ₹ Cr (ESOP, pledges, gifts ignored). */
+        function _insiderCr(v) {
+            const s = String(v || '').toLowerCase().replace(/,/g, '');
+            const n = parseFloat(s);
+            if (!isFinite(n)) return NaN;
+            return /crore|\bcr\b/.test(s) ? n : n / 100;   // plain numbers are ₹ lakh
+        }
+        function calcInsiderNet() {
+            const rows = window._dealData && window._dealData.insider;
+            if (!rows || !rows.length) return false;
+            const since = Date.now() - 365 * _DAY;
+            const map = {};
+            rows.forEach(row => {
+                const type = String(row['Type'] || '').trim().toLowerCase();
+                const sign = type === 'bought' ? 1 : (type === 'sold' ? -1 : 0);
+                if (!sign) return;
+                const t = parseDateRobust(row['Date']);
+                if (!t || t < since) return;
+                const cr = _insiderCr(row['Value']);
+                if (!(cr > 0)) return;
+                const tk = String(row['Ticker'] || '').trim().toUpperCase();
+                if (!tk) return;
+                const e = map[tk] || (map[tk] = { buy: 0, sell: 0, nb: 0, ns: 0, prom: 0 });
+                if (sign > 0) { e.buy += cr; e.nb++; } else { e.sell += cr; e.ns++; }
+                if (/promoter/i.test(row['Person Role'] || '')) e.prom += sign * cr;
+            });
+            allData.forEach(r => { r._ins = map[String(r._ticker).toUpperCase()] || null; });
+            return true;
+        }
+
+        /* SuperStar investors: who added (incl. new) vs cut in the latest filing. */
+        function calcSuperStarChange() {
+            const map = {};
+            (window.superStarRawData || []).forEach(row => {
+                const keys = Object.keys(row);
+                const g = re => { const k = keys.find(x => re.test(x)); return k ? String(row[k] || '').trim() : ''; };
+                const tk = g(/ticker/i).toUpperCase(), inv = g(/^investor$/i);
+                if (!tk || !inv) return;
+                const ch = g(/change/i), hold = g(/holding/i);
+                const e = map[tk] || (map[tk] = { add: 0, cut: 0, same: 0, lines: [] });
+                let tag;
+                if (/^new$/i.test(ch)) { e.add++; tag = 'NEW'; }
+                else {
+                    const n = parseFloat(ch);
+                    if (n > 0) { e.add++; tag = '+' + n.toFixed(1) + '%'; }
+                    else if (n < 0) { e.cut++; tag = n.toFixed(1) + '%'; }
+                    else { e.same++; tag = 'no change'; }
+                }
+                e.lines.push(inv + ' — ' + (hold || '?') + ' (' + tag + ')');
+            });
+            allData.forEach(r => { r._ssChg = map[String(r._ticker).toUpperCase()] || null; });
+        }
+
+        /* Insight tags, last 6 months, split into positive / negative / neutral. */
+        const _TAG_POS_FIRST = /narrows loss|falling loss|turns profitable|profit turnaround|npa decline|falling npa|relief|tax refund|restriction lift|lifts restrictions|resumes|withdrawn|dispute win|wins dispute|arbitration (win|award)|case dismissed/i;
+        const _TAG_NEG = /miss|declin|falling|\bfall|downgrade|analyst (sell|reduce|underweight|underperform)|promoter (sell|sale|exit|pledge|stake sell|divestment)|superstar sell|ceo sell|\bloss|resign|demand|notice|probe|penalt|warning|observation|raid|search|halt|shutdown|closure|disrupt|headwind|weak|cautious|negative|cancel|terminat|fraud|\bban\b|setback|reject|underperform|pledge|fire|accident|insolven|bankrupt|default|recall|delay|lawsuit|allegation|breach|attack|strike|outflow|curb|contract(s|ion)\b|pressure|price cut|guidance miss|lowers? guidance|cuts guidance|layoff|workforce reduction|seizure|embezzle|indictment|rising (npa|costs|competition|provisions|crude)|npa growth|red flag|outage|shortage|suspen|exclusion|impact|risk|concern/i;
+        const _TAG_POS = /win\b|wins|beat|analyst (buy|upgrade|accumulate|outperform|overweight|add)|upgrade|target up|rising|growth|expansion|expands|approval|approves|capex|partnership|agreement|mou\b|acquisition|acquires|outperform|positive|tailwind|upside|launch|bonus|split|buyback|profitable|surprise profit|increase|order|secures|record|all-time high|top pick|inclusion|addition|\brise|rises|surge|patent|licen[cs]e|superstar buy|promoter buy|stake (purchase|increase|buy)|joint venture|forms jv|enters jv|investment|preferred bidder/i;
+        function _tagSentiment(tag) {
+            if (_TAG_POS_FIRST.test(tag)) return 1;
+            if (_TAG_NEG.test(tag)) return -1;
+            if (_TAG_POS.test(tag)) return 1;
+            return 0;
+        }
+        function calcNewsTagSignals() {
+            const since = Date.now() - 182 * _DAY;
+            const map = {};
+            (typeof allInsightsData !== 'undefined' ? allInsightsData : []).forEach(n => {
+                if (!n || !n.tag || !(n.timestamp >= since)) return;
+                const tk = String(n.ticker || '').trim().toUpperCase();
+                if (!tk) return;
+                const tag = n.tag.replace(/`/g, '').replace(/\s+/g, ' ').trim();
+                const snt = _tagSentiment(tag);
+                const e = map[tk] || (map[tk] = { pos: 0, neg: 0, neu: 0, tags: {} });
+                if (snt > 0) e.pos++; else if (snt < 0) e.neg++; else e.neu++;
+                const t = e.tags[tag] || (e.tags[tag] = { n: 0, s: snt });
+                t.n++;
+            });
+            allData.forEach(r => { r._news = map[String(r._ticker).toUpperCase()] || null; });
+        }
+
+        function _fmtCr(v) {
+            const a = Math.abs(v);
+            return (v >= 0 ? '+' : '−') + (a >= 100 ? a.toFixed(0) : a >= 1 ? a.toFixed(1) : a.toFixed(2)) + 'Cr';
+        }
+        function _sigTipAttr(txt) { return escHtml(txt).replace(/\n/g, '&#10;'); }
+
+        function sigRowHtml(r) {
+            const chips = [];
+            const chip = (cls, inner, tip) => chips.push(`<span class="sig ${cls}" data-sigtip="${_sigTipAttr(tip)}" onclick="showSigTip(event,this)" onmouseenter="showSigTip(event,this)" onmouseleave="hideSigTip()">${inner}</span>`);
+
+            // Trend Template
+            if (!isNaN(r._tt)) {
+                const cls = r._tt === 8 ? 'sg-good' : r._tt >= 6 ? 'sg-ok' : r._tt >= 4 ? 'sg-warn' : 'sg-bad';
+                const lines = _TT_LABELS.map((l, i) => (r._ttPass[i] ? '✓ ' : '✗ ') + l + (i === 7 && !isNaN(r._rsRating) ? ' (RS ' + r._rsRating + ')' : ''));
+                chip(cls, `<span class="sg-k">TT</span><b>${r._tt}/8</b>`, 'Trend Template ' + r._tt + '/8 (weekly)\n' + lines.join('\n'));
+            }
+            // Distance from the 10-week average
+            if (!isNaN(r._d10w)) {
+                const d = r._d10w;
+                const cls = d < 0 ? 'sg-bad' : d <= 5 ? 'sg-good' : d <= 15 ? 'sg-ok' : d <= 25 ? 'sg-warn' : 'sg-bad';
+                const note = d < 0 ? 'Below the 10-week average — trend weakening'
+                    : d <= 5 ? 'Close to the 10-week average — low-risk buy zone'
+                        : d <= 15 ? 'Healthy distance above the 10-week average'
+                            : d <= 25 ? 'Getting extended — wait for a pullback'
+                                : 'Very extended — high risk to chase';
+                chip(cls, `<span class="sg-k">10W</span><b>${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(1)}%</b>`, 'Price vs 10-week average: ' + (d >= 0 ? '+' : '') + d.toFixed(1) + '%\n' + note);
+            }
+            // RS line at a 52-week high
+            if (r._rsNH) {
+                if (r._rsLead) chip('sg-star', `<b>RS NH ★</b>`, 'RS line (vs Nifty 500) at a 52-week high while price is NOT yet at its high — relative strength is leading price (classic leader signal).');
+                else chip('sg-good', `<b>RS NH</b>`, 'RS line (vs Nifty 500) at a 52-week high, together with price.');
+            }
+            // Insider net, last 1 year
+            if (r._ins && (r._ins.nb || r._ins.ns)) {
+                const e = r._ins, net = e.buy - e.sell;
+                const cls = net > 0 ? 'sg-good' : net < 0 ? 'sg-bad' : 'sg-warn';
+                chip(cls, `<span class="sg-k">Ins</span><b>${_fmtCr(net)}</b>`,
+                    'Insider trades, last 1 year (market buys/sells only)\n' +
+                    'Bought: ' + e.nb + ' trade' + (e.nb === 1 ? '' : 's') + ', ₹' + e.buy.toFixed(2) + ' Cr\n' +
+                    'Sold: ' + e.ns + ' trade' + (e.ns === 1 ? '' : 's') + ', ₹' + e.sell.toFixed(2) + ' Cr\n' +
+                    'Net: ' + _fmtCr(net) + '  ·  Promoter net: ' + _fmtCr(e.prom));
+            }
+            // SuperStar changes
+            if (r._ssChg && (r._ssChg.add || r._ssChg.cut)) {
+                const e = r._ssChg;
+                const cls = e.add > e.cut ? 'sg-good' : e.cut > e.add ? 'sg-bad' : 'sg-warn';
+                chip(cls, `<span class="sg-k">⭐</span>${e.add ? `<span class="up">▲${e.add}</span>` : ''}${e.cut ? `<span class="dn">▼${e.cut}</span>` : ''}`,
+                    'SuperStar investors, latest filing\nAdded/new: ' + e.add + '  ·  Cut: ' + e.cut + '  ·  Unchanged: ' + e.same + '\n' + e.lines.join('\n'));
+            }
+            // News tags, last 6 months
+            if (r._news && (r._news.pos || r._news.neg)) {
+                const e = r._news, net = e.pos - e.neg;
+                const cls = net > 0 ? 'sg-good' : net < 0 ? 'sg-bad' : 'sg-warn';
+                const sorted = Object.entries(e.tags).sort((a, b) => b[1].n - a[1].n);
+                const lead = sorted.find(([, t]) => net >= 0 ? t.s > 0 : t.s < 0) || sorted[0];
+                const fmt = list => list.map(([k, t]) => k + (t.n > 1 ? ' ×' + t.n : '')).join(', ') || '—';
+                chip(cls, `<span class="sg-k">News</span>${e.pos ? `<span class="up">▲${e.pos}</span>` : ''}${e.neg ? `<span class="dn">▼${e.neg}</span>` : ''}${lead ? `<span class="sg-sub">${escHtml(lead[0])}</span>` : ''}`,
+                    'Insight tags, last 6 months\nPositive (' + e.pos + '): ' + fmt(sorted.filter(([, t]) => t.s > 0)) +
+                    '\nNegative (' + e.neg + '): ' + fmt(sorted.filter(([, t]) => t.s < 0)) +
+                    (e.neu ? '\nNeutral (' + e.neu + '): ' + fmt(sorted.filter(([, t]) => t.s === 0)) : ''));
+            }
+            return chips.length ? `<div class="sig-row">${chips.join('')}</div>` : '<div class="sig-row" hidden></div>';
+        }
+
+        /* Patch the signal rows of cards already on screen (no full re-render). */
+        function refreshSigRows() {
+            const byTk = {};
+            allData.forEach(r => { byTk[String(r._ticker)] = r; });
+            document.querySelectorAll('.stock-card[data-ticker]').forEach(card => {
+                const r = byTk[card.dataset.ticker];
+                const old = card.querySelector('.sig-row');
+                if (!r || !old) return;
+                const tmp = document.createElement('div');
+                tmp.innerHTML = sigRowHtml(r);
+                old.replaceWith(tmp.firstElementChild);
+            });
+        }
+        window._onSignalSourceLoaded = function (which) {
+            if (!allData.length) return;
+            const ok = which === 'deals' ? calcInsiderNet() : calcRSLineSignals();
+            if (ok) refreshSigRows();
+        };
+
+        /* Detail bubble: hover on desktop, tap on touch. */
+        window.showSigTip = function (e, el) {
+            if (e && e.type === 'click') e.stopPropagation();
+            let tip = document.getElementById('sig-tip');
+            if (!tip) { tip = document.createElement('div'); tip.id = 'sig-tip'; document.body.appendChild(tip); }
+            // A tap fires mouseenter then click — only a later, separate click closes it
+            if (e && e.type === 'click' && tip.style.display === 'block' && tip._src === el && Date.now() - (tip._t || 0) > 450) { hideSigTip(); return; }
+            if (tip._src !== el || tip.style.display !== 'block') tip._t = Date.now();
+            tip.textContent = el.dataset.sigtip || '';
+            tip._src = el;
+            tip.style.display = 'block';
+            const b = el.getBoundingClientRect(), tw = tip.offsetWidth, th = tip.offsetHeight;
+            const x = Math.min(Math.max(12, b.left + b.width / 2 - tw / 2), window.innerWidth - tw - 12);
+            let y = b.top - th - 8;
+            if (y < 8) y = b.bottom + 8;
+            tip.style.left = x + 'px';
+            tip.style.top = y + 'px';
+        };
+        window.hideSigTip = function () {
+            const tip = document.getElementById('sig-tip');
+            if (tip) { tip.style.display = 'none'; tip._src = null; }
+        };
+        document.addEventListener('click', e => { if (!e.target.closest || !e.target.closest('.sig')) hideSigTip(); }, true);
+        window.addEventListener('scroll', () => hideSigTip(), true);
+
         /* Calculate returns from OHLCV close prices for all stocks */
         function calcOHLCVReturns() {
             if (!window._ohlcvTickers || !allData.length) return;
@@ -13312,6 +13781,13 @@
                 '3M:', allData[0]?._ret3m?.toFixed(2),
                 '6M:', allData[0]?._ret6m?.toFixed(2),
                 '1Y:', allData[0]?._ret1y?.toFixed(2));
+
+            calcPeerRanks();
+            calcTrendSignals();
+            calcRSLineSignals();
+            calcSuperStarChange();
+            calcNewsTagSignals();
+            calcInsiderNet();
 
             // Kick off breadth and PEAD calculations after returns and pivot are ready
             calcSectorBreadth();
@@ -22806,6 +23282,7 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                 // Expose for chart strip usage and deal count badges
                 window._dealData = _data;
                 window._dealFiltered = _filtered;
+                if (typeof window._onSignalSourceLoaded === 'function') window._onSignalSourceLoaded('deals');
 
                 // Pre-build O(1) ticker→count map from ALL deal data so buildCard is instant
                 (function () {
@@ -38666,6 +39143,7 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                         });
                         window._indexHistoryCache = cache;
                         window._indexHistoryNames = Object.keys(cache).sort();
+                        if (typeof window._onSignalSourceLoaded === 'function') window._onSignalSourceLoaded('idxhist');
                         return cache;
                     } catch (err) {
                         console.error('[IndexChart] Failed:', err);
