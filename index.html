@@ -8667,6 +8667,12 @@
                     <!-- Historical Market Breadth Charts: % of stocks below 50D/100D/200D MA + 52W High/Low, over time -->
                     <div id="breadth-charts" style="display:none;">
                         <div id="bc-toolbar" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 8px 4px;">
+                            <div class="breadth-subtabs" id="bc-view-tabs">
+                                <button class="breadth-subtab" data-view="stats" onclick="window._bcSetView('stats')"
+                                    title="Advanced breadth statistics for the current market">🧮 Stats</button>
+                                <button class="breadth-subtab" data-view="trend" onclick="window._bcSetView('trend')"
+                                    title="Market Mode + % below MA history">📉 Trend</button>
+                            </div>
                             <select id="bc-group-sel" class="breadth-index-select"
                                 onchange="window._bcGroup=this.value; window.renderBreadthCharts();">
                                 <option value="all">All Stocks</option>
@@ -8731,6 +8737,47 @@
                                 <canvas id="bc-canvas-hl" class="bc-canvas"></canvas>
                             </div>
                             <div class="bc-tooltip" id="bc-tooltip"></div>
+                        </div>
+                        <!-- Advanced breadth statistics: snapshot of the latest week + participation charts -->
+                        <div id="bs-stats-wrap" style="display:none;">
+                            <div class="bs-summary" id="bs-summary"></div>
+                            <div class="bs-kpi-grid" id="bs-kpis"></div>
+                            <div class="bs-chart-grid">
+                                <div class="bc-chart-card bs-wide" data-accent="ad">
+                                    <div class="bc-chart-head">
+                                        <div class="bc-chart-title">Advance / Decline Line <span>(cumulative weekly net advances)</span></div>
+                                        <div class="bc-legend">
+                                            <span class="bc-legend-item"><span class="bc-legend-swatch" style="background:#818cf8;"></span>A/D Line</span>
+                                            <span class="bc-legend-item"><span class="bc-legend-swatch" style="background:#4ade80;height:6px;"></span>Net Adv</span>
+                                        </div>
+                                    </div>
+                                    <canvas id="bs-canvas-ad" class="bc-canvas bs-canvas"></canvas>
+                                </div>
+                                <div class="bc-chart-card bs-wide" data-accent="ma">
+                                    <div class="bc-chart-head">
+                                        <div class="bc-chart-title">% Above Moving Average <span>(participation)</span></div>
+                                        <div class="bc-legend">
+                                            <span class="bc-legend-item"><span class="bc-legend-swatch" style="background:#5eead4;"></span>50D</span>
+                                            <span class="bc-legend-item"><span class="bc-legend-swatch" style="background:#60a5fa;"></span>100D</span>
+                                            <span class="bc-legend-item"><span class="bc-legend-swatch" style="background:#818cf8;"></span>200D</span>
+                                        </div>
+                                    </div>
+                                    <canvas id="bs-canvas-ma" class="bc-canvas bs-canvas"></canvas>
+                                </div>
+                                <div class="bc-chart-card" data-accent="dist">
+                                    <div class="bc-chart-head">
+                                        <div class="bc-chart-title">Weekly Return Distribution <span id="bs-dist-sub"></span></div>
+                                    </div>
+                                    <canvas id="bs-canvas-dist" class="bc-canvas bs-canvas bs-hist"></canvas>
+                                </div>
+                                <div class="bc-chart-card" data-accent="dd">
+                                    <div class="bc-chart-head">
+                                        <div class="bc-chart-title">Distance from 52W High <span>(% of stocks)</span></div>
+                                    </div>
+                                    <canvas id="bs-canvas-dd" class="bc-canvas bs-canvas bs-hist"></canvas>
+                                </div>
+                            </div>
+                            <div class="bs-footnote">Weekly bars · Advancer = weekly close above prior week's close · New high/low = exact 52-week closing extreme · Percentile ranks the current reading against this universe's full history.</div>
                         </div>
                     </div>
                     <!-- Fundamental breadth = Results Analysis, inline -->
@@ -15359,6 +15406,836 @@
             }
         }
 
+        // ══════════════════════════════════════════════════════
+        //   ADVANCED BREADTH STATS — a "what is the market doing right
+        //   now" read: advancers / decliners, up-turnover, the weekly
+        //   return distribution, exact 52W new highs / lows, the MA
+        //   participation ladder, breadth percentile vs history and a
+        //   weekly breadth-thrust gauge, plus the cumulative A/D line.
+        //   Shares the toolbar's universe + duration with the Trend view.
+        // ══════════════════════════════════════════════════════
+        (function () {
+            try {
+                const v = localStorage.getItem('bcView');
+                if (v === 'stats' || v === 'trend') window._bcView = v;
+            } catch (e) { }
+        })();
+        window._bcView = window._bcView || 'stats';
+
+        function _bcSyncViewUI() {
+            const view = window._bcView;
+            const chartsWrap = document.getElementById('bc-charts-wrap');
+            const statsWrap = document.getElementById('bs-stats-wrap');
+            if (chartsWrap) chartsWrap.style.display = view === 'stats' ? 'none' : '';
+            if (statsWrap) statsWrap.style.display = view === 'stats' ? '' : 'none';
+            document.querySelectorAll('#bc-view-tabs .breadth-subtab').forEach(function (b) {
+                b.classList.toggle('active', b.dataset.view === view);
+            });
+        }
+        _bcSyncViewUI();
+
+        window._bcSetView = function (view) {
+            window._bcView = view;
+            try { localStorage.setItem('bcView', view); } catch (e) { }
+            _bcSyncViewUI();
+            const pane = document.getElementById('breadth-charts');
+            const sp = pane ? pane.closest('.deal-sub-pane') : null;
+            if (sp) sp.scrollTop = 0;
+            window.renderBreadthCharts();
+        };
+
+        const _BS_DAY = 864e5;
+        const _BS_RET_EDGES = [-15, -10, -5, -2, 0, 2, 5, 10, 15];   // weekly return %, 10 bins
+        const _BS_DD_EDGES = [5, 10, 20, 30, 50];                     // % below 52W high, 6 bins
+        let _bsCache = null;
+
+        // Monday-anchored week number in LOCAL time. Aligning on the calendar
+        // week (not "n bars back") keeps tickers with a gap, a delisting or a
+        // live partial bar from being shifted against the rest of the market.
+        function _bsWeekKey(d) {
+            const day = Math.floor((d.getTime() - d.getTimezoneOffset() * 60000) / _BS_DAY);
+            return Math.floor((day - 4) / 7); // epoch day 4 = Monday 5 Jan 1970
+        }
+
+        function _bsComputeStats() {
+            const src = window._ohlcvTickers;
+            if (!src || !src.size) return null;
+            const universe = _bcUniverseSet();
+            // Cheap fingerprint of every series' latest bar, so an in-place live
+            // update (same Map, same size) still invalidates the cache.
+            let fp = 0;
+            src.forEach(function (arr) {
+                if (!Array.isArray(arr) || !arr.length) return;
+                const lb = arr[arr.length - 1];
+                fp += arr.length + (lb.close || 0) + (lb.vol || 0) * 1e-6;
+            });
+            const key = (window._bcGroup || 'all') + '|' + src.size + '|' + (universe ? universe.size : '*') + '|' + fp.toFixed(4);
+            if (_bsCache && _bsCache.src === src && _bsCache.key === key) return _bsCache.data;
+
+            const list = [];
+            src.forEach(function (arr, tk) {
+                if (!Array.isArray(arr) || arr.length < 2) return;
+                if (universe && !universe.has(tk)) return;
+                // Index series (NIFTY50, Nifty_TOTAL…) share the map with stocks;
+                // their enormous turnover would swamp every volume statistic.
+                if (/^(NIFTY|SENSEX|BANKEX)/i.test(tk)) return;
+                list.push(arr);
+            });
+            if (!list.length) return null;
+
+            // Pass 1 — bucket every bar by week and find the latest week that is
+            // "complete enough". A live bar only a handful of tickers carry yet
+            // must not become "this week" for the whole market.
+            const keys = new Array(list.length);
+            let minB = Infinity, maxB = -Infinity;
+            for (let t = 0; t < list.length; t++) {
+                const arr = list[t];
+                const ks = new Array(arr.length);
+                for (let i = 0; i < arr.length; i++) {
+                    const d = arr[i].date instanceof Date ? arr[i].date : new Date(arr[i].date);
+                    ks[i] = _bsWeekKey(d);
+                }
+                keys[t] = ks;
+                if (ks[0] < minB) minB = ks[0];
+                if (ks[ks.length - 1] > maxB) maxB = ks[ks.length - 1];
+            }
+            if (!isFinite(minB) || !isFinite(maxB)) return null;
+            const NB = maxB - minB + 1;
+            const barsAt = new Float64Array(NB);
+            for (let t = 0; t < keys.length; t++) {
+                const ks = keys[t];
+                for (let i = Math.max(0, ks.length - 3); i < ks.length; i++) barsAt[ks[i] - minB]++;
+            }
+            let cb = NB - 1;
+            while (cb > 0 && barsAt[cb] < barsAt[cb - 1] * 0.5) cb--;
+
+            const adv = new Float64Array(NB), dec = new Float64Array(NB), unch = new Float64Array(NB);
+            const upTo = new Float64Array(NB), dnTo = new Float64Array(NB);
+            const c10 = new Float64Array(NB), a10 = new Float64Array(NB);
+            const c20 = new Float64Array(NB), a20 = new Float64Array(NB);
+            const c40 = new Float64Array(NB), a40 = new Float64Array(NB);
+            const cHL = new Float64Array(NB), nh = new Float64Array(NB), nl = new Float64Array(NB);
+            const dateAt = new Array(NB).fill(null);
+            const rets = [], dds = [];
+            const prevWeeks = {}; // prior-bar week → { n, date }: what "this week" is measured against
+            const HL_WIN = 52;
+
+            // Pass 2 — one walk per ticker with rolling sums + monotonic deques.
+            for (let t = 0; t < list.length; t++) {
+                const arr = list[t], ks = keys[t];
+                let s10 = 0, s20 = 0, s40 = 0;
+                const maxDq = [], minDq = [];
+                for (let i = 0; i < arr.length; i++) {
+                    const b = ks[i] - minB;
+                    if (b > cb) break;
+                    const c = arr[i].close;
+                    s10 += c; if (i >= 10) s10 -= arr[i - 10].close;
+                    s20 += c; if (i >= 20) s20 -= arr[i - 20].close;
+                    s40 += c; if (i >= 40) s40 -= arr[i - 40].close;
+                    while (maxDq.length && arr[maxDq[maxDq.length - 1]].close <= c) maxDq.pop();
+                    maxDq.push(i);
+                    while (minDq.length && arr[minDq[minDq.length - 1]].close >= c) minDq.pop();
+                    minDq.push(i);
+                    while (maxDq[0] <= i - HL_WIN) maxDq.shift();
+                    while (minDq[0] <= i - HL_WIN) minDq.shift();
+
+                    if (!dateAt[b]) dateAt[b] = arr[i].date instanceof Date ? arr[i].date : new Date(arr[i].date);
+
+                    if (i > 0) {
+                        const pc = arr[i - 1].close;
+                        if (pc > 0 && c > 0) {
+                            const r = c / pc - 1;
+                            const turnover = (arr[i].vol || 0) * c;
+                            if (r > 0.0005) { adv[b]++; upTo[b] += turnover; }
+                            else if (r < -0.0005) { dec[b]++; dnTo[b] += turnover; }
+                            else unch[b]++;
+                            if (b === cb) {
+                                const pk = ks[i - 1];
+                                const pw = prevWeeks[pk] || (prevWeeks[pk] = { n: 0, date: arr[i - 1].date });
+                                pw.n++;
+                                rets.push(r * 100);
+                                const hi = arr[maxDq[0]].close;
+                                if (hi > 0) dds.push((1 - c / hi) * 100);
+                            }
+                        }
+                    }
+                    if (i >= 9) { c10[b]++; if (c > s10 / 10) a10[b]++; }
+                    if (i >= 19) { c20[b]++; if (c > s20 / 20) a20[b]++; }
+                    if (i >= 39) { c40[b]++; if (c > s40 / 40) a40[b]++; }
+                    if (i >= HL_WIN - 1) {
+                        cHL[b]++;
+                        if (maxDq[0] === i) nh[b]++;
+                        if (minDq[0] === i) nl[b]++;
+                    }
+                }
+            }
+
+            const MIN = 15; // thin weeks deep in history would only add noise
+            const S = { dates: [], adv: [], dec: [], unch: [], advShare: [], netPct: [], adLine: [], upTo: [], ab10: [], ab20: [], ab40: [], nh: [], nl: [], cHL: [] };
+            let cum = 0;
+            for (let b = 0; b <= cb; b++) {
+                const tot = adv[b] + dec[b] + unch[b];
+                if (tot < MIN || !dateAt[b]) continue;
+                cum += adv[b] - dec[b];
+                const ad = adv[b] + dec[b];
+                const to = upTo[b] + dnTo[b];
+                S.dates.push(dateAt[b]);
+                S.adv.push(adv[b]); S.dec.push(dec[b]); S.unch.push(unch[b]);
+                S.advShare.push(ad ? adv[b] / ad * 100 : NaN);
+                S.netPct.push((adv[b] - dec[b]) / tot * 100);
+                S.adLine.push(cum);
+                S.upTo.push(to ? upTo[b] / to * 100 : NaN);
+                S.ab10.push(c10[b] >= MIN ? a10[b] / c10[b] * 100 : NaN);
+                S.ab20.push(c20[b] >= MIN ? a20[b] / c20[b] * 100 : NaN);
+                S.ab40.push(c40[b] >= MIN ? a40[b] / c40[b] * 100 : NaN);
+                S.nh.push(nh[b]); S.nl.push(nl[b]); S.cHL.push(cHL[b]);
+            }
+            const L = S.dates.length;
+            if (!L) return null;
+
+            // Weekly breadth thrust: 4-week EMA of the advancing share. A move
+            // from washed-out (<40) to >61.5 within a few weeks is the weekly
+            // cousin of Zweig's thrust — rare, and historically a strong tell.
+            const thrust = new Array(L);
+            const alpha = 2 / (4 + 1);
+            for (let i = 0; i < L; i++) {
+                const v = isNaN(S.advShare[i]) ? 50 : S.advShare[i];
+                thrust[i] = i === 0 ? v : thrust[i - 1] + alpha * (v - thrust[i - 1]);
+            }
+            let thrustFiredAgo = -1;
+            for (let i = L - 1; i >= Math.max(1, L - 13); i--) {
+                if (thrust[i] < 61.5) continue;
+                let low = Infinity;
+                for (let j = Math.max(0, i - 6); j < i; j++) low = Math.min(low, thrust[j]);
+                if (low < 40) { thrustFiredAgo = L - 1 - i; break; }
+            }
+
+            const last = L - 1, ago4 = Math.max(0, L - 5);
+            const cur40 = S.ab40[last];
+            const hist40 = S.ab40.filter(function (v) { return !isNaN(v); });
+            const rank40 = (isNaN(cur40) || !hist40.length) ? NaN
+                : hist40.filter(function (v) { return v <= cur40; }).length / hist40.length * 100;
+
+            const sorted = rets.slice().sort(function (a, b) { return a - b; });
+            const q = function (p) {
+                if (!sorted.length) return NaN;
+                const pos = (sorted.length - 1) * p, lo = Math.floor(pos), hi = Math.ceil(pos);
+                return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+            };
+            const retBins = new Array(_BS_RET_EDGES.length + 1).fill(0);
+            rets.forEach(function (x) {
+                let k = 0; while (k < _BS_RET_EDGES.length && x >= _BS_RET_EDGES[k]) k++;
+                retBins[k]++;
+            });
+            const ddBins = new Array(_BS_DD_EDGES.length + 1).fill(0);
+            dds.forEach(function (x) {
+                let k = 0; while (k < _BS_DD_EDGES.length && x >= _BS_DD_EDGES[k]) k++;
+                ddBins[k]++;
+            });
+            let net4 = 0, net4n = 0;
+            for (let i = Math.max(0, L - 4); i < L; i++) { net4 += S.netPct[i]; net4n++; }
+
+            let prevDate = null, prevN = 0;
+            Object.keys(prevWeeks).forEach(function (k) {
+                if (prevWeeks[k].n > prevN) { prevN = prevWeeks[k].n; prevDate = prevWeeks[k].date; }
+            });
+            if (prevDate && !(prevDate instanceof Date)) prevDate = new Date(prevDate);
+
+            const snap = {
+                date: S.dates[last],
+                prevDate: prevDate,
+                adv: S.adv[last], dec: S.dec[last], unch: S.unch[last],
+                total: S.adv[last] + S.dec[last] + S.unch[last],
+                advShare: S.advShare[last], netPct: S.netPct[last], net4: net4n ? net4 / net4n : NaN,
+                upTo: S.upTo[last],
+                median: q(0.5), mean: rets.length ? rets.reduce(function (a, b) { return a + b; }, 0) / rets.length : NaN,
+                q1: q(0.25), q3: q(0.75),
+                bigUp: rets.filter(function (x) { return x >= 10; }).length,
+                bigDn: rets.filter(function (x) { return x <= -10; }).length,
+                nh: S.nh[last], nl: S.nl[last], cHL: S.cHL[last],
+                ab10: S.ab10[last], ab20: S.ab20[last], ab40: cur40,
+                ab10p: S.ab10[ago4], ab20p: S.ab20[ago4], ab40p: S.ab40[ago4],
+                rank40: rank40,
+                thrust: thrust[last], thrustFiredAgo: thrustFiredAgo,
+                retBins: retBins, retN: rets.length,
+                ddBins: ddBins, ddN: dds.length,
+                near10: dds.length ? dds.filter(function (x) { return x < 10; }).length / dds.length * 100 : NaN,
+                broken: dds.length ? dds.filter(function (x) { return x >= 30; }).length / dds.length * 100 : NaN
+            };
+
+            const data = { series: S, thrust: thrust, snap: snap };
+            _bsCache = { src: src, key: key, data: data };
+            return data;
+        }
+
+        // ── formatting helpers ──
+        const _BS_UP = '#4ade80', _BS_DN = '#f87171', _BS_MID = '#facc15';
+        function _bsPct(v, dp, signed) {
+            if (v == null || isNaN(v)) return '—';
+            return (signed && v > 0 ? '+' : '') + v.toFixed(dp == null ? 1 : dp) + '%';
+        }
+        function _bsNum(v) {
+            if (v == null || isNaN(v)) return '—';
+            return Math.round(v).toLocaleString('en-IN');
+        }
+        function _bsCompact(v) {
+            const a = Math.abs(v);
+            if (a >= 1e5) return (v / 1e5).toFixed(1) + 'L';
+            if (a >= 1000) return (v / 1000).toFixed(a >= 1e4 ? 0 : 1) + 'k';
+            return Math.round(v).toString();
+        }
+        function _bsOrdinal(n) {
+            const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+            return n + (s[(v - 20) % 10] || s[v] || s[0]);
+        }
+        function _bsTone(v, lo, hi) {
+            if (v == null || isNaN(v)) return 'rgba(255,255,255,0.55)';
+            return v >= hi ? _BS_UP : v <= lo ? _BS_DN : _BS_MID;
+        }
+        function _bsDelta(now, prev) {
+            if (isNaN(now) || isNaN(prev)) return '';
+            const d = now - prev;
+            const col = d >= 0 ? _BS_UP : _BS_DN;
+            return '<span class="bs-delta" style="color:' + col + ';">' + (d >= 0 ? '▲' : '▼') + Math.abs(d).toFixed(1) + '</span>';
+        }
+
+        function _bsVerdict(s) {
+            const parts = [s.advShare, s.upTo, s.ab10, s.ab40].filter(function (v) { return !isNaN(v); });
+            const score = parts.length ? parts.reduce(function (a, b) { return a + b; }, 0) / parts.length : NaN;
+            if (isNaN(score)) return { label: 'No Data', color: '#94a3b8', score: score };
+            if (score >= 65) return { label: 'Broad Advance', color: '#22c55e', score: score };
+            if (score >= 55) return { label: 'Healthy Participation', color: _BS_UP, score: score };
+            if (score >= 45) return { label: 'Mixed / Selective', color: _BS_MID, score: score };
+            if (score >= 35) return { label: 'Narrow / Weak', color: '#fb923c', score: score };
+            return { label: 'Broad Decline', color: '#ef4444', score: score };
+        }
+
+        function _bsRenderSummary(s) {
+            const el = document.getElementById('bs-summary');
+            if (!el) return;
+            const v = _bsVerdict(s);
+            const bits = [];
+            bits.push('<b>' + _bsNum(s.adv) + '</b> of ' + _bsNum(s.total) + ' stocks rose this week (' + _bsPct(s.advShare, 0) + ' of movers), carrying <b>' + _bsPct(s.upTo, 0) + '</b> of turnover.');
+            if (!isNaN(s.ab40)) {
+                bits.push('<b>' + _bsPct(s.ab40, 0) + '</b> trade above their 200-day average' +
+                    (isNaN(s.rank40) ? '.' : ' — the <b>' + _bsOrdinal(Math.round(s.rank40)) + ' percentile</b> of history.'));
+            }
+            if (s.nh || s.nl) {
+                bits.push(s.nh >= s.nl
+                    ? 'New 52W highs lead lows <b>' + _bsNum(s.nh) + ' : ' + _bsNum(s.nl) + '</b>.'
+                    : 'New 52W lows outnumber highs <b>' + _bsNum(s.nl) + ' : ' + _bsNum(s.nh) + '</b>.');
+            }
+            if (s.thrustFiredAgo >= 0) {
+                bits.push('<span style="color:' + _BS_UP + ';">⚡ Breadth thrust fired ' + (s.thrustFiredAgo === 0 ? 'this week' : s.thrustFiredAgo + 'w ago') + '.</span>');
+            }
+            el.style.setProperty('--bs-verdict', v.color);
+            el.innerHTML =
+                '<div class="bs-sum-head">' +
+                '<span class="bs-verdict">' + v.label + '</span>' +
+                '<span class="bs-sum-score">' + (isNaN(v.score) ? '—' : Math.round(v.score)) + '<small>/100</small></span>' +
+                '</div>' +
+                '<div class="bs-sum-meta">Week of ' + _bcFmtDate(s.date) +
+                (s.prevDate && s.date && (s.date - s.prevDate) > 9 * _BS_DAY ? ' <span class="bs-gap">vs ' + _bcFmtDate(s.prevDate) + ' (history gap)</span>' : '') +
+                ' · ' + _bsNum(s.total) + ' stocks</div>' +
+                '<div class="bs-sum-text">' + bits.join(' ') + '</div>';
+        }
+
+        function _bsTile(label, valHtml, subHtml, extraHtml) {
+            return '<div class="bs-kpi"><div class="bs-kpi-label">' + label + '</div>' +
+                '<div class="bs-kpi-val">' + valHtml + '</div>' +
+                (extraHtml || '') +
+                (subHtml ? '<div class="bs-kpi-sub">' + subHtml + '</div>' : '') + '</div>';
+        }
+
+        function _bsSplitBar(parts) {
+            return '<div class="bs-split">' + parts.map(function (p) {
+                return '<span style="flex:' + Math.max(0, p[0]) + ' 1 0;background:' + p[1] + ';"></span>';
+            }).join('') + '</div>';
+        }
+
+        function _bsRenderKpis(s) {
+            const el = document.getElementById('bs-kpis');
+            if (!el) return;
+            const ratio = s.dec ? s.adv / s.dec : (s.adv ? Infinity : NaN);
+            const hlRatio = s.nl ? s.nh / s.nl : (s.nh ? Infinity : NaN);
+            const fmtRatio = function (r) { return isNaN(r) ? '—' : !isFinite(r) ? '∞' : r.toFixed(2) + '×'; };
+            const thrustState = s.thrust >= 61.5 ? ['Thrust zone', _BS_UP] : s.thrust <= 40 ? ['Washed out', _BS_DN] : ['Normal', 'rgba(255,255,255,0.6)'];
+
+            const ladder = [['50D', s.ab10, s.ab10p, '#5eead4'], ['100D', s.ab20, s.ab20p, '#60a5fa'], ['200D', s.ab40, s.ab40p, '#818cf8']].map(function (r) {
+                const w = isNaN(r[1]) ? 0 : Math.max(0, Math.min(100, r[1]));
+                return '<div class="bs-ladder-row"><span class="bs-ladder-k">' + r[0] + '</span>' +
+                    '<span class="bs-ladder-track"><span style="width:' + w + '%;background:' + r[3] + ';"></span><i></i></span>' +
+                    '<span class="bs-ladder-v" style="color:' + _bsTone(r[1], 40, 60) + ';">' + _bsPct(r[1], 0) + '</span>' +
+                    _bsDelta(r[1], r[2]) + '</div>';
+            }).join('');
+
+            el.innerHTML = [
+                _bsTile('Advancers / Decliners',
+                    '<span style="color:' + _BS_UP + ';">' + _bsNum(s.adv) + '</span><em> / </em><span style="color:' + _BS_DN + ';">' + _bsNum(s.dec) + '</span>',
+                    'A/D ratio <b>' + fmtRatio(ratio) + '</b> · ' + _bsNum(s.unch) + ' unch',
+                    _bsSplitBar([[s.adv, _BS_UP], [s.unch, 'rgba(255,255,255,0.18)'], [s.dec, _BS_DN]])),
+                _bsTile('Net Advances',
+                    '<span style="color:' + (s.netPct >= 0 ? _BS_UP : _BS_DN) + ';">' + _bsPct(s.netPct, 1, true) + '</span>',
+                    '4W avg <b style="color:' + (s.net4 >= 0 ? _BS_UP : _BS_DN) + ';">' + _bsPct(s.net4, 1, true) + '</b>'),
+                _bsTile('Up-Turnover',
+                    '<span style="color:' + _bsTone(s.upTo, 40, 60) + ';">' + _bsPct(s.upTo, 0) + '</span>',
+                    'share of weekly value traded in rising stocks',
+                    _bsSplitBar([[s.upTo, _BS_UP], [100 - s.upTo, _BS_DN]])),
+                _bsTile('Median Weekly Return',
+                    '<span style="color:' + (s.median >= 0 ? _BS_UP : _BS_DN) + ';">' + _bsPct(s.median, 2, true) + '</span>',
+                    'Mean ' + _bsPct(s.mean, 2, true) + ' · IQR ' + _bsPct(s.q3 - s.q1, 1)),
+                _bsTile('Big Movers (±10%)',
+                    '<span style="color:' + _BS_UP + ';">▲ ' + _bsNum(s.bigUp) + '</span><em>  </em><span style="color:' + _BS_DN + ';">▼ ' + _bsNum(s.bigDn) + '</span>',
+                    'stocks moving 10%+ this week'),
+                _bsTile('52W New Highs / Lows',
+                    '<span style="color:' + _BS_UP + ';">' + _bsNum(s.nh) + '</span><em> / </em><span style="color:' + _BS_DN + ';">' + _bsNum(s.nl) + '</span>',
+                    'H/L ratio <b>' + fmtRatio(hlRatio) + '</b> · net ' + (s.cHL ? _bsPct((s.nh - s.nl) / s.cHL * 100, 1, true) : '—')),
+                '<div class="bs-kpi bs-kpi-ladder"><div class="bs-kpi-label">% Above MA <span>(vs 4W ago)</span></div>' + ladder + '</div>',
+                _bsTile('200D Breadth Percentile',
+                    '<span style="color:' + _bsTone(s.rank40, 25, 75) + ';">' + (isNaN(s.rank40) ? '—' : _bsOrdinal(Math.round(s.rank40))) + '</span>',
+                    'vs full history of this universe',
+                    '<div class="bs-meter"><span style="left:' + (isNaN(s.rank40) ? 50 : s.rank40) + '%;"></span></div>'),
+                _bsTile('Breadth Thrust (4W EMA)',
+                    '<span style="color:' + thrustState[1] + ';">' + _bsPct(s.thrust, 0) + '</span>',
+                    '<b style="color:' + thrustState[1] + ';">' + thrustState[0] + '</b>' +
+                    (s.thrustFiredAgo >= 0 ? ' · ⚡ fired ' + (s.thrustFiredAgo === 0 ? 'now' : s.thrustFiredAgo + 'w ago') : ' · &gt;61.5 after &lt;40 = thrust')),
+                _bsTile('Leaders vs Broken',
+                    '<span style="color:' + _BS_UP + ';">' + _bsPct(s.near10, 0) + '</span><em> / </em><span style="color:' + _BS_DN + ';">' + _bsPct(s.broken, 0) + '</span>',
+                    'within 10% of 52W high / 30%+ below it')
+            ].join('');
+        }
+
+        // ── canvas plumbing ──
+        function _bsLineHeight() {
+            const w = window.innerWidth, h = window.innerHeight;
+            if (w <= 600) return Math.round(Math.max(150, Math.min(200, h * 0.24)));
+            if (w <= 1024) return Math.round(Math.max(170, Math.min(250, h * 0.26)));
+            return Math.round(Math.max(180, Math.min(300, h * 0.28)));
+        }
+        function _bsHistHeight() {
+            const w = window.innerWidth;
+            return w <= 600 ? 150 : w <= 1024 ? 170 : 185;
+        }
+
+        function _bsPrep(cv, H, reuse) {
+            const DPR = Math.min(window.devicePixelRatio || 1, 2);
+            let W;
+            if (reuse && cv._bsSize) { W = cv._bsSize.W; H = cv._bsSize.H; }
+            else {
+                W = _bcMeasureWidth(cv);
+                cv.style.width = W + 'px';
+                cv.style.height = H + 'px';
+                cv.width = Math.round(W * DPR);
+                cv.height = Math.round(H * DPR);
+                cv._bsSize = { W: W, H: H };
+            }
+            const ctx = cv.getContext('2d');
+            ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+            ctx.clearRect(0, 0, W, H);
+            return { ctx: ctx, W: W, H: H };
+        }
+
+        function _bsDateLabels(ctx, dates, toX, y, pW) {
+            const n = dates.length;
+            const count = Math.max(2, Math.min(6, Math.floor(pW / 72), n));
+            ctx.fillStyle = 'rgba(255,255,255,0.38)';
+            ctx.font = '9px "Lexend",sans-serif';
+            ctx.textBaseline = 'top';
+            for (let li = 0; li < count; li++) {
+                const i = Math.round((li / Math.max(1, count - 1)) * (n - 1));
+                if (!dates[i]) continue;
+                ctx.textAlign = li === 0 ? 'left' : li === count - 1 ? 'right' : 'center';
+                ctx.fillText(dates[i].toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }), toX(i), y);
+            }
+        }
+
+        // Floating readout drawn on the canvas itself at the crosshair — no DOM
+        // tooltip, so it can never be clipped by the scrolling pane.
+        function _bsReadout(ctx, hx, PAD, pW, lines) {
+            ctx.font = 'bold 10px "Lexend",sans-serif';
+            let w = 0;
+            lines.forEach(function (l) { w = Math.max(w, ctx.measureText(l[0]).width); });
+            const bw = w + 16, bh = lines.length * 14 + 8;
+            const left = hx > PAD.l + pW / 2;
+            const bx = left ? Math.max(PAD.l, hx - bw - 8) : Math.min(PAD.l + pW - bw, hx + 8);
+            const by = PAD.t + 2;
+            ctx.fillStyle = 'rgba(11,11,16,0.92)';
+            ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(bx, by, bw, bh, 6); else ctx.rect(bx, by, bw, bh);
+            ctx.fill(); ctx.stroke();
+            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            lines.forEach(function (l, k) {
+                ctx.fillStyle = l[1];
+                ctx.font = (k === 0 ? '600 9px' : 'bold 10px') + ' "Lexend",sans-serif';
+                ctx.fillText(l[0], bx + 8, by + 11 + k * 14);
+            });
+        }
+
+        function _bsCrosshair(ctx, hx, top, bottom) {
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+            ctx.setLineDash([3, 3]);
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(hx, top); ctx.lineTo(hx, bottom); ctx.stroke();
+            ctx.restore();
+        }
+
+        function _bsDot(ctx, x, y, color) {
+            ctx.fillStyle = '#0b0b10';
+            ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = color;
+            ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+        }
+
+        const BS_PAD = { l: 40, r: 44, t: 10, b: 18 };
+
+        // A/D line (top) over weekly net-advance bars (bottom), shared X.
+        function _bsDrawAD(cv, d, hoverIdx, reuse) {
+            const P = _bsPrep(cv, _bsLineHeight(), reuse);
+            const ctx = P.ctx, W = P.W, H = P.H;
+            const PAD = BS_PAD, pW = W - PAD.l - PAD.r, pH = H - PAD.t - PAD.b;
+            const n = d.dates.length;
+            cv._bsGeom = { PAD: PAD, pW: pW, n: n };
+            if (!n) return;
+            const lineH = Math.round(pH * 0.64), gap = 8, barTop = PAD.t + lineH + gap, barH = pH - lineH - gap;
+            const toX = function (i) { return PAD.l + (n <= 1 ? pW / 2 : (i / (n - 1)) * pW); };
+
+            const base = d.adLine[0];
+            const ad = d.adLine.map(function (v) { return v - base; });
+            const sma = ad.map(function (_, i) {
+                if (i < 9) return NaN;
+                let s = 0; for (let j = i - 9; j <= i; j++) s += ad[j]; return s / 10;
+            });
+            let lo = Math.min.apply(null, ad), hi = Math.max.apply(null, ad);
+            if (hi - lo < 1) { hi += 1; lo -= 1; }
+            const padV = (hi - lo) * 0.08; lo -= padV; hi += padV;
+            const toY = function (v) { return PAD.t + (1 - (v - lo) / (hi - lo)) * lineH; };
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+            ctx.fillStyle = 'rgba(255,255,255,0.38)';
+            ctx.font = '9px "Lexend",sans-serif';
+            ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+            ctx.lineWidth = 1;
+            for (let s = 0; s <= 2; s++) {
+                const v = lo + (hi - lo) * (s / 2), y = toY(v);
+                ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(PAD.l + pW, y); ctx.stroke();
+                ctx.fillText(_bsCompact(v), PAD.l - 6, y);
+            }
+
+            const pts = ad.map(function (v, i) { return { x: toX(i), y: toY(v) }; });
+            const grad = ctx.createLinearGradient(0, PAD.t, 0, PAD.t + lineH);
+            grad.addColorStop(0, '#818cf84a'); grad.addColorStop(1, '#818cf803');
+            ctx.fillStyle = grad;
+            ctx.beginPath(); _bcSmoothPath(ctx, pts);
+            ctx.lineTo(pts[n - 1].x, PAD.t + lineH); ctx.lineTo(pts[0].x, PAD.t + lineH); ctx.closePath(); ctx.fill();
+
+            // 10-week average of the A/D line — above it = participation improving
+            ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+            ctx.setLineDash([4, 3]); ctx.lineWidth = 1.2;
+            _bcSegments(sma).forEach(function (seg) {
+                const sp = [];
+                for (let i = seg[0]; i <= seg[1]; i++) sp.push({ x: toX(i), y: toY(sma[i]) });
+                ctx.beginPath(); _bcSmoothPath(ctx, sp); ctx.stroke();
+            });
+            ctx.setLineDash([]);
+
+            ctx.strokeStyle = '#818cf8'; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+            ctx.beginPath(); _bcSmoothPath(ctx, pts); ctx.stroke();
+
+            const ex = pts[n - 1].x, ey = pts[n - 1].y;
+            _bsDot(ctx, ex, ey, '#818cf8');
+            ctx.font = '10px "Lexend",sans-serif';
+            ctx.fillStyle = 'rgba(255,255,255,0.85)';
+            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.fillText(_bsCompact(ad[n - 1]), ex + 7, ey);
+
+            // Net-advance bars
+            let mx = 0;
+            d.netPct.forEach(function (v) { if (!isNaN(v)) mx = Math.max(mx, Math.abs(v)); });
+            mx = Math.max(10, mx);
+            const midY = barTop + barH / 2;
+            const bw = Math.max(1, (pW / Math.max(1, n)) * 0.72);
+            ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+            ctx.beginPath(); ctx.moveTo(PAD.l, midY); ctx.lineTo(PAD.l + pW, midY); ctx.stroke();
+            for (let i = 0; i < n; i++) {
+                const v = d.netPct[i];
+                if (isNaN(v)) continue;
+                const h = (Math.abs(v) / mx) * (barH / 2);
+                ctx.fillStyle = v >= 0 ? 'rgba(74,222,128,0.8)' : 'rgba(248,113,113,0.8)';
+                if (hoverIdx != null && hoverIdx !== i) ctx.globalAlpha = 0.55;
+                ctx.fillRect(toX(i) - bw / 2, v >= 0 ? midY - h : midY, bw, Math.max(0.8, h));
+                ctx.globalAlpha = 1;
+            }
+            ctx.fillStyle = 'rgba(255,255,255,0.38)';
+            ctx.font = '8.5px "Lexend",sans-serif';
+            ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+            ctx.fillText('+' + Math.round(mx), PAD.l - 6, barTop + 4);
+            ctx.fillText('-' + Math.round(mx), PAD.l - 6, barTop + barH - 4);
+            ctx.textAlign = 'left';
+            ctx.fillText('Net %', PAD.l + pW + 5, midY);
+
+            _bsDateLabels(ctx, d.dates, toX, PAD.t + pH + 4, pW);
+
+            if (hoverIdx != null && hoverIdx >= 0 && hoverIdx < n) {
+                const hx = toX(hoverIdx);
+                _bsCrosshair(ctx, hx, PAD.t, PAD.t + pH);
+                _bsDot(ctx, hx, toY(ad[hoverIdx]), '#818cf8');
+                const nv = d.netPct[hoverIdx];
+                _bsReadout(ctx, hx, PAD, pW, [
+                    [_bcFmtDate(d.dates[hoverIdx]), 'rgba(255,255,255,0.55)'],
+                    ['A/D  ' + _bsCompact(ad[hoverIdx]), '#a5b4fc'],
+                    ['Adv ' + _bsNum(d.adv[hoverIdx]) + ' · Dec ' + _bsNum(d.dec[hoverIdx]), 'rgba(255,255,255,0.8)'],
+                    ['Net ' + _bsPct(nv, 1, true), nv >= 0 ? _BS_UP : _BS_DN]
+                ]);
+            }
+        }
+
+        // % of stocks above the 10/20/40-week MA on one 0–100 scale — the
+        // spacing between the three lines shows short- vs long-term health.
+        function _bsDrawMA(cv, d, hoverIdx, reuse) {
+            const P = _bsPrep(cv, _bsLineHeight(), reuse);
+            const ctx = P.ctx, W = P.W, H = P.H;
+            const PAD = BS_PAD, pW = W - PAD.l - PAD.r, pH = H - PAD.t - PAD.b;
+            const n = d.dates.length;
+            cv._bsGeom = { PAD: PAD, pW: pW, n: n };
+            if (!n) return;
+            const toX = function (i) { return PAD.l + (n <= 1 ? pW / 2 : (i / (n - 1)) * pW); };
+            const toY = function (v) { return PAD.t + (1 - v / 100) * pH; };
+
+            // Overbought / oversold zones
+            ctx.fillStyle = 'rgba(16,185,129,0.07)';
+            ctx.fillRect(PAD.l, toY(100), pW, toY(70) - toY(100));
+            ctx.fillStyle = 'rgba(225,45,68,0.08)';
+            ctx.fillRect(PAD.l, toY(30), pW, toY(0) - toY(30));
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+            ctx.fillStyle = 'rgba(255,255,255,0.38)';
+            ctx.font = '9px "Lexend",sans-serif';
+            ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+            [0, 30, 70, 100].forEach(function (v) {
+                const y = toY(v);
+                ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(PAD.l + pW, y); ctx.stroke();
+                ctx.fillText(v + '%', PAD.l - 6, y);
+            });
+            ctx.strokeStyle = 'rgba(245,158,11,0.8)';
+            ctx.setLineDash([4, 3]); ctx.lineWidth = 1.1;
+            ctx.beginPath(); ctx.moveTo(PAD.l, toY(50)); ctx.lineTo(PAD.l + pW, toY(50)); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = '#f59e0b';
+            ctx.font = 'bold 9px "Lexend",sans-serif';
+            ctx.textAlign = 'right';
+            ctx.fillText('50', PAD.l - 6, toY(50));
+
+            const lines = [[d.ab40, '#818cf8', '200D'], [d.ab20, '#60a5fa', '100D'], [d.ab10, '#5eead4', '50D']];
+            ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+            lines.forEach(function (ln) {
+                ctx.strokeStyle = ln[1];
+                ctx.lineWidth = ln[2] === '200D' ? 2.2 : 1.6;
+                _bcSegments(ln[0]).forEach(function (seg) {
+                    const pts = [];
+                    for (let i = seg[0]; i <= seg[1]; i++) pts.push({ x: toX(i), y: toY(ln[0][i]) });
+                    ctx.beginPath(); _bcSmoothPath(ctx, pts); ctx.stroke();
+                });
+            });
+
+            // Direct end labels, nudged apart so they never overprint
+            const ends = [];
+            lines.forEach(function (ln) {
+                for (let i = n - 1; i >= 0; i--) {
+                    if (!isNaN(ln[0][i])) { ends.push({ x: toX(i), y: toY(ln[0][i]), v: ln[0][i], c: ln[1] }); break; }
+                }
+            });
+            ends.sort(function (a, b) { return a.y - b.y; });
+            for (let k = 1; k < ends.length; k++) {
+                ends[k].ly = Math.max(ends[k].y, (ends[k - 1].ly || ends[k - 1].y) + 11);
+            }
+            ends.forEach(function (e) {
+                _bsDot(ctx, e.x, e.y, e.c);
+                ctx.fillStyle = e.c;
+                ctx.font = 'bold 9.5px "Lexend",sans-serif';
+                ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+                ctx.fillText(e.v.toFixed(0) + '%', e.x + 7, Math.min(PAD.t + pH, e.ly || e.y));
+            });
+
+            _bsDateLabels(ctx, d.dates, toX, PAD.t + pH + 4, pW);
+
+            if (hoverIdx != null && hoverIdx >= 0 && hoverIdx < n) {
+                const hx = toX(hoverIdx);
+                _bsCrosshair(ctx, hx, PAD.t, PAD.t + pH);
+                const rows = [[_bcFmtDate(d.dates[hoverIdx]), 'rgba(255,255,255,0.55)']];
+                lines.slice().reverse().forEach(function (ln) {
+                    const v = ln[0][hoverIdx];
+                    if (!isNaN(v)) _bsDot(ctx, hx, toY(v), ln[1]);
+                    rows.push([ln[2] + '  ' + _bsPct(v, 1), ln[1]]);
+                });
+                _bsReadout(ctx, hx, PAD, pW, rows);
+            }
+        }
+
+        // Categorical bar chart used for both "snapshot" distributions.
+        function _bsDrawBars(cv, bins, opts) {
+            const P = _bsPrep(cv, _bsHistHeight(), false);
+            const ctx = P.ctx, W = P.W, H = P.H;
+            // Extra headroom when a marker label rides above the bars, so it never
+            // collides with a tall bar's value label.
+            const PAD = { l: 6, r: 6, t: opts.marker ? 30 : 18, b: 18 };
+            const pW = W - PAD.l - PAD.r, pH = H - PAD.t - PAD.b;
+            const n = bins.length, slot = pW / n;
+            const mx = Math.max(1, Math.max.apply(null, bins.map(function (b) { return b.val; })));
+            const base = PAD.t + pH;
+            const small = slot < 30;
+            const hasMarker = opts.marker && !isNaN(opts.marker.x);
+            const mxp = hasMarker ? PAD.l + opts.marker.x * slot : 0;
+
+            // Marker line first, so bars and their value labels sit on top of it.
+            if (hasMarker) {
+                ctx.save();
+                ctx.strokeStyle = 'rgba(241,245,249,0.7)'; ctx.setLineDash([3, 3]); ctx.lineWidth = 1.2;
+                ctx.beginPath(); ctx.moveTo(mxp, 14); ctx.lineTo(mxp, base); ctx.stroke();
+                ctx.restore();
+            }
+
+            bins.forEach(function (b, i) {
+                const h = (b.val / mx) * (pH - 4);
+                const bw = slot * 0.74, x = PAD.l + i * slot + (slot - bw) / 2;
+                const g = ctx.createLinearGradient(0, base - h, 0, base);
+                g.addColorStop(0, b.color); g.addColorStop(1, b.color + '55');
+                ctx.fillStyle = g;
+                ctx.beginPath();
+                if (ctx.roundRect) ctx.roundRect(x, base - h, bw, Math.max(1, h), [3, 3, 0, 0]); else ctx.rect(x, base - h, bw, Math.max(1, h));
+                ctx.fill();
+                ctx.fillStyle = 'rgba(255,255,255,0.82)';
+                ctx.font = (small ? '600 8px' : '600 9.5px') + ' "Lexend",sans-serif';
+                ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+                ctx.fillText(b.val >= 10 || small ? b.val.toFixed(0) + (small ? '' : '%') : b.val.toFixed(1) + '%', x + bw / 2, base - h - 2);
+            });
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+            ctx.beginPath(); ctx.moveTo(PAD.l, base + 0.5); ctx.lineTo(PAD.l + pW, base + 0.5); ctx.stroke();
+
+            ctx.fillStyle = 'rgba(255,255,255,0.45)';
+            ctx.font = (small ? '8px' : '9px') + ' "Lexend",sans-serif';
+            ctx.textBaseline = 'top'; ctx.textAlign = 'center';
+            if (opts.edges) {
+                // Labels sit on the boundaries between bars — reads as an axis.
+                opts.edges.forEach(function (e, k) {
+                    ctx.fillText((e > 0 ? '+' : '') + e, PAD.l + (k + 1) * slot, base + 4);
+                });
+            } else {
+                bins.forEach(function (b, i) { ctx.fillText(b.label, PAD.l + (i + 0.5) * slot, base + 4); });
+            }
+
+            if (hasMarker) {
+                ctx.fillStyle = '#f1f5f9';
+                ctx.font = 'bold 9px "Lexend",sans-serif';
+                ctx.textBaseline = 'top';
+                ctx.textAlign = mxp > PAD.l + pW * 0.75 ? 'right' : mxp < PAD.l + pW * 0.25 ? 'left' : 'center';
+                ctx.fillText(opts.marker.label, mxp, 2);
+            }
+        }
+
+        function _bsRenderHists(s) {
+            const retColors = ['#dc2626', '#ef4444', '#f87171', '#fca5a5', '#fecaca', '#bbf7d0', '#86efac', '#4ade80', '#22c55e', '#16a34a'];
+            const retBins = s.retBins.map(function (c, i) {
+                return { val: s.retN ? c / s.retN * 100 : 0, color: retColors[i] };
+            });
+            // Median position in "bin units" — open-ended end bins are treated as 5 wide.
+            const ext = [-20].concat(_BS_RET_EDGES, [20]);
+            let mPos = NaN;
+            if (!isNaN(s.median)) {
+                const m = Math.max(-20, Math.min(20, s.median));
+                let k = 0; while (k < ext.length - 2 && m >= ext[k + 1]) k++;
+                mPos = k + (m - ext[k]) / (ext[k + 1] - ext[k]);
+            }
+            const sub = document.getElementById('bs-dist-sub');
+            if (sub) sub.textContent = '(' + _bsNum(s.retN) + ' stocks, % change)';
+            _bsDrawBars(document.getElementById('bs-canvas-dist'), retBins, {
+                edges: _BS_RET_EDGES,
+                marker: { x: mPos, label: 'Median ' + _bsPct(s.median, 1, true) }
+            });
+
+            const ddLabels = ['0–5', '5–10', '10–20', '20–30', '30–50', '50+'];
+            const ddColors = ['#22c55e', '#4ade80', '#a3e635', '#facc15', '#fb923c', '#ef4444'];
+            _bsDrawBars(document.getElementById('bs-canvas-dd'), s.ddBins.map(function (c, i) {
+                return { val: s.ddN ? c / s.ddN * 100 : 0, color: ddColors[i], label: ddLabels[i] };
+            }), {});
+        }
+
+        window._bsLinked = window._bsLinked || [];
+
+        function _bsAttachHover(cv) {
+            if (!cv || cv._bsHoverBound) return;
+            cv._bsHoverBound = true;
+            if (window._bsLinked.indexOf(cv) === -1) window._bsLinked.push(cv);
+            let raf = 0, px = null, clearT = 0;
+            // Linked crosshair: both time-series charts share dates and gutters,
+            // so one index lines up on both.
+            const paint = function (idx) {
+                window._bsLinked.forEach(function (c) { if (c._bsRedraw) c._bsRedraw(idx); });
+            };
+            const move = function (clientX) {
+                px = clientX;
+                clearTimeout(clearT);
+                if (raf) return;
+                raf = requestAnimationFrame(function () {
+                    raf = 0;
+                    const g = cv._bsGeom;
+                    if (!g || !g.n) return;
+                    paint(_bcNearestIdx(g.n, px - cv.getBoundingClientRect().left, g.PAD, g.pW));
+                });
+            };
+            const clear = function () {
+                if (raf) { cancelAnimationFrame(raf); raf = 0; }
+                paint(null);
+            };
+            cv.addEventListener('mousemove', function (e) { move(e.clientX); });
+            cv.addEventListener('mouseleave', clear);
+            // Passive + touch-action:pan-y (CSS): vertical swipes still scroll the
+            // stats page, horizontal drags scrub the crosshair, a tap shows a
+            // reading that fades after a moment.
+            cv.addEventListener('touchstart', function (e) { if (e.touches.length) move(e.touches[0].clientX); }, { passive: true });
+            cv.addEventListener('touchmove', function (e) { if (e.touches.length) move(e.touches[0].clientX); }, { passive: true });
+            cv.addEventListener('touchend', function () { clearTimeout(clearT); clearT = setTimeout(clear, 2200); });
+            cv.addEventListener('touchcancel', clear);
+        }
+
+        function _bsRender(weeks) {
+            const data = _bsComputeStats();
+            const sumEl = document.getElementById('bs-summary');
+            const kpiEl = document.getElementById('bs-kpis');
+            const wrap = document.getElementById('bs-stats-wrap');
+            if (!data) {
+                if (sumEl) sumEl.innerHTML = '<div class="bs-sum-text">No breadth data for this selection.</div>';
+                if (kpiEl) kpiEl.innerHTML = '';
+                if (wrap) wrap.classList.add('bs-empty');
+                return;
+            }
+            if (wrap) wrap.classList.remove('bs-empty');
+            _bsRenderSummary(data.snap);
+            _bsRenderKpis(data.snap);
+
+            const S = data.series, L = S.dates.length;
+            const start = isFinite(weeks) ? Math.max(0, L - weeks) : 0;
+            const sl = {};
+            Object.keys(S).forEach(function (k) { sl[k] = S[k].slice(start); });
+
+            const cAD = document.getElementById('bs-canvas-ad');
+            const cMA = document.getElementById('bs-canvas-ma');
+            if (cAD) {
+                cAD._bsRedraw = function (h) { _bsDrawAD(cAD, sl, h, true); };
+                _bsDrawAD(cAD, sl, null, false);
+                _bsAttachHover(cAD);
+            }
+            if (cMA) {
+                cMA._bsRedraw = function (h) { _bsDrawMA(cMA, sl, h, true); };
+                _bsDrawMA(cMA, sl, null, false);
+                _bsAttachHover(cMA);
+            }
+            _bsRenderHists(data.snap);
+        }
+
         window.renderBreadthCharts = async function () {
             const pane = document.getElementById('breadth-charts');
             if (!pane || pane.style.display === 'none') return;
@@ -15372,6 +16249,18 @@
             }
 
             const weeks = _BC_DUR_WEEKS[window._bcDuration] || 52;
+
+            _bcSyncViewUI();
+            if (window._bcView === 'stats') {
+                // The stats view is a normal scrolling page — the one-screen lock
+                // below belongs to the trend charts only.
+                const sp = pane.closest('.deal-sub-pane');
+                if (sp) sp.classList.remove('bc-fixed-view');
+                _bcClearHover();
+                _bsRender(weeks);
+                return;
+            }
+
             const series = _bcComputeSeries(weeks);
             const c200 = document.getElementById('bc-canvas-200');
             const c50 = document.getElementById('bc-canvas-50');
@@ -16028,21 +16917,79 @@
                 return true;
             }
 
-            /* Recompute everything derived from the weekly bars and repaint the
-               cards already on screen. Filters, sort order, "Load more" depth
-               and scroll position are left exactly as the user has them; the
-               filtered list itself refreshes on the next filter change. */
+            /* Recompute EVERYTHING derived from the weekly bars, then refresh
+               every view that shows it:
+                 calcOHLCVReturns() → returns, IPO age, pivot distance, peer /
+                   sector / industry ranks, trend template + RS rating, RS
+                   line, SuperStar change, news tags, insider net, sector
+                   breadth, PEAD, VCP, volume milestones, tech-screener fields
+                   (RSI, ADX, Vol×, %52W, Chg), super-stock fields (tight base,
+                   volume surge, accumulation), delivery % averages
+                 doFilter()      → card list, filters, sort, Top performers and
+                                   summary counts re-evaluated on the new values
+                 charts          → cached indicator math dropped; card charts,
+                                   an open chart popup and the full-screen chart
+                                   are redrawn (not during a replay)
+                 side panels     → Tech Screener and Breadth, if open
+               The user's filter settings, "Load more" depth and scroll position
+               are kept. Each step is isolated so one failing view cannot stop
+               the others. */
+            const safe = (what, fn) => { try { fn(); } catch (e) { console.warn('[liveOHLC] ' + what + ' failed:', e && e.message); } };
             function refreshViews() {
                 if (!dataReady()) return;
-                try { calcOHLCVReturns(); } catch (e) { console.warn('[liveOHLC] recalculation failed:', e && e.message); }
-                if (window._chartCalcCache && typeof window._chartCalcCache.clear === 'function') window._chartCalcCache.clear();
+                safe('recalculation', () => calcOHLCVReturns());
+                safe('chart caches', () => {
+                    if (typeof window._ohlcvRedrawOpenCharts === 'function') window._ohlcvRedrawOpenCharts();
+                    else if (window._chartCalcCache) window._chartCalcCache.clear();
+                });
+
                 const main = document.getElementById('main');
-                if (!main || main.style.display === 'none' || typeof renderCards !== 'function') return;
-                const mc = document.querySelector('.main-content');
-                const y = window.scrollY, my = mc ? mc.scrollTop : 0;
-                try { renderCards(); } catch (e) { console.warn('[liveOHLC] card repaint failed:', e && e.message); }
-                try { window.scrollTo({ top: y, behavior: 'instant' }); } catch (e) { window.scrollTo(0, y); }
-                if (mc) mc.scrollTop = my;
+                if (main && main.style.display !== 'none' && typeof doFilter === 'function') {
+                    const mc = document.querySelector('.main-content');
+                    const y = window.scrollY, my = mc ? mc.scrollTop : 0;
+                    let depth = 0;
+                    safe('render depth', () => { depth = currentRenderLimit; });
+                    const restore = () => {
+                        safe('scroll restore', () => {
+                            try { window.scrollTo({ top: y, behavior: 'instant' }); } catch (e) { window.scrollTo(0, y); }
+                            if (mc) mc.scrollTop = my;
+                        });
+                    };
+                    safe('card list', () => doFilter());
+                    // doFilter() resets "Load more" to the first page (and on
+                    // mobile paints a frame later) — put the depth back once done.
+                    let tries = 0;
+                    const settle = () => {
+                        let busy = false;
+                        safe('filter state', () => { busy = _filterInProgress; });
+                        if (busy && ++tries < 120) { requestAnimationFrame(settle); return; }
+                        safe('render depth', () => {
+                            if (depth > currentRenderLimit && currentFilteredData.length > currentRenderLimit) {
+                                currentRenderLimit = Math.min(depth, currentFilteredData.length);
+                                renderCards();
+                            }
+                        });
+                        restore();
+                    };
+                    requestAnimationFrame(settle);
+                }
+
+                // Full-screen chart (left alone while a replay/training run is on)
+                safe('full-screen chart', () => {
+                    const m = document.getElementById('fs-chart-modal');
+                    const replay = window._fsReplay && window._fsReplay.active;
+                    if (m && m.style.display === 'flex' && !replay && typeof window.renderFullScreenChart === 'function') {
+                        window.renderFullScreenChart({ skipChrome: true });
+                    }
+                });
+                // Tech Screener table (fields were recomputed above)
+                safe('tech screener', () => {
+                    if (window._ssMode === 'tech' && typeof window.renderTechScreener === 'function') window.renderTechScreener();
+                });
+                // Breadth tab — technical table or breadth charts, whichever is showing
+                safe('breadth', () => {
+                    if (window._sidebarTab === 'breadth' && typeof window.refreshActiveBreadth === 'function') window.refreshActiveBreadth();
+                });
             }
 
             function notify(msg, kind) {
@@ -17446,6 +18393,17 @@
                     else st.older++;
                 }
                 return st;
+            };
+
+            /* After the bars change: drop cached chart work and redraw the
+               hover/click chart popup if it is open. */
+            window._ohlcvRedrawOpenCharts = function () {
+                _canvasCache = {};
+                if (window._chartCalcCache && typeof window._chartCalcCache.clear === 'function') window._chartCalcCache.clear();
+                const pop = document.getElementById('csp-hover-popup');
+                if (_currentTick && pop && pop.classList.contains('csp-visible')) {
+                    try { drawChart(_currentTick); } catch (e) { console.warn('[liveOHLC] popup redraw failed:', e && e.message); }
+                }
             };
             window._ohlcvInjectPacked = function (pk) {
                 try {
@@ -28503,6 +29461,392 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
         @media (max-width: 380px) {
             .bc-mode-chips {
                 grid-template-columns: 1fr;
+            }
+        }
+
+        /* ── Advanced Breadth Stats view ──
+           Sized off the PANE's width (container queries), not the window's —
+           the sidebar can be narrow on a wide desktop and wide in fullscreen. */
+        #bs-stats-wrap {
+            container-type: inline-size;
+            padding: 6px 8px 14px;
+            font-family: 'Lexend', sans-serif;
+        }
+
+        .bs-summary {
+            --bs-verdict: #94a3b8;
+            position: relative;
+            background: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
+            border: 1px solid rgba(255, 255, 255, 0.09);
+            border-left: 3px solid var(--bs-verdict);
+            border-radius: 12px;
+            padding: 10px 12px;
+            margin-bottom: 10px;
+            overflow: hidden;
+        }
+
+        .bs-summary::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--bs-verdict) 13%, transparent), transparent 60%);
+            pointer-events: none;
+        }
+
+        .bs-sum-head {
+            position: relative;
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .bs-verdict {
+            font-size: 15px;
+            font-weight: 800;
+            color: var(--bs-verdict);
+            letter-spacing: 0.2px;
+        }
+
+        .bs-sum-score {
+            font-size: 22px;
+            font-weight: 800;
+            color: #f1f5f9;
+            font-variant-numeric: tabular-nums;
+            line-height: 1;
+        }
+
+        .bs-sum-score small {
+            font-size: 10px;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.4);
+            margin-left: 1px;
+        }
+
+        .bs-sum-meta {
+            position: relative;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.42);
+            margin-top: 2px;
+        }
+
+        .bs-gap {
+            color: #fb923c;
+        }
+
+        .bs-sum-text {
+            position: relative;
+            font-size: 11.5px;
+            line-height: 1.55;
+            color: rgba(255, 255, 255, 0.72);
+            margin-top: 7px;
+        }
+
+        .bs-sum-text b {
+            color: #f1f5f9;
+            font-weight: 700;
+        }
+
+        .bs-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 7px;
+            margin-bottom: 10px;
+        }
+
+        .bs-kpi {
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 10px;
+            padding: 8px 9px 7px;
+            min-width: 0;
+        }
+
+        .bs-kpi-label {
+            font-size: 8.5px;
+            font-weight: 700;
+            letter-spacing: 0.35px;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.45);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .bs-kpi-label span {
+            text-transform: none;
+            font-weight: 500;
+            opacity: 0.8;
+        }
+
+        .bs-kpi-val {
+            font-size: 18px;
+            font-weight: 800;
+            color: #f1f5f9;
+            font-variant-numeric: tabular-nums;
+            line-height: 1.15;
+            margin-top: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .bs-kpi-val em {
+            font-style: normal;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.3);
+        }
+
+        .bs-kpi-sub {
+            font-size: 9.5px;
+            color: rgba(255, 255, 255, 0.5);
+            margin-top: 4px;
+            line-height: 1.35;
+        }
+
+        .bs-kpi-sub b {
+            color: rgba(255, 255, 255, 0.85);
+        }
+
+        .bs-split {
+            display: flex;
+            height: 5px;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 6px;
+            gap: 1px;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .bs-split span {
+            min-width: 0;
+        }
+
+        .bs-meter {
+            position: relative;
+            height: 5px;
+            border-radius: 3px;
+            margin-top: 7px;
+            background: linear-gradient(90deg, #ef4444, #facc15 50%, #22c55e);
+            opacity: 0.85;
+        }
+
+        .bs-meter span {
+            position: absolute;
+            top: -3px;
+            width: 3px;
+            height: 11px;
+            border-radius: 2px;
+            background: #fff;
+            box-shadow: 0 0 5px rgba(255, 255, 255, 0.6);
+            transform: translateX(-50%);
+        }
+
+        /* The MA ladder carries three rows, so it takes a full grid row */
+        .bs-kpi-ladder {
+            grid-column: 1 / -1;
+        }
+
+        /* Last tile stretches so no grid row is left with a hole */
+        .bs-kpi:last-child {
+            grid-column: 1 / -1;
+        }
+
+        .bs-ladder-row {
+            display: grid;
+            grid-template-columns: 34px 1fr 38px 38px;
+            align-items: center;
+            gap: 6px;
+            margin-top: 5px;
+            font-size: 10px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .bs-ladder-k {
+            color: rgba(255, 255, 255, 0.55);
+            font-weight: 700;
+        }
+
+        .bs-ladder-track {
+            position: relative;
+            height: 7px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.07);
+            overflow: hidden;
+        }
+
+        .bs-ladder-track span {
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            border-radius: 4px;
+            opacity: 0.9;
+        }
+
+        /* 50% tick */
+        .bs-ladder-track i {
+            position: absolute;
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            background: rgba(245, 158, 11, 0.8);
+        }
+
+        .bs-ladder-v {
+            font-weight: 800;
+            text-align: right;
+        }
+
+        .bs-delta {
+            font-size: 9px;
+            font-weight: 700;
+            text-align: right;
+        }
+
+        .bs-chart-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            gap: 10px;
+        }
+
+        .bs-chart-grid .bc-chart-card {
+            margin-bottom: 0;
+        }
+
+        .bc-chart-card[data-accent="ad"] { --bc-accent: #818cf8; }
+        .bc-chart-card[data-accent="ma"] { --bc-accent: linear-gradient(90deg, #5eead4, #60a5fa, #818cf8); }
+        .bc-chart-card[data-accent="dist"] { --bc-accent: linear-gradient(90deg, #f87171, #facc15, #4ade80); }
+        .bc-chart-card[data-accent="dd"] { --bc-accent: linear-gradient(90deg, #4ade80, #facc15, #f87171); }
+
+        /* Stats charts live on a scrolling page: let vertical swipes scroll it
+           and only horizontal drags scrub the crosshair. */
+        .bs-canvas {
+            touch-action: pan-y;
+        }
+
+        .bs-canvas.bs-hist {
+            cursor: default;
+        }
+
+        .bs-footnote {
+            font-size: 9px;
+            line-height: 1.5;
+            color: rgba(255, 255, 255, 0.32);
+            margin-top: 10px;
+            padding: 0 2px;
+        }
+
+        #bs-stats-wrap.bs-empty .bs-kpi-grid,
+        #bs-stats-wrap.bs-empty .bs-chart-grid,
+        #bs-stats-wrap.bs-empty .bs-footnote {
+            display: none;
+        }
+
+        /* iPad portrait / narrow desktop pane: 3 tiles a row */
+        @container (min-width: 520px) {
+            .bs-kpi-grid {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+
+            .bs-kpi-val {
+                font-size: 19px;
+            }
+
+            .bs-kpi:last-child {
+                grid-column: auto;
+            }
+        }
+
+        /* iPad landscape / fullscreen: 4-5 tiles a row, histograms side by side */
+        @container (min-width: 720px) {
+            .bs-kpi-grid {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
+
+            .bs-kpi-ladder {
+                grid-column: span 2;
+            }
+
+            .bs-kpi:last-child {
+                grid-column: span 2;
+            }
+
+            .bs-chart-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .bs-chart-grid .bs-wide {
+                grid-column: 1 / -1;
+            }
+
+            .bs-summary {
+                padding: 12px 14px;
+            }
+
+            .bs-sum-text {
+                font-size: 12px;
+            }
+        }
+
+        @container (min-width: 1100px) {
+            .bs-kpi-grid {
+                grid-template-columns: repeat(6, minmax(0, 1fr));
+            }
+
+        }
+
+        @media (max-width: 600px) {
+            #bs-stats-wrap {
+                padding: 4px 5px 12px;
+            }
+
+            .bs-summary {
+                padding: 9px 10px;
+            }
+
+            .bs-verdict {
+                font-size: 13.5px;
+            }
+
+            .bs-sum-score {
+                font-size: 19px;
+            }
+
+            .bs-sum-text {
+                font-size: 11px;
+            }
+
+            .bs-kpi {
+                padding: 7px 8px 6px;
+            }
+
+            .bs-kpi-val {
+                font-size: 16px;
+            }
+
+            .bs-kpi-sub {
+                font-size: 9px;
+            }
+
+            #bc-view-tabs .breadth-subtab {
+                padding: 6px 0;
+            }
+        }
+
+        /* Bigger tap targets on touch devices (phones + iPad) */
+        @media (pointer: coarse) {
+            #bc-toolbar .breadth-subtab {
+                min-height: 30px;
+            }
+
+            #bc-toolbar .breadth-index-select {
+                min-height: 32px;
+                font-size: 12px;
             }
         }
 
