@@ -8828,6 +8828,8 @@
 
             <div class="filter-bar" id="filter-bar">
                 <span class="fl">Filter</span>
+                <button id="live-ohlc-btn" type="button" onclick="window._liveOhlc && window._liveOhlc.toggleSettings(event)"
+                    title="Settings — weekly candle source / live update">⚙</button>
                 <select id="view-mode-filter" class="fi w110" onchange="setViewMode(this.value)"
                     title="Switch company card view">
                     <option value="latest" selected>Result · Columns</option>
@@ -13209,6 +13211,10 @@
                     }
                 });
 
+                // Lay the live current-week bar (Google Sheet, last good copy)
+                // over the parquet history before anything is computed from it.
+                if (window._liveOhlc) { try { window._liveOhlc.applyStored(); } catch (e) { console.warn('[liveOHLC] apply on load failed:', e && e.message); } }
+
                 // Calculate returns from OHLCV close prices (OHLCV already injected above)
                 calcOHLCVReturns();
 
@@ -13233,6 +13239,10 @@
                 // A beat later, so the overlay fades and the first scroll or
                 // click is not fighting the deals parse for the main thread.
                 setTimeout(window._loadSecondarySources, 1500);
+
+                // Live current-week OHLC: first fetch + the 10:15–16:15 IST schedule
+                // (idempotent — a data refresh just re-checks it).
+                if (window._liveOhlc) setTimeout(function () { window._liveOhlc.start(); }, 2500);
 
                 // Load F/H tickers early so buttons are ready
                 if (typeof window.loadFHTickers === 'function') window.loadFHTickers();
@@ -15774,6 +15784,474 @@
         };
     </script>
 
+    <style>
+        /* Live weekly candle — settings button, first control in the filter bar */
+        #live-ohlc-btn {
+            position: relative;
+            align-self: stretch;          /* same height as the filter controls at every breakpoint */
+            min-height: 28px;
+            min-width: 30px;
+            border-radius: 5px;
+            background: var(--bg);
+            border: 1px solid var(--border2);
+            color: var(--text2);
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            transition: all .2s ease;
+            flex-shrink: 0;
+        }
+
+        #live-ohlc-btn:hover {
+            background: var(--surface2);
+            border-color: var(--text3);
+            color: var(--text);
+        }
+
+        /* Status dot: green = live data in use, amber = updating,
+           red = last update failed (old data still in use), none = parquet only */
+        #live-ohlc-btn::after {
+            content: '';
+            position: absolute;
+            top: 3px;
+            right: 3px;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: transparent;
+        }
+
+        #live-ohlc-btn[data-state="live"]::after { background: var(--pop-green); }
+        #live-ohlc-btn[data-state="busy"]::after { background: var(--pop-orange); }
+        #live-ohlc-btn[data-state="err"]::after { background: var(--pop-red); }
+
+        #live-ohlc-pop {
+            position: fixed;
+            z-index: 99990;
+            width: min(310px, calc(100vw - 32px));
+            background: var(--surface);
+            border: 1px solid var(--border2);
+            border-radius: 10px;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+            padding: 12px 14px;
+            color: var(--text);
+            font-size: 12px;
+            line-height: 1.45;
+        }
+
+        #live-ohlc-pop[hidden] { display: none; }
+        #live-ohlc-pop .lo-title { font-weight: 700; font-size: 13px; margin-bottom: 8px; }
+        #live-ohlc-pop .lo-lbl { color: var(--text3); font-size: 11px; margin: 8px 0 4px; }
+        #live-ohlc-pop label.lo-opt { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; cursor: pointer; color: var(--text2); }
+        #live-ohlc-pop label.lo-opt input { margin-top: 2px; }
+        #live-ohlc-pop label.lo-opt b { color: var(--text); font-weight: 600; }
+        #live-ohlc-pop .lo-status { margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: var(--surface2); color: var(--text2); font-size: 11px; }
+        #live-ohlc-pop .lo-status .lo-err { color: var(--pop-red); }
+        #live-ohlc-pop .lo-status .lo-ok { color: var(--pop-green); }
+        #live-ohlc-pop .lo-btn {
+            margin-top: 10px;
+            width: 100%;
+            height: 30px;
+            border-radius: 7px;
+            border: 1px solid var(--border2);
+            background: var(--surface2);
+            color: var(--text);
+            font-weight: 600;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        #live-ohlc-pop .lo-btn:disabled { opacity: 0.5; cursor: default; }
+    </style>
+
+    <script>
+        /* ══════════════════════════════════════════════════════
+           LIVE CURRENT-WEEK OHLC (Google Sheet)
+           OHLC.parquet holds the weekly history and is refreshed by hand at
+           the weekend. During the week a published Google Sheet carries the
+           running week's bar (NSE_Ticker, Date = week start, O/H/L/C/V),
+           rebuilt hourly 10:00–16:00 IST Mon–Fri. That bar is laid over the
+           parquet history in memory (window._ohlcvApplyLive) — the parquet
+           file and its IndexedDB cache are never touched.
+
+           Source (⚙ next to ↺): Google Sheet (default) or OHLC.parquet only.
+           Auto-update: Mon–Fri at HH:15 IST, 10:15 … 16:15. Also "Update now".
+
+           A failed update changes NOTHING in the session: the bars already on
+           screen stay, one toast says to check the network, and it retries
+           when the browser comes back online (and every 5 min meanwhile).
+           The last good sheet copy is kept in localStorage so a reload while
+           offline still shows the live candle.
+        ══════════════════════════════════════════════════════ */
+        (function () {
+            'use strict';
+
+            const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS9zQh0ODRibEE_sqkEN20BIpLN-HU0ILAW7V3GSbNw31rd-8lT-hfMvLSIDGJBeDAjBYpNE6N9acOb/pub?gid=0&single=true&output=csv';
+            const LS_SRC = 'sx_live_ohlc_src_v1';    // 'sheet' | 'parquet'
+            const LS_DATA = 'sx_live_ohlc_csv_v1';   // { ts, csv } — last good sheet copy
+            const IST_MS = 5.5 * 3600000;            // IST has no DST
+            const SLOT_HOURS = [10, 11, 12, 13, 14, 15, 16];
+            const SLOT_MIN = 15;                     // sheet refreshes at HH:00, fetched at HH:15
+            const RETRY_MS = 5 * 60000;
+            const FETCH_TIMEOUT_MS = 20000;
+            const MIN_ROWS = 50;                     // fewer valid rows than this = broken fetch
+            const DAY = 86400000;
+
+            const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+            const lsSet = (k, v) => { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } };
+
+            let source = lsGet(LS_SRC) === 'parquet' ? 'parquet' : 'sheet';
+            let live = null;          // last good parse: { bars, week, stamp, fetchedTs }
+            let lastOkTs = 0;         // when the sheet was last fetched successfully
+            let lastTryTs = 0;
+            let inFlight = null;
+            let failing = false, lastErr = '';
+            let lastStats = null;     // what _ohlcvApplyLive did last time
+            let started = false;
+
+            /* ── parsing ── */
+            const num = s => { const n = parseFloat(String(s == null ? '' : s).replace(/,/g, '').trim()); return isFinite(n) ? n : NaN; };
+            const toMonday = ms => ms - ((new Date(ms).getUTCDay() + 6) % 7) * DAY;
+            const isoOf = ms => new Date(ms).toISOString().slice(0, 10);
+
+            /* Week-start date → UTC midnight of that week's Monday, the same
+               instant new Date('YYYY-MM-DD') gives for the parquet dates.
+               M/D/YYYY is what the published sheet emits; when both M/D and
+               D/M are valid, the one nearer today wins (it is the CURRENT
+               week's sheet). */
+            function parseWeek(s, now) {
+                const str = String(s || '').trim();
+                let ms = NaN, m;
+                if ((m = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) {
+                    ms = Date.UTC(+m[1], +m[2] - 1, +m[3]);
+                } else if ((m = str.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/))) {
+                    const a = +m[1], b = +m[2], y = +m[3];
+                    const md = (a >= 1 && a <= 12 && b >= 1 && b <= 31) ? Date.UTC(y, a - 1, b) : NaN;
+                    const dm = (b >= 1 && b <= 12 && a >= 1 && a <= 31) ? Date.UTC(y, b - 1, a) : NaN;
+                    if (isNaN(md)) ms = dm;
+                    else if (isNaN(dm)) ms = md;
+                    else ms = Math.abs(md - now) <= Math.abs(dm - now) ? md : dm;
+                }
+                if (isNaN(ms)) return null;
+                if (ms > now + 3 * DAY) return null;   // a future week is a sheet error
+                return toMonday(ms);
+            }
+
+            // "LIVE 25-Sep 13:27 | wk 21-Sep" → sortable number, for the newest stamp
+            const MONS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+            function stampKey(s) {
+                const m = String(s).match(/(\d{1,2})-([A-Za-z]{3})\w*\s+(\d{1,2}):(\d{2})/);
+                if (!m || !MONS[m[2].toLowerCase()]) return -1;
+                return MONS[m[2].toLowerCase()] * 1e6 + (+m[1]) * 1e4 + (+m[3]) * 100 + (+m[4]);
+            }
+
+            function parseSheet(text) {
+                if (typeof parseCSV !== 'function') throw new Error('CSV parser missing');
+                const rows = parseCSV(text);
+                if (!rows.length) throw new Error('sheet is empty');
+                const keys = Object.keys(rows[0]);
+                const pick = re => keys.find(k => re.test(k.replace(/\s+/g, '')));
+                const K = {
+                    t: pick(/^(nse_?)?ticker$/i), d: pick(/^date$/i), o: pick(/^open$/i),
+                    h: pick(/^high$/i), l: pick(/^low$/i), c: pick(/^close$/i), v: pick(/^vol(ume)?$/i)
+                };
+                if (!K.t || !K.d || !K.c) throw new Error('unexpected sheet columns');
+                const now = Date.now();
+                const bars = [], weeks = {};
+                let stamp = '', stampK = -1;
+                for (let i = 0; i < rows.length; i++) {
+                    const r = rows[i];
+                    const ticker = String(r[K.t] || '').trim().toUpperCase();
+                    if (!ticker) continue;
+                    const wk = parseWeek(r[K.d], now);
+                    if (wk === null) continue;
+                    const c = num(r[K.c]);
+                    if (!(c > 0)) continue;
+                    let o = K.o ? num(r[K.o]) : NaN, h = K.h ? num(r[K.h]) : NaN, l = K.l ? num(r[K.l]) : NaN;
+                    const v = K.v ? num(r[K.v]) : 0;
+                    // Same clean-up as the parquet loader (buildIndexFromParquetRows)
+                    if (!(o > 0)) o = c;
+                    if (!(h > 0)) h = Math.max(o, c);
+                    if (!(l > 0)) l = Math.min(o, c);
+                    h = Math.max(h, o, c);
+                    l = Math.min(l, o, c);
+                    if (!(h >= l) || l <= 0) continue;
+                    bars.push({ ticker, date: new Date(wk), open: o, high: h, low: l, close: c, vol: v > 0 ? v : 0 });
+                    weeks[wk] = (weeks[wk] || 0) + 1;
+                    for (const k in r) {
+                        const val = r[k];
+                        if (val && /^LIVE\b/i.test(val)) { const sk = stampKey(val); if (sk > stampK) { stampK = sk; stamp = val.replace(/\s*\|.*$/, ''); } break; }
+                    }
+                }
+                if (bars.length < MIN_ROWS) throw new Error('sheet returned only ' + bars.length + ' valid rows');
+                let week = 0, best = 0;
+                for (const w in weeks) if (weeks[w] > best) { best = weeks[w]; week = +w; }
+                return { bars, week, stamp };
+            }
+
+            /* ── network ── */
+            async function fetchSheet() {
+                if (navigator.onLine === false) throw new Error('offline');
+                const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+                const to = ctl ? setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS) : null;
+                try {
+                    const r = await fetch(SHEET_URL + '&_ts=' + Date.now(), { cache: 'no-store', signal: ctl ? ctl.signal : undefined });
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    const text = await r.text();
+                    if (/^\s*</.test(text)) throw new Error('sheet returned a web page, not CSV');
+                    return text;
+                } catch (e) {
+                    if (e && e.name === 'AbortError') throw new Error('timed out');
+                    if (e instanceof TypeError) throw new Error('network error');
+                    throw e;
+                } finally {
+                    if (to) clearTimeout(to);
+                }
+            }
+
+            /* ── apply to the app ── */
+            const dataReady = () => {
+                try { return !!(window._ohlcvTickers && typeof allData !== 'undefined' && allData.length); } catch (e) { return false; }
+            };
+
+            // Overlay (sheet) or remove it (parquet). No recompute — callers decide.
+            function applyOverlay() {
+                if (typeof window._ohlcvApplyLive !== 'function' || !window._ohlcvTickers) return false;
+                if (source === 'sheet' && live) {
+                    lastStats = window._ohlcvApplyLive(live.bars);
+                } else {
+                    window._ohlcvRevertLive();
+                    lastStats = null;
+                }
+                return true;
+            }
+
+            /* Recompute everything derived from the weekly bars and repaint the
+               cards already on screen. Filters, sort order, "Load more" depth
+               and scroll position are left exactly as the user has them; the
+               filtered list itself refreshes on the next filter change. */
+            function refreshViews() {
+                if (!dataReady()) return;
+                try { calcOHLCVReturns(); } catch (e) { console.warn('[liveOHLC] recalculation failed:', e && e.message); }
+                if (window._chartCalcCache && typeof window._chartCalcCache.clear === 'function') window._chartCalcCache.clear();
+                const main = document.getElementById('main');
+                if (!main || main.style.display === 'none' || typeof renderCards !== 'function') return;
+                const mc = document.querySelector('.main-content');
+                const y = window.scrollY, my = mc ? mc.scrollTop : 0;
+                try { renderCards(); } catch (e) { console.warn('[liveOHLC] card repaint failed:', e && e.message); }
+                try { window.scrollTo({ top: y, behavior: 'instant' }); } catch (e) { window.scrollTo(0, y); }
+                if (mc) mc.scrollTop = my;
+            }
+
+            function notify(msg, kind) {
+                if (typeof window._sxToast === 'function') window._sxToast(msg, kind);
+                else console[kind === 'err' ? 'warn' : 'info']('[liveOHLC] ' + msg);
+            }
+
+            /* One fetch at a time. On ANY failure nothing already applied is
+               touched — only the status changes. */
+            function update(manual) {
+                if (inFlight) return inFlight;
+                if (source !== 'sheet') return Promise.resolve(false);
+                inFlight = (async () => {
+                    lastTryTs = Date.now();
+                    renderStatus();
+                    try {
+                        const text = await fetchSheet();
+                        const parsed = parseSheet(text);
+                        lastOkTs = Date.now();
+                        live = { bars: parsed.bars, week: parsed.week, stamp: parsed.stamp, fetchedTs: lastOkTs };
+                        lsSet(LS_DATA, JSON.stringify({ ts: lastOkTs, csv: text }));
+                        const wasFailing = failing;
+                        failing = false; lastErr = '';
+                        if (source === 'sheet' && applyOverlay()) refreshViews();
+                        if (manual || wasFailing) notify('Live weekly candle updated' + (live.stamp ? ' — ' + live.stamp : ''), 'ok');
+                        return true;
+                    } catch (e) {
+                        lastErr = (e && e.message) || 'unknown error';
+                        console.warn('[liveOHLC] update failed:', lastErr);
+                        if (!failing || manual) {
+                            notify('Live OHLC update failed (' + lastErr + '). Please check your network — current data is unchanged and it will update automatically once you are back online.', 'err');
+                        }
+                        failing = true;
+                        return false;
+                    } finally {
+                        inFlight = null;
+                        renderStatus();
+                    }
+                })();
+                return inFlight;
+            }
+
+            /* ── schedule: Mon–Fri, HH:15 IST for HH = 10 … 16 ── */
+            function istParts(ms) {
+                const d = new Date(ms + IST_MS);
+                return { y: d.getUTCFullYear(), m: d.getUTCMonth(), d: d.getUTCDate(), dow: d.getUTCDay() };
+            }
+            const slotAt = (p, h) => Date.UTC(p.y, p.m, p.d, h, SLOT_MIN) - IST_MS;
+            function latestDueSlot(now) {
+                const p = istParts(now);
+                if (p.dow === 0 || p.dow === 6) return 0;
+                let due = 0;
+                SLOT_HOURS.forEach(h => { const s = slotAt(p, h); if (s <= now) due = s; });
+                return due;
+            }
+            function nextSlot(now) {
+                for (let i = 0; i < 8; i++) {
+                    const p = istParts(now + i * DAY);
+                    if (p.dow === 0 || p.dow === 6) continue;
+                    for (let k = 0; k < SLOT_HOURS.length; k++) { const s = slotAt(p, SLOT_HOURS[k]); if (s > now) return s; }
+                }
+                return 0;
+            }
+
+            // Runs every minute and on wake/online; timers alone would miss a
+            // slot while the laptop slept.
+            function tick() {
+                if (source !== 'sheet' || inFlight) return;
+                const now = Date.now();
+                if (failing) {
+                    if (navigator.onLine !== false && now - lastTryTs >= RETRY_MS) update(false);
+                    return;
+                }
+                const due = latestDueSlot(now);
+                if (due && lastOkTs < due) update(false);
+            }
+
+            /* ── settings popover ── */
+            const fmtIST = ms => new Date(ms).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+            const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+            let pop = null;
+
+            function buildPop() {
+                pop = document.createElement('div');
+                pop.id = 'live-ohlc-pop';
+                pop.hidden = true;
+                pop.innerHTML =
+                    '<div class="lo-title">Weekly candle — current week</div>' +
+                    '<div class="lo-lbl">Show the current week from</div>' +
+                    '<label class="lo-opt"><input type="radio" name="lo-src" value="sheet"><span><b>Google Sheet</b> (default) — live, updates hourly Mon–Fri 10:15–16:15 IST</span></label>' +
+                    '<label class="lo-opt"><input type="radio" name="lo-src" value="parquet"><span><b>OHLC.parquet</b> only — use when the parquet already has this week</span></label>' +
+                    '<div class="lo-status" id="lo-status"></div>' +
+                    '<button class="lo-btn" id="lo-update-btn" type="button">↻ Update now</button>';
+                document.body.appendChild(pop);
+                pop.addEventListener('change', e => {
+                    if (e.target && e.target.name === 'lo-src') setSource(e.target.value);
+                });
+                pop.querySelector('#lo-update-btn').addEventListener('click', () => update(true));
+                document.addEventListener('click', e => {
+                    if (pop.hidden) return;
+                    if (pop.contains(e.target) || (e.target.closest && e.target.closest('#live-ohlc-btn'))) return;
+                    pop.hidden = true;
+                }, true);
+                document.addEventListener('keydown', e => { if (e.key === 'Escape' && pop && !pop.hidden) pop.hidden = true; });
+            }
+
+            function placePop() {
+                const btn = document.getElementById('live-ohlc-btn');
+                if (!btn || !pop) return;
+                const r = btn.getBoundingClientRect();
+                const w = pop.offsetWidth || 310;
+                const left = Math.max(16, Math.min(window.innerWidth - w - 16, r.right - w));
+                pop.style.left = left + 'px';
+                pop.style.top = (r.bottom + 8) + 'px';
+            }
+
+            function renderStatus() {
+                const btn = document.getElementById('live-ohlc-btn');
+                let state = '', tip;
+                if (source !== 'sheet') { tip = 'Current week: OHLC.parquet only'; }
+                else if (inFlight) { state = 'busy'; tip = 'Updating live weekly candle…'; }
+                else if (failing) { state = 'err'; tip = 'Live update failed — ' + lastErr + '. Retrying when back online.'; }
+                else if (live) { state = 'live'; tip = 'Current week from Google Sheet' + (live.stamp ? ' (' + live.stamp + ')' : ''); }
+                else { tip = 'Current week: waiting for Google Sheet'; }
+                if (btn) { btn.dataset.state = state; btn.title = tip; }
+                if (!pop) return;
+                pop.querySelectorAll('input[name="lo-src"]').forEach(i => { i.checked = i.value === source; });
+                const ub = pop.querySelector('#lo-update-btn');
+                ub.disabled = source !== 'sheet' || !!inFlight;
+                ub.textContent = inFlight ? 'Updating…' : '↻ Update now';
+                const lines = [];
+                if (source !== 'sheet') {
+                    lines.push('Charts and returns use OHLC.parquet only. No network requests.');
+                } else {
+                    if (live) {
+                        lines.push('<span class="lo-ok">●</span> Week of ' + esc(isoOf(live.week)) + (live.stamp ? ' · sheet ' + esc(live.stamp) : ''));
+                        lines.push('Fetched ' + esc(fmtIST(live.fetchedTs)) + ' IST');
+                        if (lastStats) {
+                            const s = lastStats;
+                            lines.push((s.appended + s.replaced) + ' tickers live (' + s.appended + ' new candle, ' + s.replaced + ' replaced)' +
+                                (s.older ? ' · ' + s.older + ' skipped (parquet is newer)' : '') +
+                                (s.noHistory ? ' · ' + s.noHistory + ' not in parquet' : ''));
+                        }
+                    } else if (!failing) {
+                        lines.push('No live data yet.');
+                    }
+                    if (failing) lines.push('<span class="lo-err">⚠ Last update failed: ' + esc(lastErr) + '.</span> Showing the previous data; will retry when back online.');
+                    const nx = nextSlot(Date.now());
+                    if (nx) lines.push('Next auto-update: ' + esc(fmtIST(nx)) + ' IST');
+                }
+                const st = pop.querySelector('#lo-status');
+                if (st) st.innerHTML = lines.join('<br>');
+            }
+
+            function setSource(s) {
+                s = s === 'parquet' ? 'parquet' : 'sheet';
+                if (s === source) return;
+                source = s;
+                lsSet(LS_SRC, s);
+                if (applyOverlay()) refreshViews();
+                if (s === 'sheet') { failing = false; update(true); }
+                renderStatus();
+            }
+
+            /* ── restore last good copy (used by loadAll before its calc) ── */
+            (function restore() {
+                const raw = lsGet(LS_DATA);
+                if (!raw) return;
+                try {
+                    const rec = JSON.parse(raw);
+                    const parsed = parseSheet(rec.csv);
+                    live = { bars: parsed.bars, week: parsed.week, stamp: parsed.stamp, fetchedTs: rec.ts || 0 };
+                    lastOkTs = rec.ts || 0;
+                } catch (e) { live = null; }
+            })();
+
+            window._liveOhlc = {
+                // loadAll(): overlay only — it runs calcOHLCVReturns itself right after
+                applyStored: function () { applyOverlay(); renderStatus(); },
+                start: function () {
+                    renderStatus();
+                    if (started) { tick(); return; }
+                    started = true;
+                    setInterval(tick, 60000);
+                    window.addEventListener('online', () => { if (failing) lastTryTs = 0; tick(); });
+                    document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+                    update(false);   // one fetch per session start, whatever the time
+                },
+                update: function () { return update(true); },
+                setSource: setSource,
+                toggleSettings: function (ev) {
+                    if (ev) ev.stopPropagation();
+                    if (!pop) buildPop();
+                    pop.hidden = !pop.hidden;
+                    if (!pop.hidden) { renderStatus(); placePop(); }
+                },
+                get source() { return source; }
+            };
+
+            function init() {
+                renderStatus();
+                // The main load may already have finished before this ran
+                if (dataReady()) { if (applyOverlay()) refreshViews(); window._liveOhlc.start(); }
+            }
+            if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+            else init();
+        })();
+    </script>
+
 
 
 
@@ -16893,19 +17371,81 @@
                {date, open, high, low, close, vol} bars on the way back in. */
             window._ohlcvPack = function () {
                 if (!_index || !_index.size) return null;
+                /* The cache holds OHLC.parquet only. A live weekly bar from
+                   the Google Sheet may be sitting on top of it (see
+                   _ohlcvApplyLive below) — it is packed as the parquet bar it
+                   replaced, or left out if it was appended. */
+                const baseOf = (tk, arr) => {
+                    const lv = (_liveIdx === _index) ? _live.get(tk) : null;
+                    if (!lv || arr[arr.length - 1] !== lv.bar) return arr;
+                    const out = arr.slice(0, -1);
+                    if (lv.replaced) out.push(lv.replaced);
+                    return out;
+                };
+                const bases = [];
                 const tickers = [], offsets = [];
                 let n = 0;
-                _index.forEach((arr, tk) => { tickers.push(tk); offsets.push(n); n += arr.length; });
+                _index.forEach((arr, tk) => { const b = baseOf(tk, arr); bases.push(b); tickers.push(tk); offsets.push(n); n += b.length; });
                 offsets.push(n);
                 const d = new Float64Array(n), o = new Float64Array(n), h = new Float64Array(n), l = new Float64Array(n), c = new Float64Array(n), v = new Float64Array(n);
                 let i = 0;
-                _index.forEach(arr => {
+                bases.forEach(arr => {
                     for (let k = 0; k < arr.length; k++, i++) {
                         const b = arr[k];
                         d[i] = b.date.getTime(); o[i] = b.open; h[i] = b.high; l[i] = b.low; c[i] = b.close; v[i] = b.vol;
                     }
                 });
                 return { v1: true, tickers, offsets: Int32Array.from(offsets), d, o, h, l, c, v };
+            };
+
+            /* ── Live current-week bar (Google Sheet) ──
+               The sheet carries ONE weekly bar per ticker for the running
+               week. It is laid over the parquet history in memory only:
+                 sheet week  > last parquet week → appended as a new candle
+                 sheet week == last parquet week → replaces that candle
+                 sheet week  < last parquet week → ignored (parquet is newer)
+               Tickers with no parquet history are skipped. Every change is
+               recorded in _live so it can be undone exactly (source switched
+               to parquet, or the next hourly update replacing it). A fresh
+               _index (refresh / cache load) starts clean, hence _liveIdx. */
+            const _live = new Map();   // TICKER → { bar, replaced: parquetBar|null }
+            let _liveIdx = null;       // the _index the entries in _live belong to
+
+            function _revertLive() {
+                if (_liveIdx && _liveIdx === _index) {
+                    _live.forEach((lv, tk) => {
+                        const arr = _index.get(tk);
+                        if (!arr || arr[arr.length - 1] !== lv.bar) return;
+                        if (lv.replaced) arr[arr.length - 1] = lv.replaced; else arr.pop();
+                    });
+                }
+                _live.clear();
+                _liveIdx = null;
+            }
+            window._ohlcvRevertLive = function () {
+                const had = _live.size > 0;
+                _revertLive();
+                return had;
+            };
+            // bars: [{ ticker, date: Date, open, high, low, close, vol }]
+            window._ohlcvApplyLive = function (bars) {
+                const st = { appended: 0, replaced: 0, older: 0, noHistory: 0 };
+                if (!_index || !_index.size || !Array.isArray(bars)) return null;
+                _revertLive();
+                _liveIdx = _index;
+                for (let k = 0; k < bars.length; k++) {
+                    const b = bars[k];
+                    const arr = _index.get(b.ticker);
+                    if (!arr || !arr.length) { st.noHistory++; continue; }
+                    if (_live.has(b.ticker)) continue; // duplicate row in the sheet: first one wins
+                    const last = arr[arr.length - 1];
+                    const lt = last.date.getTime(), t = b.date.getTime();
+                    const bar = { date: b.date, open: b.open, high: b.high, low: b.low, close: b.close, vol: b.vol };
+                    if (t > lt) { arr.push(bar); _live.set(b.ticker, { bar, replaced: null }); st.appended++; }
+                    else if (t === lt) { arr[arr.length - 1] = bar; _live.set(b.ticker, { bar, replaced: last }); st.replaced++; }
+                    else st.older++;
+                }
+                return st;
             };
             window._ohlcvInjectPacked = function (pk) {
                 try {
