@@ -21982,8 +21982,10 @@
                 map.forEach(a => a.sort((x, y) => x.ts - y.ts));
 
                 /* Intraday: the SAME person buying and selling the same stock on the
-                   same day (bulk / block — the feeds that carry a price), with the
-                   average sell price within ±10% of the average buy. Both legs are
+                   same day (bulk / block), with the total SELL amount (₹) within
+                   ±10% of the total BUY amount. Amount, not price: a same-price buy
+                   of 10 lakh shares and sell of 1 lakh is a real position change,
+                   not a round trip — only the ₹ both sides agree on it. Both legs are
                    flagged (e.intra) and kept out of the strip; the round trips are
                    listed behind the ⚡D circle instead. */
                 const intra = new Map();
@@ -22003,13 +22005,15 @@
                             legs.forEach(e => { if (e.qty > 0 && e.price > 0) { q += e.qty; v += e.qty * e.price; } });
                             return q ? { q, p: v / q } : null;
                         };
-                        const b = avg(k.B), sl = avg(k.S);
-                        if (!b || !sl || Math.abs(sl.p - b.p) / b.p > 0.10) return;
+                        const amt = legs => legs.reduce((t, e) => t + (e.cr > 0 ? e.cr : 0), 0);
+                        const bCr = amt(k.B), sCr = amt(k.S);
+                        if (!(bCr > 0) || !(sCr > 0) || Math.abs(sCr - bCr) / Math.max(bCr, sCr) > 0.10) return;
+                        const b = avg(k.B) || { q: 0, p: 0 }, sl = avg(k.S) || { q: 0, p: 0 };
                         k.B.concat(k.S).forEach(e => { e.intra = true; });
                         let list = intra.get(tk);
                         if (!list) intra.set(tk, list = []);
                         const srcs = [...new Set(k.B.concat(k.S).map(e => e.src))].join('+');
-                        list.push({ ts: k.B[0].ts, who: k.B[0].who, src: srcs, bq: b.q, bp: b.p, sq: sl.q, sp: sl.p, cr: b.q * b.p / 1e7, pct: (sl.p / b.p - 1) * 100 });
+                        list.push({ ts: k.B[0].ts, who: k.B[0].who, src: srcs, bq: b.q, bp: b.p, sq: sl.q, sp: sl.p, cr: bCr, scr: sCr, pct: b.p > 0 && sl.p > 0 ? (sl.p / b.p - 1) * 100 : NaN });
                     });
                 });
                 intra.forEach(list => list.sort((x, y) => y.ts - x.ts));
@@ -22032,15 +22036,17 @@
                 const esc = t => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
                 const px = v => v >= 1000 ? Math.round(v).toLocaleString('en-IN') : v.toFixed(v < 10 ? 2 : 1);
                 const head = `<div style="margin-bottom:5px;color:#a5b4fc;font-weight:700">⚡ Intraday — ${pairs.length} round trip${pairs.length === 1 ? '' : 's'} in view</div>` +
-                    '<div style="margin-bottom:6px;opacity:.65;font-size:10px">Same person bought and sold the same day, sell price within ±10% of buy. Hidden from the strip.</div>';
+                    '<div style="margin-bottom:6px;opacity:.65;font-size:10px">Same person bought and sold the same day, sell amount (₹) within ±10% of buy amount. Hidden from the strip.</div>';
                 if (!pairs.length) return head + '<span style="opacity:.6">None in the visible range.</span>';
                 const rows = pairs.map(x => {
                     const date = new Date(x.ts).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' });
-                    const pc = x.pct;
+                    // amount gap: sell ₹ vs buy ₹ — the number that made this a round trip
+                    const pc = (x.scr / x.cr - 1) * 100;
+                    const leg = (q, p, cr) => (q > 0 && p > 0 ? `${Math.round(q).toLocaleString('en-IN')} @ ${px(p)} · ` : '') + `₹${_dealFmtCr(cr)} Cr`;
                     return `<span>${esc(date)} · ${esc(x.src)} · ${esc(x.who || '—')}<br>` +
-                        `&nbsp;&nbsp;<span style="color:#00e676">B ${Math.round(x.bq).toLocaleString('en-IN')} @ ${px(x.bp)}</span> → ` +
-                        `<span style="color:#ff4d4f">S ${Math.round(x.sq).toLocaleString('en-IN')} @ ${px(x.sp)}</span> · ₹${_dealFmtCr(x.cr)} Cr · ` +
-                        `<span style="color:${pc >= 0 ? '#00e676' : '#ff4d4f'}">${pc >= 0 ? '+' : ''}${pc.toFixed(2)}%</span></span>`;
+                        `&nbsp;&nbsp;<span style="color:#00e676">B ${leg(x.bq, x.bp, x.cr)}</span> → ` +
+                        `<span style="color:#ff4d4f">S ${leg(x.sq, x.sp, x.scr)}</span> · ` +
+                        `<span style="opacity:.8">amount ${pc >= 0 ? '+' : ''}${pc.toFixed(1)}%</span></span>`;
                 });
                 return head + rows.join('<br>');
             }
@@ -22076,6 +22082,16 @@
             // Green buy, red sell, orange both, grey other. A week with any insider
             // trade sparkles (_fsDealSparks) instead of changing colour.
             const _DEAL_COL = { B: '#00e676', S: '#ff4d4f', M: '#f59e0b', N: '#9ca3af' };
+            /* ♛ Superman week = gold crown: the same notable-investor list the Deals
+               pane's Superman button filters on (matchesSuperman, via _daInternal).
+               Memoised on the event; left undecided until that script is up. */
+            const _SM_COL = '#facc15';
+            function _fsIsSm(e) {
+                if (e.sm !== undefined) return e.sm;
+                const f = window._daInternal && window._daInternal.matchesSuperman;
+                if (typeof f !== 'function') return false;
+                return (e.sm = !!f(e.who));
+            }
             const _dealEvCol = e => _DEAL_COL[e.side];
             const _dealFmtCr = v => v >= 100 ? Math.round(v).toLocaleString('en-IN') : v >= 1 ? v.toFixed(1) : v.toFixed(2);
 
@@ -22091,6 +22107,7 @@
                Particle colours follow the circle: green buy, pink sell, amber both. */
             const _SPARK_COLS = { B: ['#0FFF50', '#7CFFB2'], S: ['#F6339A', '#fda4d5'], M: ['#f59e0b', '#fcd34d'] };
             function _fsDrawSpark(ctx, sp, t, frozen) {
+                if (sp.crown) { _fsDrawCrownSpark(ctx, sp, t, frozen); return; }
                 const CYCLE_MS = 1400, BURST_MS = 500;
                 let progress;
                 if (frozen) progress = 0.45;
@@ -22113,21 +22130,74 @@
                 ctx.globalAlpha = 1;
             }
 
-            /* ♛ Insider badge: gold disc on the circle's upper-right edge; on strips
-               big enough a dark crown is drawn inside it, on tiny card strips it is
-               a plain gold dot. Static — readable at a glance and in screenshots. */
-            /* ♛ Insider crest (Real Madrid style): the week's circle gets a gold ring
-               and a gold three-point crown — ball tips and a band — sitting on its top
-               edge. (x, cy, r) is the insider circle, drawn smaller and lower than a
+            /* ♛ Superman crown sparkle: gold glints that rise off the crown. Each of
+               the three prong tips fires in turn — a four-point star grows, drifts
+               upward and fades — while a fan of gold particles bursts up and out from
+               the crown's band. Same 1400 ms loop and per-week stagger as the volume
+               milestone sparks; (sp.x, sp.y, sp.r) is the crowned circle. */
+            function _fsDrawCrownSpark(ctx, sp, t, frozen) {
+                const CYCLE_MS = 1400, LIFE_MS = 620;
+                const r = sp.r, w = r * 2.1, h = r * 1.15;
+                const base = sp.y - r + r * 0.32, top = base - h;
+                const tips = [[sp.x - w / 2, top + h * 0.28], [sp.x, top], [sp.x + w / 2, top + h * 0.28]];
+                const star = (px, py, size, alpha) => {
+                    ctx.globalAlpha = alpha;
+                    ctx.fillStyle = '#fffbe6';
+                    ctx.beginPath();
+                    ctx.moveTo(px, py - size); ctx.lineTo(px + size * 0.28, py);
+                    ctx.lineTo(px, py + size); ctx.lineTo(px - size * 0.28, py);
+                    ctx.closePath(); ctx.fill();
+                    ctx.beginPath();
+                    ctx.moveTo(px - size, py); ctx.lineTo(px, py - size * 0.28);
+                    ctx.lineTo(px + size, py); ctx.lineTo(px, py + size * 0.28);
+                    ctx.closePath(); ctx.fill();
+                    ctx.fillStyle = '#facc15';
+                    ctx.beginPath(); ctx.arc(px, py, Math.max(0.6, size * 0.28), 0, Math.PI * 2); ctx.fill();
+                };
+                const at = off => {
+                    if (frozen) return 0.45;
+                    const ph = (t + (sp.idx * 233) % CYCLE_MS + off) % CYCLE_MS;
+                    return ph < LIFE_MS ? ph / LIFE_MS : -1;
+                };
+                // glints on the prong tips, one after another
+                tips.forEach((p, k) => {
+                    const pr = at(k * 420);
+                    if (pr < 0) return;
+                    star(p[0], Math.max(1.5, p[1] - pr * 4), 1 + Math.sin(pr * Math.PI) * 2.6, Math.sin(pr * Math.PI));
+                });
+                // gold fan bursting up and out from the band
+                const pr = at(0);
+                if (pr >= 0) {
+                    const cols = ['#fde047', '#fff7c2', '#facc15'];
+                    for (let i = 0; i < 6; i++) {
+                        const a = Math.PI + (i + 0.5) / 6 * Math.PI;   // upper half only
+                        const d = w * 0.45 + pr * 9;
+                        ctx.globalAlpha = Math.max(0, 1 - pr);
+                        ctx.fillStyle = cols[i % cols.length];
+                        ctx.beginPath();
+                        ctx.arc(sp.x + Math.cos(a) * d, base - h * 0.4 + Math.sin(a) * d * 0.55, 1.5, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+                ctx.globalAlpha = 1;
+            }
+
+            /* ♛ Crest (Real Madrid style): the week's circle gets a ring and a
+               three-point crown — ball tips and a band — sitting on its top edge.
+               (x, cy, r) is the crowned circle, drawn smaller and lower than a
                normal one to leave room for the crown in the strip. */
-            function _fsDrawCrown(ctx, x, cy, r, grey) {
-                // grey = insider filings that are not trades (ESOP, pledge, gift …)
-                const C = grey
-                    ? { ring: '#9ca3af', g0: '#f3f4f6', g1: '#9ca3af', g2: '#4b5563', band: 'rgba(40,40,48,0.9)', tip: '#e5e7eb' }
-                    : { ring: '#facc15', g0: '#fef08a', g1: '#facc15', g2: '#ca8a04', band: 'rgba(80,50,0,0.9)', tip: '#fef08a' };
+            /* kind: 'gold' Superman trade, 'grey' any insider filing (trade or not).
+               ringCol overrides the ring — a week that is both Superman and insider
+               gets the gold crown with the grey insider ring, so both still read. */
+            const _CROWN_PAL = {
+                gold: { ring: '#facc15', g0: '#fef08a', g1: '#facc15', g2: '#ca8a04', band: 'rgba(80,50,0,0.9)', tip: '#fef08a' },
+                grey: { ring: '#9ca3af', g0: '#f3f4f6', g1: '#9ca3af', g2: '#4b5563', band: 'rgba(40,40,48,0.9)', tip: '#e5e7eb' }
+            };
+            function _fsDrawCrown(ctx, x, cy, r, kind, ringCol) {
+                const C = _CROWN_PAL[kind] || _CROWN_PAL.grey;
                 // ring round the circle
                 ctx.beginPath(); ctx.arc(x, cy, r + 0.6, 0, Math.PI * 2);
-                ctx.lineWidth = 1.3; ctx.strokeStyle = C.ring; ctx.stroke();
+                ctx.lineWidth = 1.3; ctx.strokeStyle = ringCol || C.ring; ctx.stroke();
                 // crown above, its band overlapping the circle's top
                 const w = r * 2.1, h = r * 1.15;
                 const base = cy - r + r * 0.32, top = base - h;
@@ -22211,7 +22281,7 @@
                     const val = e.cr > 0 ? '₹' + _dealFmtCr(e.cr) + ' Cr' : e.est > 0 ? '≈₹' + _dealFmtCr(e.est) + ' Cr' : '';
                     const sh = e.src === 'SAST' && e.qty > 0 ? Math.round(e.qty).toLocaleString('en-IN') + ' sh' + (isFinite(e.pct) ? ' (' + e.pct + '%)' : '') : '';
                     const date = new Date(e.ts).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' });
-                    return `<span style="color:${_dealEvCol(e)}">${e.src === 'I' ? '♛ ' : ''}${esc(date)} · ${e.src === 'I' ? 'INSIDER' : e.src} ${esc(what)}` +
+                    return `<span style="color:${_dealEvCol(e)}">${e.side !== 'N' && _fsIsSm(e) ? '🦸 ' : ''}${e.src === 'I' ? '♛ ' : ''}${esc(date)} · ${e.src === 'I' ? 'INSIDER' : e.src} ${esc(what)}` +
                         (val ? ' · ' + val : '') + (sh ? ' · ' + sh : '') + ` · ${esc(e.who || '—')}` +
                         (e.src === 'I' && e.role ? ` <span style="opacity:.7">(${esc(e.role)})</span>` : '') + '</span>';
                 });
@@ -22219,7 +22289,9 @@
                 const foot = [];
                 if (g.B || g.S) foot.push(`<b style="color:${net >= 0 ? _DEAL_COL.B : _DEAL_COL.S}">Net ${net >= 0 ? '+' : '−'}₹${_dealFmtCr(Math.abs(net))} Cr</b> <span style="opacity:.7">(buy ₹${_dealFmtCr(bCr)} · sell ₹${_dealFmtCr(sCr)})</span>`);
                 if (g.N) foot.push(`<span style="color:${_DEAL_COL.N}">${g.N.list.length} other (ESOP / pledge / gift / off-market …) — not in net</span>`);
+                const nSm = all.filter(e => e.side !== 'N' && _fsIsSm(e)).length;
                 const hint = `<div class="deal-tip-hint">${all.length} deal${all.length === 1 ? '' : 's'} this week` +
+                    (nSm ? ` · <span style="color:${_SM_COL}">♛ ${nSm} Superman</span>` : '') +
                     (all.length > 8 ? ' · move onto this list to scroll' : '') + '</div>';
                 return hint + rows.join('<br>') + (foot.length ? '<div style="margin-top:5px;padding-top:5px;border-top:1px solid rgba(255,255,255,0.12)">' + foot.join('<br>') + '</div>' : '');
             }
@@ -23217,7 +23289,7 @@
                 // Downtrend (line rides above price as resistance) = GREEN, per user preference.
                 // Multiplier is user-selectable (2x/3x) via #fs-atr-mult-toggle.
                 if (isFs && _fsIndOn(isFs, 'st') && window._fhTickers && window._fhTickers.H && window._fhTickers.H.has(UC) && raw.length > 1) {
-                    const ST_MULT = window._fsAtrMult || 3;
+                    const ST_MULT = window._fsAtrMult || 2;
                     const lastAbsIdx = actualStart + raw.length - 1;
                     // Walk back far enough before the visible window to seed the band/trend state with real
                     // history, so the line doesn't reset/flip arbitrarily at the left edge of the viewed period.
@@ -24469,17 +24541,26 @@
                             return r;
                         };
                         const sparks = [], crowns = [];
-                        groups.forEach((g, i) => {
+                        // Superman weeks are painted last, so where circles overlap
+                        // theirs (and its crown) sit on top
+                        const smWeek = g => [].concat(g.B ? g.B.list : [], g.S ? g.S.list : []).some(_fsIsSm);
+                        [...groups].sort((a, b) => smWeek(a[1]) - smWeek(b[1])).forEach(([i, g]) => {
                             const x = toX(i);
                             let r = 0;
                             if (g.B || g.S) {
                                 const trades = [].concat(g.B ? g.B.list : [], g.S ? g.S.list : []);
-                                if (trades.some(e => e.src === 'I')) {
-                                    // ♛ insider week: smaller, lower circle with the crown on top
+                                const sm = trades.some(_fsIsSm);
+                                const ins = trades.some(e => e.src === 'I');
+                                if (ins || sm) {
+                                    // ♛ crowned week: smaller, lower circle with the crown on top —
+                                    // gold = Superman, grey = insider (gold crown + grey ring = both)
                                     const cr = R * 0.72, cy = tradeY + R * 0.28;
                                     circle(x, trades, null, cy, cr);
                                     r = R;
-                                    crowns.push({ x, cy, r: cr });   // crown drawn after the ⚡D backdrop
+                                    // crown drawn after the ⚡D backdrop
+                                    crowns.push({ x, cy, r: cr, kind: sm ? 'gold' : 'grey', ring: sm && ins ? _CROWN_PAL.grey.ring : null });
+                                    // Superman week: gold glints rise off the crown (animated)
+                                    if (sm) sparks.push({ x, y: cy, r: cr, idx: i, crown: true });
                                 } else r = circle(x, trades);
                             }
                             if (g.N) {
@@ -24489,7 +24570,7 @@
                                     if (g.N.list.some(e => e.src === 'I')) {
                                         const cr = R * 0.72, cy = tradeY + R * 0.28;
                                         circle(x, g.N.list, _DEAL_COL.N, cy, cr);
-                                        crowns.push({ x, cy, r: cr, grey: true });
+                                        crowns.push({ x, cy, r: cr, kind: 'grey' });
                                         r = R;
                                     } else r = circle(x, g.N.list, _DEAL_COL.N);
                                 } else {
@@ -24533,7 +24614,7 @@
                             // circles under the backdrop are hidden, so they are not hoverable or sparkling
                             for (let k = balls.length - 1; k >= 0; k--) if (balls[k].x < right) balls.splice(k, 1);
                             for (let k = sparks.length - 1; k >= 0; k--) if (sparks[k].x < right) sparks.splice(k, 1);
-                            crowns.forEach(c => { if (c.x >= right) _fsDrawCrown(dc, c.x, c.cy, c.r, c.grey); });
+                            crowns.forEach(c => { if (c.x >= right) _fsDrawCrown(dc, c.x, c.cy, c.r, c.kind, c.ring); });
                         }
 
                         dealCv._balls = balls;
@@ -38349,8 +38430,8 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                         <button class="fs-ind-btn" data-ind="st" onclick="window.fsToggleIndicator('st')" title="ATR SuperTrend band (Holdings only)">SuperTrend</button>
                         <!-- ATR multiplier for the SuperTrend band (shown only when the ticker is marked HOLD) -->
                         <span id="fs-atr-mult-toggle" style="display:none; gap:3px; align-items:center;">
-                            <button id="fs-atr-2x" class="fs-ind-btn fs-atr-btn" onclick="window.setFsAtrMult(2)" title="2x ATR SuperTrend">2x</button>
-                            <button id="fs-atr-3x" class="fs-ind-btn fs-atr-btn active-idx-btn" onclick="window.setFsAtrMult(3)" title="3x ATR SuperTrend (default)">3x</button>
+                            <button id="fs-atr-2x" class="fs-ind-btn fs-atr-btn active-idx-btn" onclick="window.setFsAtrMult(2)" title="2x ATR SuperTrend (default)">2x</button>
+                            <button id="fs-atr-3x" class="fs-ind-btn fs-atr-btn" onclick="window.setFsAtrMult(3)" title="3x ATR SuperTrend">3x</button>
                         </span>
                         <button class="fs-ind-btn" data-ind="idx" onclick="window.fsToggleIndicator('idx')" title="Benchmark index line">Index</button>
                         <button class="fs-ind-btn" data-ind="vol" onclick="window.fsToggleIndicator('vol')" title="Volume bars + 9MA + Q/Y/E markers at the bottom of the price chart">Volume</button>
@@ -38358,7 +38439,7 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                         <button class="fs-ind-btn" data-ind="ad" onclick="window.fsToggleIndicator('ad')" title="A/D and OBV pane">A/D · OBV</button>
                         <button class="fs-ind-btn" data-ind="rs" onclick="window.fsToggleIndicator('rs')" title="Deliv % / Deliv Vol / MRS pane">Deliv · MRS</button>
                         <button class="fs-ind-btn" data-ind="trades" style="color:#00e676;" onclick="window.fsToggleIndicator('trades')" title="Your BUY (▲ below low) / SELL (▼ above high) fills from the trade log — units only; hover a pill for price and every fill."><i class="fs-ind-dot"></i>Trades</button>
-                        <button class="fs-ind-btn" data-ind="deals" style="color:#22d3ee;" onclick="window.fsToggleIndicator('deals')" title="Deals strip at the bottom — all four Deals-pane feeds. Green = buy / acquisition, red = sell, orange = both; ♛ gold crown on a circle = the week includes an insider buy or sell; grey crown on a grey circle = insider filings that are not trades (ESOP, pledge, gift …). Number in a circle = trades that week (SAST ₹ ≈ qty × that week's close). Grey circle / badge = other disclosures (ESOP, pledge, gift, off-market — not in net). ⚡D next to the label = intraday round trips (same person buys and sells the same day within ±10% price) — hidden from the strip, click it to list them. Hover or tap for who, role, ₹ Cr and the net."><i class="fs-ind-dot"></i>Deals</button>
+                        <button class="fs-ind-btn" data-ind="deals" style="color:#22d3ee;" onclick="window.fsToggleIndicator('deals')" title="Deals strip at the bottom — all four Deals-pane feeds. Green = buy / acquisition, red = sell, orange = both; ♛ grey crown = the week includes an insider filing (buy, sell, ESOP, pledge, gift …); ♛ gold crown = a Superman investor traded that week (same list as the Deals pane's Superman filter; gold crown with a grey ring = Superman and insider in the same week; 🦸 marks them in the list). Number in a circle = trades that week (SAST ₹ ≈ qty × that week's close). Grey circle / badge = other disclosures (ESOP, pledge, gift, off-market — not in net). ⚡D next to the label = intraday round trips (same person buys and sells the same day, sell ₹ amount within ±10% of buy ₹ amount) — hidden from the strip, click it to list them. Hover or tap for who, role, ₹ Cr and the net."><i class="fs-ind-dot"></i>Deals</button>
                     </div>
                 </div>
             </div>
