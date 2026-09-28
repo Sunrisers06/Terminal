@@ -11053,6 +11053,78 @@
         }
 
         let selectedCardTicker = null;
+        /* Tech Score box (score + σ / R² / V / 1Y + sector rank). Shared by the
+           company card and the full chart's multi-chart grid boxes; the grid
+           passes { fin: true } to swap the 2×2 for NP / EPS / EBIT / SALE
+           (quarterly-result performance, coloured as in the full chart's
+           mini financial card). */
+        function techScoreBoxHtml(r, opts) {
+            const fin = !!(opts && opts.fin);
+            if (!r) return '';
+            const finVals = fin ? [
+                ['NP', r['Net Profit Performance'], 'Performance', 'Net Profit Performance'],
+                ['EPS', isNaN(r._eps) ? '' : r._eps, 'EPS Rank', 'EPS Rank'],
+                ['EBIT', r['EBITDA Performance'], 'Performance', 'EBITDA Performance'],
+                ['SALE', r['Revenue Performance'], 'Performance', 'Revenue Performance']
+            ] : null;
+            const hasFin = fin && finVals.some(f => f[1] !== '' && f[1] !== undefined && f[1] !== null);
+            if (!r._techScore && !hasFin) return '';
+            const sc = parseFloat(r._techScore);
+            const scCls = isNaN(sc) ? 'gray' : (sc >= 70 ? 'green' : (sc >= 40 ? 'orange' : 'red'));
+            const scDisp = isNaN(sc) ? '-' : Math.round(sc);
+
+            const an = parseFloat(r._techStDev) * 100;
+            const anCls = isNaN(an) ? 'gray' : (an <= 20 ? 'green' : (an <= 40 ? 'orange' : 'red'));
+            const anDisp = isNaN(an) ? '-' : Math.round(an);
+
+            const r2 = parseFloat(r._techR2) * 100;
+            const r2Cls = isNaN(r2) ? 'gray' : (r2 < 50 ? 'red' : (r2 < 70 ? 'orange' : 'green'));
+            const r2Disp = isNaN(r2) ? '-' : Math.round(r2);
+
+            const vol = parseFloat(r._techVol);
+            const volCls = isNaN(vol) ? 'gray' : (vol >= 1.8 ? 'green' : (vol >= 1 ? 'orange' : 'red'));
+            const volDisp = isNaN(vol) ? '-' : vol.toFixed(1);
+
+            const p52 = parseFloat(r._tech52w);
+            const p52Cls = isNaN(p52) ? 'gray' : (p52 >= 90 ? 'green' : (p52 >= 70 ? 'orange' : 'red'));
+            const p52Disp = isNaN(p52) ? '-' : Math.round(p52);
+
+            const sRnk = parseFloat(r._sectorRank);
+            const sRnkCls = isNaN(sRnk) ? 'gray' : (sRnk <= 5 ? 'green' : (sRnk <= 10 ? 'blue' : (sRnk <= 15 ? 'orange' : 'red')));
+            const sRnkDisp = isNaN(sRnk) ? '-' : Math.round(sRnk);
+
+            // Dynamic font size: shrinks for longer values to stay within box
+            const dynFs = (val, base) => { const l = String(val).length; return l <= 2 ? base : l === 3 ? Math.round(base * 0.82) : Math.round(base * 0.68); };
+
+            return `
+        <div class="tech-score-box">
+          <div class="iscore ${scCls}" style="width: 34px; height: 34px; padding: 4px; box-sizing: border-box; margin: 0; overflow: hidden;">
+            <span class="iscore-val" style="font-size: ${dynFs(scDisp, 20)}px; font-weight: 800; line-height: 1;">${scDisp}</span>
+          </div>
+          <div class="ts-grid" style="position: relative;">
+            ${fin ? finVals.map((f, i) => {
+                const has = f[1] !== '' && f[1] !== undefined && f[1] !== null && !isNaN(parseFloat(f[1]));
+                const cls = has ? getChipColor(f[2], f[1]) : 'gray';
+                const disp = has ? fmtWhole(f[1]) : '-';
+                // Labels sit on the outer edges (top row: top, bottom row: bottom)
+                // so the Sector Rank badge in the middle never covers them.
+                const align = i % 2 === 0 ? 'flex-start' : 'flex-end';
+                const dir = i < 2 ? 'column' : 'column-reverse';
+                return `<div class="iscore ${cls}" title="${f[3]}" style="width: 34px; height: 34px; min-width: 0; padding: 3px 4px; box-sizing: border-box; margin: 0; flex-direction: ${dir}; justify-content: space-between; align-items: ${align}; overflow: hidden;"><span class="iscore-label" style="font-size: 9px; line-height: 1; font-weight: 800;">${f[0]}</span><span class="iscore-val" style="font-size: ${dynFs(disp, 14)}px; line-height: 1; font-weight: 800;">${disp}</span></div>`;
+            }).join('') : `
+            <div class="iscore ${anCls}" style="width: 34px; height: 34px; min-width: 0; padding: 3px 5px; box-sizing: border-box; margin: 0; justify-content: space-between; align-items: flex-start; overflow: hidden;"><span class="iscore-val" style="font-size: ${dynFs(anDisp, 13)}px; line-height: 1; font-weight: 700;">${anDisp}</span><span class="iscore-label" style="font-size: 16px; line-height: 1; text-transform: none;">&sigma;</span></div>
+            <div class="iscore ${r2Cls}" style="width: 34px; height: 34px; min-width: 0; padding: 3px 5px; box-sizing: border-box; margin: 0; justify-content: space-between; align-items: flex-end; overflow: hidden;"><span class="iscore-val" style="font-size: ${dynFs(r2Disp, 13)}px; line-height: 1; font-weight: 700;">${r2Disp}</span><span class="iscore-label" style="font-size: 14px; line-height: 1; text-transform: none;">R&sup2;</span></div>
+            <div class="iscore ${volCls}" style="width: 34px; height: 34px; min-width: 0; padding: 3px 5px; box-sizing: border-box; margin: 0; justify-content: space-between; align-items: flex-start; overflow: hidden;"><span class="iscore-label" style="font-size: 13px; line-height: 1;">V</span><span class="iscore-val" style="font-size: ${dynFs(volDisp, 13)}px; line-height: 1; font-weight: 700;">${volDisp}</span></div>
+            <div class="iscore ${p52Cls}" style="width: 34px; height: 34px; min-width: 0; padding: 3px 5px; box-sizing: border-box; margin: 0; justify-content: space-between; align-items: flex-end; overflow: hidden;"><span class="iscore-label" style="font-size: 11px; line-height: 1;">1Y</span><span class="iscore-val" style="font-size: ${dynFs(p52Disp, 13)}px; line-height: 1; font-weight: 700;">${p52Disp}</span></div>`}
+            ${!isNaN(sRnk) ? `<div class="iscore ${sRnkCls}" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 24px; height: 24px; min-width: 0; box-sizing: border-box; margin: 0; display: flex; align-items: center; justify-content: center; padding: 0; border: 1.5px solid var(--bg-card); border-radius: 4px; z-index: 5; box-shadow: 0 1px 3px rgba(0,0,0,0.5);" title="Sector Rank">
+              <span class="iscore-val" style="font-size: 14px; line-height: 1; margin: 0; font-weight: 800;">${sRnkDisp}</span>
+            </div>` : ''}
+          </div>
+        </div>
+        `;
+        }
+        window.techScoreBoxHtml = techScoreBoxHtml;
+
         function buildCard(r, idx) {
             const score = r._score, si = SI[score];
 
@@ -11172,51 +11244,7 @@
           ${(r['Base_Stage_Weekly'] || r['Base_Status_Weekly'] || r['Base_Type_Weekly']) ? `<div class="co-base-row">${r['Base_Stage_Weekly'] ? `<span class="base-tag base-stage">Stage ${escHtml(r['Base_Stage_Weekly'])}</span>` : ''} ${r['Base_Status_Weekly'] ? `<span class="base-tag base-status">${escHtml(r['Base_Status_Weekly'])}</span>` : ''} ${r['Base_Type_Weekly'] ? `<span class="base-tag base-type">${escHtml(r['Base_Type_Weekly'])}</span>` : ''}</div>` : ''}
         </div>
         ${(() => { const _tk2 = String(r._ticker).toUpperCase(); const _sm2 = window._survMap && window._survMap[_tk2]; if (!_sm2) return ''; let _fb = ''; if (_sm2.asm) { const _isLT2 = _sm2.asm.toUpperCase().includes('LTASM'); _fb += `<span class="surv-flag ${_isLT2 ? 'surv-ltasm' : 'surv-stasm'}" title="${_sm2.asm}">⚑</span>`; } if (_sm2.esm) _fb += `<span class="surv-flag surv-esm" title="${_sm2.esm}">⚑</span>`; if (_sm2.gsm) _fb += `<span class="surv-flag surv-gsm" title="${_sm2.gsm}">⚑</span>`; if (_sm2.sme) _fb += `<span class="surv-flag surv-sme" title="${_sm2.sme}">⚑</span>`; return _fb ? `<div class="surv-flags-col">${_fb}</div>` : ''; })()}
-        ${r._techScore ? (() => {
-                    const sc = parseFloat(r._techScore);
-                    const scCls = isNaN(sc) ? 'gray' : (sc >= 70 ? 'green' : (sc >= 40 ? 'orange' : 'red'));
-                    const scDisp = isNaN(sc) ? '-' : Math.round(sc);
-
-                    const an = parseFloat(r._techStDev) * 100;
-                    const anCls = isNaN(an) ? 'gray' : (an <= 20 ? 'green' : (an <= 40 ? 'orange' : 'red'));
-                    const anDisp = isNaN(an) ? '-' : Math.round(an);
-
-                    const r2 = parseFloat(r._techR2) * 100;
-                    const r2Cls = isNaN(r2) ? 'gray' : (r2 < 50 ? 'red' : (r2 < 70 ? 'orange' : 'green'));
-                    const r2Disp = isNaN(r2) ? '-' : Math.round(r2);
-
-                    const vol = parseFloat(r._techVol);
-                    const volCls = isNaN(vol) ? 'gray' : (vol >= 1.8 ? 'green' : (vol >= 1 ? 'orange' : 'red'));
-                    const volDisp = isNaN(vol) ? '-' : vol.toFixed(1);
-
-                    const p52 = parseFloat(r._tech52w);
-                    const p52Cls = isNaN(p52) ? 'gray' : (p52 >= 90 ? 'green' : (p52 >= 70 ? 'orange' : 'red'));
-                    const p52Disp = isNaN(p52) ? '-' : Math.round(p52);
-
-                    const sRnk = parseFloat(r._sectorRank);
-                    const sRnkCls = isNaN(sRnk) ? 'gray' : (sRnk <= 5 ? 'green' : (sRnk <= 10 ? 'blue' : (sRnk <= 15 ? 'orange' : 'red')));
-                    const sRnkDisp = isNaN(sRnk) ? '-' : Math.round(sRnk);
-
-                    // Dynamic font size: shrinks for longer values to stay within box
-                    const dynFs = (val, base) => { const l = String(val).length; return l <= 2 ? base : l === 3 ? Math.round(base * 0.82) : Math.round(base * 0.68); };
-
-                    return `
-        <div class="tech-score-box">
-          <div class="iscore ${scCls}" style="width: 34px; height: 34px; padding: 4px; box-sizing: border-box; margin: 0; overflow: hidden;">
-            <span class="iscore-val" style="font-size: ${dynFs(scDisp, 20)}px; font-weight: 800; line-height: 1;">${scDisp}</span>
-          </div>
-          <div class="ts-grid" style="position: relative;">
-            <div class="iscore ${anCls}" style="width: 34px; height: 34px; min-width: 0; padding: 3px 5px; box-sizing: border-box; margin: 0; justify-content: space-between; align-items: flex-start; overflow: hidden;"><span class="iscore-val" style="font-size: ${dynFs(anDisp, 13)}px; line-height: 1; font-weight: 700;">${anDisp}</span><span class="iscore-label" style="font-size: 16px; line-height: 1; text-transform: none;">&sigma;</span></div>
-            <div class="iscore ${r2Cls}" style="width: 34px; height: 34px; min-width: 0; padding: 3px 5px; box-sizing: border-box; margin: 0; justify-content: space-between; align-items: flex-end; overflow: hidden;"><span class="iscore-val" style="font-size: ${dynFs(r2Disp, 13)}px; line-height: 1; font-weight: 700;">${r2Disp}</span><span class="iscore-label" style="font-size: 14px; line-height: 1; text-transform: none;">R&sup2;</span></div>
-            <div class="iscore ${volCls}" style="width: 34px; height: 34px; min-width: 0; padding: 3px 5px; box-sizing: border-box; margin: 0; justify-content: space-between; align-items: flex-start; overflow: hidden;"><span class="iscore-label" style="font-size: 13px; line-height: 1;">V</span><span class="iscore-val" style="font-size: ${dynFs(volDisp, 13)}px; line-height: 1; font-weight: 700;">${volDisp}</span></div>
-            <div class="iscore ${p52Cls}" style="width: 34px; height: 34px; min-width: 0; padding: 3px 5px; box-sizing: border-box; margin: 0; justify-content: space-between; align-items: flex-end; overflow: hidden;"><span class="iscore-label" style="font-size: 11px; line-height: 1;">1Y</span><span class="iscore-val" style="font-size: ${dynFs(p52Disp, 13)}px; line-height: 1; font-weight: 700;">${p52Disp}</span></div>
-            ${!isNaN(sRnk) ? `<div class="iscore ${sRnkCls}" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 24px; height: 24px; min-width: 0; box-sizing: border-box; margin: 0; display: flex; align-items: center; justify-content: center; padding: 0; border: 1.5px solid var(--bg-card); border-radius: 4px; z-index: 5; box-shadow: 0 1px 3px rgba(0,0,0,0.5);" title="Sector Rank">
-              <span class="iscore-val" style="font-size: 14px; line-height: 1; margin: 0; font-weight: 800;">${sRnkDisp}</span>
-            </div>` : ''}
-          </div>
-        </div>
-        `;
-                })() : ''}
+        ${techScoreBoxHtml(r)}
       </div>
       <div class="inline-scores">
         ${!isNaN(r._mcap) ? `<div class="iscore w-wide ${getChipColor('Market Cap', r._mcap)}"><span class="iscore-label">Mcap</span><span class="iscore-val">${fmtMcap(r._mcap)}</span></div>` : ''}
@@ -22892,6 +22920,16 @@
                     } else {
                         IH = 0; PH = remH; RSH = 0;
                     }
+                } else if (widthEl && widthEl._fsgFitH) {
+                    /* Full chart multi-chart grid cell: the cell has a fixed
+                       height, so split it instead of the card's width ratios
+                       (those would overflow a wide, short cell). 16px is left
+                       for the Deals strip. */
+                    const avail = Math.max(120, (widthEl.clientHeight || 0) - 16);
+                    VH = Math.round(avail * 0.13);
+                    IH = Math.round(avail * 0.15);
+                    PH = avail - VH - IH;
+                    RSH = 0;
                 } else {
                     PH = Math.round(W * 0.62);   // ~8:5 ratio — taller, more chart real-estate
                     VH = Math.round(W * 0.14);   // volume panel ~14% of width
@@ -23390,34 +23428,92 @@
                     pc.fillText(benchTicker, toX(raw.length - 1), toY(lastVal) - 2);
                 }
 
-                // ── Candles: all white, up hollow, down solid ──
-                raw.forEach((r, i) => {
-                    const x = toX(i);
-                    const bull = r.close >= r.open;
-                    const yH = toY(r.high), yL = toY(r.low);
-                    const yO = toY(r.open), yC = toY(r.close);
-                    const yTop = Math.min(yO, yC);
-                    const bH = Math.max(1.2, Math.abs(yC - yO));
-
-                    // Wick
-                    pc.strokeStyle = '#ffffff';
-                    pc.lineWidth = Math.max(0.7, bW * 0.15);
-                    pc.beginPath(); pc.moveTo(x, yH); pc.lineTo(x, yL); pc.stroke();
-
-                    // Body
-                    if (bull) {
-                        // Hollow up candle: fill black first to mask grid lines, then stroke white outline
-                        pc.fillStyle = '#000000';
-                        pc.fillRect(x - bW / 2, yTop, bW, bH);
-                        pc.strokeStyle = '#ffffff';
-                        pc.lineWidth = Math.max(0.8, bW * 0.15);
-                        pc.strokeRect(x - bW / 2, yTop, bW, bH);
-                    } else {
-                        // Solid down candle: solid fill white
-                        pc.fillStyle = '#ffffff';
-                        pc.fillRect(x - bW / 2, yTop, bW, bH);
+                // ── Price series — chart type from the full chart sidebar (Chart Type).
+                // Only the full chart and its grid boxes follow it; cards and
+                // pop-ups keep the classic white candles.
+                const _ct = (isFs || (widthEl && widthEl._fsgFitH)) ? (window._fsChartType || 'candle') : 'candle';
+                const _UP = '#22c55e', _DN = '#f43f5e';
+                if (_ct === 'line' || _ct === 'area') {
+                    const tracePath = () => {
+                        pc.beginPath();
+                        raw.forEach((r, i) => {
+                            const x = toX(i), y = toY(r.close);
+                            if (i === 0) pc.moveTo(x, y); else pc.lineTo(x, y);
+                        });
+                    };
+                    if (_ct === 'area' && raw.length > 1) {
+                        tracePath();
+                        pc.lineTo(toX(raw.length - 1), PP.t + pH);
+                        pc.lineTo(toX(0), PP.t + pH);
+                        pc.closePath();
+                        const g = pc.createLinearGradient(0, PP.t, 0, PP.t + pH);
+                        g.addColorStop(0, 'rgba(56, 189, 248, 0.38)');
+                        g.addColorStop(1, 'rgba(56, 189, 248, 0.02)');
+                        pc.fillStyle = g;
+                        pc.fill();
                     }
-                });
+                    tracePath();
+                    pc.strokeStyle = '#38bdf8';
+                    pc.lineWidth = isFs ? 2 : 1.6;
+                    pc.lineJoin = 'round';
+                    pc.stroke();
+                    pc.lineJoin = 'miter';
+                } else {
+                    // Heikin Ashi: smoothed candles (drawn only — prices, badges
+                    // and the crosshair readout stay on the real OHLC).
+                    let bars = raw;
+                    if (_ct === 'ha') {
+                        bars = [];
+                        let pO = NaN, pC = NaN;
+                        raw.forEach((r, i) => {
+                            const c = (r.open + r.high + r.low + r.close) / 4;
+                            const o = i === 0 ? (r.open + r.close) / 2 : (pO + pC) / 2;
+                            bars.push({ open: o, close: c, high: Math.max(r.high, o, c), low: Math.min(r.low, o, c) });
+                            pO = o; pC = c;
+                        });
+                    }
+                    const wickW = Math.max(0.7, bW * 0.15);
+                    bars.forEach((r, i) => {
+                        const x = toX(i);
+                        const bull = r.close >= r.open;
+                        const yH = toY(r.high), yL = toY(r.low);
+                        const yO = toY(r.open), yC = toY(r.close);
+                        const yTop = Math.min(yO, yC);
+                        const bH = Math.max(1.2, Math.abs(yC - yO));
+
+                        if (_ct === 'bars') {
+                            // OHLC bar: high-low line, open tick left, close tick right
+                            const tick = Math.max(2, bW / 2);
+                            pc.strokeStyle = bull ? _UP : _DN;
+                            pc.lineWidth = Math.max(1, bW * 0.2);
+                            pc.beginPath();
+                            pc.moveTo(x, yH); pc.lineTo(x, yL);
+                            pc.moveTo(x - tick, yO); pc.lineTo(x, yO);
+                            pc.moveTo(x, yC); pc.lineTo(x + tick, yC);
+                            pc.stroke();
+                            return;
+                        }
+
+                        const col = _ct === 'candle' ? '#ffffff' : (bull ? _UP : _DN);
+                        // Wick
+                        pc.strokeStyle = col;
+                        pc.lineWidth = wickW;
+                        pc.beginPath(); pc.moveTo(x, yH); pc.lineTo(x, yL); pc.stroke();
+
+                        // Body: classic / hollow → up candles hollow; colored / HA → all filled
+                        if (bull && (_ct === 'candle' || _ct === 'hollow')) {
+                            // fill black first to mask grid lines, then stroke the outline
+                            pc.fillStyle = '#000000';
+                            pc.fillRect(x - bW / 2, yTop, bW, bH);
+                            pc.strokeStyle = col;
+                            pc.lineWidth = Math.max(0.8, bW * 0.15);
+                            pc.strokeRect(x - bW / 2, yTop, bW, bH);
+                        } else {
+                            pc.fillStyle = col;
+                            pc.fillRect(x - bW / 2, yTop, bW, bH);
+                        }
+                    });
+                }
 
                 // ── Candlestick Pattern Trainer: highlight box around the pattern candle(s) ──
                 if (isFs && window._fsCandlePatternHighlight && window._fsCandlePatternHighlight.ticker === UC) {
@@ -36247,6 +36343,393 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
         }
 
+        /* ── View options chip (duration · boxes · chart type) ── */
+        #fs-view-chip {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+            padding: 6px 10px;
+            font: inherit;
+            font-size: 11.5px;
+            font-weight: 600;
+            color: #f5f5f7;
+            background: rgba(10, 132, 255, 0.16);
+            border: 1px solid rgba(10, 132, 255, 0.45);
+            border-radius: 7px;
+            cursor: pointer;
+            box-sizing: border-box;
+            transition: background-color 0.15s;
+        }
+
+        #fs-view-chip:hover {
+            background: rgba(10, 132, 255, 0.26);
+        }
+
+        #fs-view-chip-txt {
+            flex: 1 1 auto;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            text-align: left;
+        }
+
+        .fs-view-chip-chev {
+            flex: 0 0 auto;
+            font-size: 10px;
+            opacity: 0.7;
+            transition: transform 0.15s;
+        }
+
+        #fs-view-chip[aria-expanded="true"] .fs-view-chip-chev {
+            transform: rotate(180deg);
+        }
+
+        #fs-view-opts {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        #fs-view-opts[hidden] {
+            display: none;
+        }
+
+        /* ── Multi-chart grid (full chart) ── */
+        .fs-layout-pills {
+            display: flex;
+            gap: 1px;
+            width: 100%;
+            background: rgba(118, 118, 128, 0.18);
+            border-radius: 7px;
+            padding: 2px;
+            box-sizing: border-box;
+        }
+
+        #fs-grid {
+            position: absolute;
+            inset: 0;
+            z-index: 40;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg);
+        }
+
+        #fs-grid[hidden] {
+            display: none;
+        }
+
+        #fs-grid-cells {
+            flex: 1 1 auto;
+            min-height: 0;
+            display: grid;
+            gap: 2px;
+            /* The grid's own background shows through the gaps as white lines. */
+            background: rgba(255, 255, 255, 0.8);
+        }
+
+        .fsg-cell {
+            position: relative;
+            min-width: 0;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            background: #000;
+            overflow: hidden;
+        }
+
+        /* Selected box: no frame — its title panel's left bar just gets
+           thicker (result colour, or white when the ticker has no result). */
+        .fsg-cell.fsg-sel .fsg-head {
+            position: relative;
+            padding-left: 22px;
+        }
+
+        .fsg-cell.fsg-sel .fsg-head::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 12px;
+        }
+
+        .fsg-cell.fsg-sel .fsg-head:not([data-score])::before {
+            background: #ffffff;
+        }
+
+        .fsg-cell.fsg-empty {
+            background: var(--bg);
+        }
+
+        .fsg-head {
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            height: 28px;
+            /* Extra left room: the sidebar's ‹ handle sits over the left column. */
+            padding: 0 10px 0 16px;
+            font-size: 13px;
+            background: #111827;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.3);
+            box-sizing: border-box;
+            white-space: nowrap;
+            overflow: hidden;
+            cursor: pointer;
+        }
+
+        /* Quarterly-result colour, as on the company card: left bar, tint, border. */
+        .fsg-head[data-score] {
+            position: relative;
+            /* Keeps white titles and green/red returns readable on the bright tint. */
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+        }
+
+        .fsg-head[data-score]::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 6px;
+        }
+
+        .fsg-head[data-score="4"] {
+            background: linear-gradient(90deg, rgba(34, 197, 94, 0.62), rgba(34, 197, 94, 0.36));
+            border-bottom-color: rgba(0, 230, 118, 0.9);
+        }
+
+        .fsg-head[data-score="4"]::before {
+            background: var(--pop-green);
+        }
+
+        .fsg-head[data-score="3"] {
+            background: linear-gradient(90deg, rgba(59, 130, 246, 0.62), rgba(59, 130, 246, 0.36));
+            border-bottom-color: rgba(59, 130, 246, 0.9);
+        }
+
+        .fsg-head[data-score="3"]::before {
+            background: var(--pop-blue);
+        }
+
+        .fsg-head[data-score="2"] {
+            background: linear-gradient(90deg, rgba(168, 85, 247, 0.62), rgba(168, 85, 247, 0.36));
+            border-bottom-color: rgba(168, 85, 247, 0.9);
+        }
+
+        .fsg-head[data-score="2"]::before {
+            background: var(--pop-purple);
+        }
+
+        .fsg-head[data-score="1"] {
+            background: linear-gradient(90deg, rgba(249, 115, 22, 0.62), rgba(249, 115, 22, 0.36));
+            border-bottom-color: rgba(249, 115, 22, 0.9);
+        }
+
+        .fsg-head[data-score="1"]::before {
+            background: var(--pop-orange);
+        }
+
+        .fsg-head[data-score="0"] {
+            background: linear-gradient(90deg, rgba(239, 68, 68, 0.62), rgba(239, 68, 68, 0.36));
+            border-bottom-color: rgba(255, 77, 79, 0.9);
+        }
+
+        .fsg-head[data-score="0"]::before {
+            background: var(--pop-red);
+        }
+
+        .fsg-tk {
+            font-size: 14.5px;
+            font-weight: 800;
+            color: #ffffff;
+            letter-spacing: 0.4px;
+        }
+
+        /* Favourite / Holding toggles in a grid box's title */
+        .fsg-fh {
+            flex: 0 0 auto;
+            display: inline-flex;
+            gap: 3px;
+        }
+
+        .fsg-fhbtn {
+            width: 20px;
+            height: 18px;
+            padding: 0;
+            font: inherit;
+            font-size: 10.5px;
+            font-weight: 800;
+            line-height: 16px;
+            text-align: center;
+            text-shadow: none;
+            color: #cbd5e1;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            cursor: pointer;
+            opacity: 0.55;
+            transition: opacity 0.15s, background-color 0.15s;
+        }
+
+        .fsg-fhbtn:hover {
+            opacity: 1;
+        }
+
+        .fsg-fhbtn.is-fav {
+            opacity: 1;
+            color: #fbbf24;
+            background: rgba(234, 179, 8, 0.28);
+            border-color: rgba(234, 179, 8, 0.75);
+            box-shadow: 0 0 8px rgba(234, 179, 8, 0.45);
+        }
+
+        .fsg-fhbtn.is-hold {
+            opacity: 1;
+            color: #60a5fa;
+            background: rgba(59, 130, 246, 0.28);
+            border-color: rgba(59, 130, 246, 0.75);
+            box-shadow: 0 0 8px rgba(59, 130, 246, 0.45);
+        }
+
+        .fsg-name {
+            flex: 1 1 auto;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-size: 13px;
+            font-weight: 600;
+            color: #cbd5e1;
+        }
+
+        .fsg-rets {
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-left: auto;
+            font-size: 12.5px;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Dark backing so green/red returns stay readable on the result tint. */
+        .fsg-head[data-score] .fsg-rets {
+            padding: 2px 3px 2px 7px;
+            border-radius: 5px;
+            background: rgba(0, 0, 0, 0.45);
+        }
+
+        .fsg-ret {
+            display: inline-flex;
+            align-items: baseline;
+            gap: 3px;
+        }
+
+        .fsg-rl {
+            font-size: 10.5px;
+            font-weight: 600;
+            color: #94a3b8;
+        }
+
+        .fsg-up { color: #22c55e; }
+        .fsg-dn { color: #f43f5e; }
+        .fsg-na { color: rgba(255, 255, 255, 0.3); }
+
+        /* 10W distance — same bands as the cards' 10W chip */
+        .fsg-d10 {
+            padding: 1px 6px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .fsg-d-good { color: #22c55e; }
+        .fsg-d-ok { color: #a3e635; }
+        .fsg-d-warn { color: #f59e0b; }
+        .fsg-d-bad { color: #f43f5e; }
+
+        /* Small boxes: the returns strip gets priority over the name. */
+        .fsg-compact .fsg-head {
+            gap: 5px;
+            padding-right: 5px;
+        }
+
+        .fsg-compact .fsg-tk {
+            font-size: 13px;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .fsg-compact .fsg-name,
+        .fsg-compact .fsg-pct {
+            display: none;
+        }
+
+        .fsg-compact .fsg-rets {
+            gap: 4px;
+            font-size: 11px;
+        }
+
+        .fsg-compact .fsg-rl {
+            margin-right: -1px;
+        }
+
+        .fsg-compact .fsg-fh {
+            gap: 2px;
+        }
+
+        .fsg-compact .fsg-fhbtn {
+            width: 16px;
+            height: 16px;
+            font-size: 9.5px;
+            line-height: 14px;
+        }
+
+        .fsg-compact .fsg-rl {
+            font-size: 9.5px;
+        }
+
+        .fsg-compact .fsg-d10 {
+            padding: 0 4px;
+        }
+
+        .fsg-body {
+            position: relative;
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .fsg-ts {
+            position: absolute;
+            top: 6px;
+            left: 8px;
+            z-index: 3;
+            pointer-events: none;
+            transform-origin: top left;
+        }
+
+        .fsg-ts .tech-score-box {
+            margin: 0;
+        }
+
+        .fsg-compact .fsg-ts {
+            transform: scale(0.72);
+            top: 4px;
+            left: 5px;
+        }
+
+        .fsg-body .card-chart-loading {
+            position: absolute;
+            inset: 0;
+            height: auto;
+        }
+
+
         /* Date drum trigger button */
         .fs-drum-trigger {
             width: 100%;
@@ -38131,6 +38614,15 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                         <span class="fs-gem-dot" aria-hidden="true"></span>
                     </button>
                 </div>
+                <!-- View options chip: duration, number of boxes and chart type
+                     stay folded away; the chip shows the current choice and a
+                     click opens them. Clicking anywhere else folds them again. -->
+                <button type="button" id="fs-view-chip" onclick="window.toggleFsViewOpts()"
+                    aria-expanded="false" aria-controls="fs-view-opts" title="Duration · boxes · chart type">
+                    <span id="fs-view-chip-txt">3Y · 1 chart · Candles</span>
+                    <span class="fs-view-chip-chev" aria-hidden="true">▾</span>
+                </button>
+                <div id="fs-view-opts" hidden>
                 <div class="fs-period-pills">
                     <input type="hidden" id="fs-duration-select" value="3y">
                     <button class="fs-pill" data-value="1y" onclick="window.selectFsDuration('1y')">1Y</button>
@@ -38140,6 +38632,30 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                     <button class="fs-pill" data-value="4y" onclick="window.selectFsDuration('4y')">4Y</button>
                     <button class="fs-pill" data-value="5y" onclick="window.selectFsDuration('5y')">5Y</button>
                     <button class="fs-pill" data-value="all" onclick="window.selectFsDuration('all')">A</button>
+                </div>
+                <!-- Multi-chart layout: how many charts share the screen.
+                     Boxes take the list's tickers in order, a page at a time. -->
+                <div class="fs-layout-pills" title="Chart layout — number of chart boxes (G cycles)">
+                    <button class="fs-pill active-pill" data-grid="1" onclick="window.setFsGridLayout(1)">▢</button>
+                    <button class="fs-pill" data-grid="2" onclick="window.setFsGridLayout(2)">2</button>
+                    <button class="fs-pill" data-grid="3" onclick="window.setFsGridLayout(3)">3</button>
+                    <button class="fs-pill" data-grid="4" onclick="window.setFsGridLayout(4)">4</button>
+                    <button class="fs-pill" data-grid="6" onclick="window.setFsGridLayout(6)">6</button>
+                    <button class="fs-pill" data-grid="8" onclick="window.setFsGridLayout(8)">8</button>
+                    <button class="fs-pill" data-grid="9" onclick="window.setFsGridLayout(9)">9</button>
+                </div>
+                <!-- Chart type for the full chart and every grid box (T cycles). -->
+                <div class="fs-sel-wrap" title="Chart type (T cycles)">
+                    <select id="fs-chart-type" class="fs-sel" onchange="window.setFsChartType(this.value)">
+                        <option value="candle">🕯 Candles</option>
+                        <option value="color">🕯 Colored Candles</option>
+                        <option value="hollow">☐ Hollow Candles</option>
+                        <option value="ha">🕯 Heikin Ashi</option>
+                        <option value="bars">┤ OHLC Bars</option>
+                        <option value="line">〰 Line</option>
+                        <option value="area">◭ Area</option>
+                    </select>
+                </div>
                 </div>
             </div>
 
@@ -38461,8 +38977,8 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
         </div>
 
         <!-- Right Chart Area — edge-to-edge, zero padding -->
-        <div
-            style="flex-grow:1; height:100%; overflow:hidden; display:flex; justify-content:flex-start; align-items:flex-start; background:var(--bg); box-sizing:border-box;">
+        <div id="fs-chart-area"
+            style="position:relative; flex-grow:1; height:100%; overflow:hidden; display:flex; justify-content:flex-start; align-items:flex-start; background:var(--bg); box-sizing:border-box;">
             <div id="fs-chart-wrapper"
                 style="width:100%; height:100%; max-width:none; box-sizing:border-box; position:relative; display:flex; flex-direction:column; justify-content:flex-start; align-items:flex-start;">
                 <!-- Background Ticker Watermark (Top Middle, 50% opacity) -->
@@ -38807,6 +39323,11 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
 
                 <!-- Drawing overlay -->
                 <canvas id="fs-draw-canvas"></canvas>
+            </div>
+            <!-- Multi-chart grid (sidebar → layout pills). Covers the single
+                 chart while more than one box is chosen. -->
+            <div id="fs-grid" hidden>
+                <div id="fs-grid-cells"></div>
             </div>
         </div>
 
@@ -47957,6 +48478,437 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
             syncSpark();
             renderChips();
             syncSparkVisibility();
+        })();
+    </script>
+
+    <!-- ═══ FULL CHART — MULTI-CHART GRID ═══
+         TradingView-style layouts (1/2/3/4/6/8/9 boxes). Every box shows a
+         different ticker: the boxes take the sidebar list (watchlist / index
+         order) a page at a time — with 4 boxes, tickers 1-4, then Next gives
+         5-8, and so on. The page is always the one that holds the selected
+         ticker, so the sidebar list, ▲▼, search and period pills all keep
+         working: they move the selection and the grid follows. Each box is
+         drawn by the same engine as the card charts (drawChartCore). -->
+    <script>
+        (function () {
+            const LAYOUTS = {
+                1: [1, 1], 2: [2, 1], 3: [3, 1], 4: [2, 2], 6: [3, 2], 8: [4, 2], 9: [3, 3]
+            };
+            const ORDER = [1, 2, 3, 4, 6, 8, 9];
+            const KEY = 'fs_grid_layout';
+
+            let layout = 1;
+            try { layout = parseInt(localStorage.getItem(KEY), 10) || 1; } catch (e) { }
+            if (!LAYOUTS[layout]) layout = 1;
+
+            let drawnKey = '';      // what the grid currently shows; skip identical redraws
+
+            const $ = function (id) { return document.getElementById(id); };
+            const esc = function (s) {
+                return String(s).replace(/[&<>"']/g, function (c) {
+                    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+                });
+            };
+
+            function modalOpen() {
+                const m = $('fs-chart-modal');
+                return !!(m && m.style.display === 'flex');
+            }
+            /* Replay and the trainers drive one chart; the grid steps aside
+               for them and comes back when they end. */
+            function blocked() {
+                return !!(window._fsTrainingMode || (window._fsReplay && window._fsReplay.active));
+            }
+            function gridOn() { return layout > 1 && !blocked(); }
+
+            function tickerList() {
+                const sel = $('fs-ticker-select');
+                return sel ? Array.from(sel.options, function (o) { return o.value; }) : [];
+            }
+
+            function syncPills() {
+                document.querySelectorAll('.fs-layout-pills .fs-pill').forEach(function (b) {
+                    b.classList.toggle('active-pill', +b.getAttribute('data-grid') === layout);
+                });
+            }
+
+            function showGrid(on) {
+                const g = $('fs-grid');
+                const wrap = $('fs-chart-wrapper');
+                if (!g) return;
+                if (g.hidden === !on) return;
+                g.hidden = !on;
+                if (wrap) wrap.style.visibility = on ? 'hidden' : '';
+                if (!on) {
+                    drawnKey = '';
+                    // Canvases left in the grid stay in _drawnCharts until they
+                    // are disconnected; drop them so nothing redraws off screen.
+                    const cells = $('fs-grid-cells');
+                    if (cells) cells.innerHTML = '';
+                }
+            }
+
+            /* Index_main rows come from the index-history parquet rather than
+               OHLC.parquet. Put them where drawChartCore reads (_ohlcvTickers),
+               the same way renderIndexChart's price mode does. */
+            function ensureIndexRows(tk) {
+                const map = window._ohlcvTickers;
+                const UC = String(tk).toUpperCase();
+                if (!(map instanceof Map) || map.has(UC) || typeof window._loadIndexHistory !== 'function') {
+                    return Promise.resolve();
+                }
+                return Promise.resolve(window._indexHistoryCache || window._loadIndexHistory()).then(function () {
+                    const cache = window._indexHistoryCache || {};
+                    const k = Object.keys(cache).find(function (x) { return x.toUpperCase() === UC; });
+                    if (!k || map.has(UC)) return;
+                    const rows = (cache[k] || []).map(function (r) {
+                        return {
+                            date: r.date, open: r.open ?? r.close, high: r.high ?? r.close,
+                            low: r.low ?? r.close, close: r.close, vol: r.vol ?? 0
+                        };
+                    }).filter(function (r) { return r.close > 0; });
+                    rows.sort(function (a, b) { return a.date - b.date; });
+                    if (rows.length) {
+                        map.set(UC, rows);
+                        map.set(UC + '__IDX_INJECTED__', true);
+                    }
+                });
+            }
+
+            /* Header returns, from the weekly bars the box draws:
+               1W / 1M / 3M / 6M / 1Y = 1 / 4 / 13 / 26 / 52 bars back (same
+               as the cards), and 10W = close vs its 10-week average, banded
+               like the cards' 10W signal chip. */
+            const RETS = [['1W', 1], ['1M', 4], ['3M', 13], ['6M', 26], ['1Y', 52]];
+            function retsHtml(rows) {
+                const n = rows ? rows.length : 0;
+                const last = n ? rows[n - 1].close : NaN;
+                // "%" is its own span so small boxes can drop it; -0.0 prints as 0.0.
+                const fmt = function (v) {
+                    const a = Math.abs(v).toFixed(1);
+                    return (a === '0.0' ? '' : v >= 0 ? '+' : '−') + a + '<span class="fsg-pct">%</span>';
+                };
+                let h = '';
+                RETS.forEach(function (p) {
+                    const b = n - 1 - p[1] >= 0 ? rows[n - 1 - p[1]].close : 0;
+                    const v = b ? (last / b - 1) * 100 : NaN;
+                    h += '<span class="fsg-ret"><span class="fsg-rl">' + p[0] + '</span>' +
+                        (isNaN(v) ? '<span class="fsg-na">—</span>' : '<span class="' + (v >= 0 ? 'fsg-up' : 'fsg-dn') + '">' + fmt(v) + '</span>') +
+                        '</span>';
+                });
+                let d = NaN;
+                if (n >= 10) {
+                    let sum = 0;
+                    for (let i = n - 10; i < n; i++) sum += rows[i].close;
+                    if (sum > 0) d = (last / (sum / 10) - 1) * 100;
+                }
+                const cls = isNaN(d) ? 'fsg-na' : d < 0 ? 'fsg-d-bad' : d <= 5 ? 'fsg-d-good' : d <= 15 ? 'fsg-d-ok' : d <= 25 ? 'fsg-d-warn' : 'fsg-d-bad';
+                const tip = isNaN(d) ? '' : d < 0 ? 'Below the 10-week average — trend weakening'
+                    : d <= 5 ? 'Close to the 10-week average — low-risk buy zone'
+                        : d <= 15 ? 'Healthy distance above the 10-week average'
+                            : d <= 25 ? 'Getting extended — wait for a pullback'
+                                : 'Very extended — high risk to chase';
+                h += '<span class="fsg-ret fsg-d10" title="Distance from 10-week average' + (tip ? ': ' + tip : '') + '">' +
+                    '<span class="fsg-rl">10W</span><span class="' + cls + '">' + (isNaN(d) ? '—' : fmt(d)) + '</span></span>';
+                return '<span class="fsg-rets">' + h + '</span>';
+            }
+
+            /* Quarterly-result score (0 Very Weak … 4 Best) — the colour the
+               company card and the sidebar list use for this ticker. */
+            function scoreAttr(tk) {
+                const r = window._fsRowIndex ? window._fsRowIndex().get(String(tk).toUpperCase()) : null;
+                const sc = r ? r._score : undefined;
+                if (sc === undefined || sc === null || isNaN(sc)) return '';
+                const lbl = { 0: 'Very Weak', 1: 'Weak', 2: 'Moderate', 3: 'Good', 4: 'Best' }[sc] || '';
+                return ' data-score="' + sc + '" title="Quarterly Result: ' + lbl + '"';
+            }
+
+            function headHtml(tk) {
+                const UC = tk.toUpperCase();
+                const r = window._fsRowIndex ? window._fsRowIndex().get(UC) : null;
+                const name = (window.tickerToName && (window.tickerToName[UC] || window.tickerToName[tk])) || (r ? r._coName : '') || '';
+                const rows = window._ohlcvTickers instanceof Map ? window._ohlcvTickers.get(UC) : null;
+                // F / H carry the same fav-toggle-/hold-toggle-<TICKER> classes as
+                // the card buttons, so toggleRemoteFH lights them up (is-fav /
+                // is-hold) wherever the toggle comes from.
+                const fh = window._fhTickers || {};
+                const isF = !!(fh.F && fh.F.has(UC)), isH = !!(fh.H && fh.H.has(UC));
+                const fhHtml = '<span class="fsg-fh">' +
+                    '<button type="button" class="fsg-fhbtn fav-toggle-' + esc(UC) + (isF ? ' is-fav' : '') + '" data-fh="F" title="Toggle Favorite">F</button>' +
+                    '<button type="button" class="fsg-fhbtn hold-toggle-' + esc(UC) + (isH ? ' is-hold' : '') + '" data-fh="H" title="Toggle Holding">H</button>' +
+                    '</span>';
+                return '<span class="fsg-tk">' + esc(UC) + '</span>' + fhHtml +
+                    '<span class="fsg-name" title="' + esc(name) + '">' + esc(name) + '</span>' +
+                    (rows && rows.length ? retsHtml(rows) : '');
+            }
+
+            /* The company card's Tech Score box, pinned to the box's top-left. */
+            function techBoxHtml(tk) {
+                if (typeof window.techScoreBoxHtml !== 'function') return '';
+                const r = window._fsRowIndex ? window._fsRowIndex().get(String(tk).toUpperCase()) : null;
+                const h = window.techScoreBoxHtml(r, { fin: true });
+                return h ? '<div class="fsg-ts">' + h + '</div>' : '';
+            }
+
+            function markSelected(sel) {
+                document.querySelectorAll('#fs-grid-cells .fsg-cell').forEach(function (c) {
+                    c.classList.toggle('fsg-sel', c.getAttribute('data-tk') === sel);
+                });
+            }
+
+            function renderGrid() {
+                const cellsEl = $('fs-grid-cells');
+                const list = tickerList();
+                const sel = $('fs-ticker-select').value;
+                const tf = $('fs-duration-select').value || '3y';
+                const n = layout;
+                const [cols, rows] = LAYOUTS[n];
+                const idx = Math.max(0, list.indexOf(sel));
+                const start = Math.floor(idx / n) * n;
+                const page = list.slice(start, start + n);
+
+                const key = [n, tf, page.join(','), cellsEl.clientWidth, cellsEl.clientHeight].join('|');
+                if (key === drawnKey) { markSelected(sel); return; }
+                drawnKey = key;
+
+                cellsEl.style.gridTemplateColumns = 'repeat(' + cols + ', minmax(0, 1fr))';
+                cellsEl.style.gridTemplateRows = 'repeat(' + rows + ', minmax(0, 1fr))';
+
+                let html = '';
+                for (let i = 0; i < n; i++) {
+                    const tk = page[i];
+                    if (!tk) { html += '<div class="fsg-cell fsg-empty"></div>'; continue; }
+                    html += '<div class="fsg-cell" data-tk="' + esc(tk) + '">' +
+                        '<div class="fsg-head"' + scoreAttr(tk) + '>' + headHtml(tk) + '</div>' +
+                        '<div class="fsg-body">' + techBoxHtml(tk) +
+                        '<div class="card-chart-loading"><div class="csph-spinner"></div><span>Loading…</span></div>' +
+                        '<canvas class="card-chart-canvas-price" style="display:none;"></canvas>' +
+                        '<canvas class="card-chart-canvas-vol" style="display:none;"></canvas>' +
+                        '</div></div>';
+                }
+                cellsEl.innerHTML = html;
+                // Small boxes (6 / 8 / 9 layouts, short screens) get a smaller score box.
+                cellsEl.classList.toggle('fsg-compact', cellsEl.clientHeight / rows < 380 || cellsEl.clientWidth / cols < 520);
+                markSelected(sel);
+
+                // Draw after layout so every body has its real size.
+                requestAnimationFrame(function () {
+                    if (drawnKey !== key) return;   // superseded by a newer page
+                    cellsEl.querySelectorAll('.fsg-cell[data-tk]').forEach(function (cell) {
+                        const tk = cell.getAttribute('data-tk');
+                        const body = cell.querySelector('.fsg-body');
+                        body._fsgFitH = true;
+                        const pCv = body.querySelector('.card-chart-canvas-price');
+                        const vCv = body.querySelector('.card-chart-canvas-vol');
+                        const loadEl = body.querySelector('.card-chart-loading');
+                        ensureIndexRows(tk).then(function () {
+                            if (drawnKey !== key || !body.isConnected) return;
+                            if (typeof window._renderCardCandleChart === 'function') {
+                                return window._renderCardCandleChart(tk, tf, pCv, vCv, loadEl, body);
+                            }
+                        }).then(function () {
+                            // Price/%chg in the header may only be known once data loaded.
+                            const head = cell.querySelector('.fsg-head');
+                            if (head && body.isConnected && !head.querySelector('.fsg-rets')) head.innerHTML = headHtml(tk);
+                        }).catch(function () { });
+                    });
+                });
+            }
+
+            /* ── Chart type (sidebar select / T key) — read by drawChartCore ── */
+            const CT_KEY = 'fs_chart_type';
+            const CT_ORDER = ['candle', 'color', 'hollow', 'ha', 'bars', 'line', 'area'];
+            try {
+                const saved = localStorage.getItem(CT_KEY);
+                if (CT_ORDER.indexOf(saved) !== -1) window._fsChartType = saved;
+            } catch (e) { }
+            if (!window._fsChartType) window._fsChartType = 'candle';
+
+            window.setFsChartType = function (type) {
+                if (CT_ORDER.indexOf(type) === -1) return;
+                window._fsChartType = type;
+                try { localStorage.setItem(CT_KEY, type); } catch (e) { }
+                const sel = $('fs-chart-type');
+                if (sel && sel.value !== type) sel.value = type;
+                drawnKey = '';   // same page, new look: redraw every box
+                syncViewChip();
+                if (modalOpen()) window.renderFullScreenChart();
+            };
+
+            /* ── View options chip ── */
+            const CT_LABEL = {
+                candle: 'Candles', color: 'Colored', hollow: 'Hollow', ha: 'Heikin Ashi',
+                bars: 'OHLC Bars', line: 'Line', area: 'Area'
+            };
+            function syncViewChip() {
+                const t = $('fs-view-chip-txt');
+                if (!t) return;
+                const d = ($('fs-duration-select') || {}).value || '3y';
+                const dur = d === 'all' ? 'All' : d.toUpperCase();
+                const boxes = layout === 1 ? '1 chart' : layout + ' charts';
+                t.textContent = dur + ' · ' + boxes + ' · ' + (CT_LABEL[window._fsChartType] || 'Candles');
+            }
+            function setViewOpen(open) {
+                const box = $('fs-view-opts'), chip = $('fs-view-chip');
+                if (!box || !chip) return;
+                box.hidden = !open;
+                chip.setAttribute('aria-expanded', open ? 'true' : 'false');
+            }
+            window.toggleFsViewOpts = function () {
+                const box = $('fs-view-opts');
+                setViewOpen(!!(box && box.hidden));
+            };
+            // Any click outside the chip and its options folds them away.
+            document.addEventListener('click', function (e) {
+                const box = $('fs-view-opts');
+                if (!box || box.hidden) return;
+                const t = e.target;
+                if (t && t.closest && (t.closest('#fs-view-opts') || t.closest('#fs-view-chip'))) return;
+                setViewOpen(false);
+            });
+            const origDur = window.selectFsDuration;
+            if (typeof origDur === 'function') {
+                window.selectFsDuration = function () {
+                    const out = origDur.apply(this, arguments);
+                    syncViewChip();
+                    return out;
+                };
+            }
+
+            /* ── Hook the full chart render ── */
+            const origRender = window.renderFullScreenChart;
+            if (typeof origRender === 'function') {
+                window.renderFullScreenChart = function (opts) {
+                    // Duration can also change from code (open, trainers); keep the chip honest.
+                    if (!(opts && opts.skipChrome)) syncViewChip();
+                    if (!gridOn()) {
+                        showGrid(false);
+                        return origRender.apply(this, arguments);
+                    }
+                    if (!$('fs-ticker-select') || !$('fs-ticker-select').value) return;
+                    showGrid(true);
+                    renderGrid();
+                };
+            }
+
+            /* ▲ / ▼ (buttons and arrow keys) move a whole page in grid mode. */
+            const origNav = window.fsNavTicker;
+            window.fsNavTicker = function (dir) {
+                if (!gridOn()) return typeof origNav === 'function' ? origNav.apply(this, arguments) : undefined;
+                window.fsGridPage(dir);
+            };
+
+            window.fsGridPage = function (dir) {
+                const sel = $('fs-ticker-select');
+                if (!sel || !sel.options.length) return;
+                const n = layout;
+                const start = Math.floor(Math.max(0, sel.selectedIndex) / n) * n;
+                const next = start + (dir > 0 ? n : -n);
+                if (next < 0 || next >= sel.options.length) return;
+                sel.selectedIndex = next;
+                window.syncFSTickerListSelected();
+                window.renderFullScreenChart();
+            };
+
+            window.setFsGridLayout = function (n) {
+                if (!LAYOUTS[n]) return;
+                layout = n;
+                try { localStorage.setItem(KEY, String(n)); } catch (e) { }
+                syncPills();
+                syncViewChip();
+                drawnKey = '';
+                if (modalOpen()) window.renderFullScreenChart();
+            };
+
+            /* F / H in a box's title: the same toggle as the cards and the single
+               full chart (favourite-list picker, sheet sync, offline queue). When
+               the sidebar is showing a Favourites / Holdings list, that list — and
+               so the grid's page — is rebuilt afterwards. */
+            async function toggleFH(tk, type) {
+                if (typeof window.toggleRemoteFH !== 'function') return;
+                await window.toggleRemoteFH(tk, type);
+                const group = ($('fs-group-select') || {}).value;
+                if (typeof window.fhIsGroup === 'function' && window.fhIsGroup(group)) {
+                    window.updateFSTickers(true);
+                    drawnKey = '';
+                    if (modalOpen()) window.renderFullScreenChart();
+                }
+            }
+
+            /* Click a box: select that ticker (sidebar follows). Double-click:
+               open it on its own. Grid clicks never reach the chart below. */
+            document.addEventListener('DOMContentLoaded', init);
+            if (document.readyState !== 'loading') init();
+            let inited = false;
+            function init() {
+                if (inited) return;
+                inited = true;
+                syncPills();
+                const ctSel = $('fs-chart-type');
+                if (ctSel) ctSel.value = window._fsChartType;
+                syncViewChip();
+                const cellsEl = $('fs-grid-cells');
+                if (!cellsEl) return;
+                cellsEl.addEventListener('click', function (e) {
+                    const cell = e.target.closest && e.target.closest('.fsg-cell[data-tk]');
+                    if (!cell) return;
+                    const fhBtn = e.target.closest('.fsg-fhbtn');
+                    if (fhBtn) {
+                        e.stopPropagation();
+                        toggleFH(cell.getAttribute('data-tk'), fhBtn.getAttribute('data-fh'));
+                        return;
+                    }
+                    // Leave the Deals strip's own click (pinned tooltip) alone.
+                    if (e.target.classList && e.target.classList.contains('card-chart-canvas-deal')) return;
+                    const tk = cell.getAttribute('data-tk');
+                    const sel = $('fs-ticker-select');
+                    if (!sel || sel.value === tk) return;
+                    sel.value = tk;
+                    window.syncFSTickerListSelected();
+                    markSelected(tk);
+                    // Same page, so the grid only moves its highlight; keep the
+                    // single-chart chrome (guru panel, watermark) in step too.
+                    if (typeof window._fsRenderGuruPanel === 'function') window._fsRenderGuruPanel(tk);
+                });
+                cellsEl.addEventListener('dblclick', function (e) {
+                    if (e.target.closest && e.target.closest('.fsg-fhbtn')) return;   // fast F/H taps are not "open alone"
+                    const cell = e.target.closest && e.target.closest('.fsg-cell[data-tk]');
+                    if (!cell) return;
+                    const sel = $('fs-ticker-select');
+                    if (sel) sel.value = cell.getAttribute('data-tk');
+                    window.syncFSTickerListSelected();
+                    window.setFsGridLayout(1);
+                });
+
+                // Resize (window, sidebar toggle, rotation): redraw at the new size.
+                if (typeof ResizeObserver === 'function') {
+                    let t = 0;
+                    new ResizeObserver(function () {
+                        clearTimeout(t);
+                        t = setTimeout(function () {
+                            const g = $('fs-grid');
+                            if (g && !g.hidden && modalOpen() && gridOn()) renderGrid();
+                        }, 150);
+                    }).observe(cellsEl);
+                }
+            }
+
+            /* G cycles the layout; PageUp / PageDown flip pages. */
+            window.addEventListener('keydown', function (e) {
+                if (!modalOpen()) return;
+                const tag = ((e.target && e.target.tagName) || '').toLowerCase();
+                if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.ctrlKey || e.metaKey || e.altKey) return;
+                if (e.key === 'g' || e.key === 'G') {
+                    e.preventDefault();
+                    window.setFsGridLayout(ORDER[(ORDER.indexOf(layout) + 1) % ORDER.length]);
+                } else if (e.key === 't' || e.key === 'T') {
+                    e.preventDefault();
+                    window.setFsChartType(CT_ORDER[(CT_ORDER.indexOf(window._fsChartType) + 1) % CT_ORDER.length]);
+                } else if (gridOn() && (e.key === 'PageDown' || e.key === 'PageUp')) {
+                    e.preventDefault();
+                    window.fsGridPage(e.key === 'PageDown' ? 1 : -1);
+                }
+            });
         })();
     </script>
 
