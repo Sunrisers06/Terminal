@@ -9482,6 +9482,8 @@
                         <span class="clear-search-btn" id="clear-search-btn" onclick="clearMainSearch()"
                             style="display: none;">✕</span>
                     </div>
+                    <!-- The search spark lives here, fixed, in the old search box's place -->
+                    <span id="gsx-slot"></span>
                     <button class="icon-btn action-btn" id="filter-toggle-btn" onclick="toggleFilters()"
                         title="Filters"><span class="filter-txt"> 🔬</span></button>
                     <button class="icon-btn global-clear-btn" id="global-clear-btn" onclick="resetIndustryFilter()"
@@ -22431,6 +22433,218 @@
                 };
             })();
 
+            /* ── A/D and OBV grades (left side of the A/D · OBV pane) ──
+               Each line gets its own 0–100 score from seven weekly statistics,
+               measured at bar e (last visible bar, or the one under the
+               crosshair), then a grade: A+ ≥ 80, A ≥ 65, B ≥ 50, C ≥ 35, D.
+                 25  Position in its 52-week range (0 = low, 100 = high)
+                 20  26-week trend: regression slope over the 52-week range,
+                     scaled by R² so a steady climb beats a noisy one
+                 15  13-week change over the 52-week range
+                 15  vs its 9-week average: above & average rising 100,
+                     above & falling 65, below & rising 35, below & falling 0
+                 10  13-week divergence with price: line up while price is
+                     down 100 (hidden buying), line down while price is up 0
+                 10  Accumulation − distribution weeks (13W, up / down close
+                     on volume above the 50-week average)
+                  5  At a 52-week high (+5 bonus when it gets there before price)
+               The same score 4 weeks earlier gives the ↗ / ↘ trend arrow. */
+            function _lineScore(D, e, key, smaKey) {
+                if (!D || e < 26 || !D[e] || D[e][key] == null || D[e][smaKey] == null) return null;
+                const clip = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+                const s52 = Math.max(0, e - 51);
+                let lo = Infinity, hi = -Infinity, pxHi = -Infinity;
+                for (let k = s52; k <= e; k++) {
+                    const v = D[k][key];
+                    if (v < lo) lo = v;
+                    if (v > hi) hi = v;
+                    if (k < e) pxHi = Math.max(pxHi, D[k].high != null ? D[k].high : D[k].close);
+                }
+                const rng = hi - lo || 1;
+                const X = D[e][key];
+
+                const rangePos = (X - lo) / rng * 100;
+
+                // 26-week least-squares slope and R²
+                const N = 26, s0 = e - N + 1;
+                let sx = 0, sy = 0, sxx = 0, sxy = 0, syy = 0;
+                for (let i = 0; i < N; i++) {
+                    const y = D[s0 + i][key];
+                    sx += i; sy += y; sxx += i * i; sxy += i * y; syy += y * y;
+                }
+                const den = N * sxx - sx * sx;
+                const slope = den ? (N * sxy - sx * sy) / den : 0;
+                const vy = N * syy - sy * sy;
+                const r2 = (den && vy > 0) ? Math.pow(N * sxy - sx * sy, 2) / (den * vy) : 0;
+                const trend = 50 + 50 * clip(slope * N / rng, -1, 1) * Math.sqrt(r2);
+
+                const b13 = e - 13;
+                const chg13 = 50 + 50 * clip((X - D[b13][key]) / rng, -1, 1);
+
+                const above = X >= D[e][smaKey];
+                const smaPrev = D[e - 4] && D[e - 4][smaKey];
+                const smaUp = smaPrev != null ? D[e][smaKey] >= smaPrev : above;
+                const vsMa = above ? (smaUp ? 100 : 65) : (smaUp ? 35 : 0);
+
+                const pxChg = D[b13].close ? (D[e].close / D[b13].close - 1) * 100 : 0;
+                const up13 = X > D[b13][key];
+                const div = (pxChg < -3 && up13) ? 100 : (pxChg > 3 && !up13) ? 0 : 50;
+
+                let acc = 0, dist = 0;
+                for (let k = e - 12; k <= e; k++) {
+                    const r = D[k], pv = D[k - 1], avg = r.volSma50 || r.volSma9;
+                    if (!pv || !avg || !(r.vol > avg)) continue;
+                    if (r.close > pv.close) acc++; else if (r.close < pv.close) dist++;
+                }
+                const ad = 50 + 50 * clip((acc - dist) / 6, -1, 1);
+
+                const nh = X >= hi;
+                const pxNH = (D[e].high != null ? D[e].high : D[e].close) >= pxHi;
+                const nhScore = nh ? 100 : 50;
+
+                let score = 0.25 * rangePos + 0.20 * trend + 0.15 * chg13 + 0.15 * vsMa +
+                    0.10 * div + 0.10 * ad + 0.05 * nhScore;
+                if (nh && !pxNH) score += 5;   // line leads price to a new high
+                return clip(score, 0, 100);
+            }
+
+            const _GRADES = [
+                [80, 'A+', '#00e676'], [65, 'A', '#3b82f6'], [50, 'B', '#c084fc'],
+                [35, 'C', '#fb923c'], [-1, 'D', '#ff4d4f']
+            ];
+            function _gradeOf(score) {
+                for (const g of _GRADES) if (score >= g[0]) return g;
+                return _GRADES[_GRADES.length - 1];
+            }
+            function _lineGrade(D, e, key, smaKey) {
+                const sc = _lineScore(D, e, key, smaKey);
+                if (sc == null) return null;
+                const prev = _lineScore(D, e - 4, key, smaKey);
+                const g = _gradeOf(sc);
+                return {
+                    score: sc, grade: g[1], color: g[2],
+                    trend: prev == null ? 0 : sc - prev >= 8 ? 1 : sc - prev <= -8 ? -1 : 0
+                };
+            }
+            window.__lineGrade = _lineGrade;                // test hook
+
+            /* Grade badges on the RIGHT of the A/D · OBV plot, ending just
+               left of the value labels (o.right). [mode tag] [A/D x] [OBV x]:
+               coloured label, solid grade chip, ↗ / ↘ when the score moved 8+
+               points in 4 weeks. o.pickY(x0, x1, h) chooses top or bottom —
+               whichever the lines cross less there. Returns the hit areas. */
+            function _drawAdObvGrades(ctx, list, o) {
+                const fs = o.size, chipH = Math.round(fs * 1.55), padX = Math.round(fs * 0.45);
+                const boxH = chipH + 4, gap = 6;
+                const fLbl = 'bold ' + Math.round(fs * 0.82) + 'px "Lexend",monospace';
+                const fGrade = '900 ' + fs + 'px "Lexend",monospace';
+                const fArrow = 'bold ' + Math.round(fs * 0.9) + 'px "Lexend",monospace';
+                const fTag = 'bold ' + Math.round(fs * 0.7) + 'px "Lexend",monospace';
+                ctx.save();
+                ctx.textBaseline = 'middle';
+                ctx.textAlign = 'left';
+
+                // measure
+                const items = list.filter(it => it.g).map(it => {
+                    ctx.font = fLbl;
+                    const lblW = ctx.measureText(it.label).width;
+                    ctx.font = fGrade;
+                    const gW = Math.max(ctx.measureText('A+').width, ctx.measureText(it.g.grade).width) + padX * 2;
+                    const arrow = it.g.trend > 0 ? '↗' : it.g.trend < 0 ? '↘' : '';
+                    ctx.font = fArrow;
+                    const arW = arrow ? ctx.measureText(arrow).width + 3 : 0;
+                    return { it, lblW, gW, arrow, arW, w: padX + lblW + 5 + gW + arW + padX };
+                });
+                const tag = o.follow ? '↔ ' + (o.when || 'follow') : '● last';
+                ctx.font = fTag;
+                const tagW = ctx.measureText(tag).width;
+                const total = tagW + gap + items.reduce((sum, m) => sum + m.w, 0) + gap * (items.length - 1);
+                let x = Math.max(o.minX || 0, o.right - total);
+                const y = o.pickY ? o.pickY(x, x + total, boxH) : 3;
+                const mid = y + boxH / 2;
+                const rects = [];
+
+                // mode tag
+                ctx.font = fTag;
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+                ctx.fillRect(x - 2, y + 2, tagW + 4, boxH - 4);
+                ctx.fillStyle = o.follow ? '#fbbf24' : '#94a3b8';
+                ctx.fillText(tag, x, mid);
+                rects.push({ x: x - 2, y: y, w: tagW + 4, h: boxH });
+                x += tagW + gap;
+
+                items.forEach(m => {
+                    const it = m.it;
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                    ctx.beginPath();
+                    if (ctx.roundRect) ctx.roundRect(x, y, m.w, boxH, 5); else ctx.rect(x, y, m.w, boxH);
+                    ctx.fill();
+                    ctx.strokeStyle = it.g.color; ctx.lineWidth = o.follow ? 1.6 : 1;
+                    ctx.globalAlpha = o.follow ? 1 : 0.7; ctx.stroke(); ctx.globalAlpha = 1;
+
+                    ctx.font = fLbl;
+                    ctx.fillStyle = it.color;
+                    ctx.fillText(it.label, x + padX, mid);
+
+                    const gx = x + padX + m.lblW + 5;
+                    ctx.fillStyle = it.g.color;
+                    ctx.beginPath();
+                    if (ctx.roundRect) ctx.roundRect(gx, y + 2, m.gW, chipH, 4); else ctx.rect(gx, y + 2, m.gW, chipH);
+                    ctx.fill();
+                    // Near-black letter: clear on all five grade colours.
+                    ctx.font = fGrade;
+                    ctx.fillStyle = '#0a0a0a';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(it.g.grade, gx + m.gW / 2, y + 2 + chipH / 2 + 0.5);
+                    ctx.textAlign = 'left';
+
+                    if (m.arrow) {
+                        ctx.font = fArrow;
+                        ctx.fillStyle = it.g.trend > 0 ? '#00e676' : '#ff4d4f';
+                        ctx.fillText(m.arrow, gx + m.gW + 3, mid);
+                    }
+                    rects.push({ x: x, y: y, w: m.w, h: boxH });
+                    x += m.w + gap;
+                });
+                ctx.restore();
+                return rects;
+            }
+
+            /* Grade mode, shared by every chart: fixed on the last candle
+               (default) or following the crosshair. A click on a grade chip
+               flips it and repaints every open chart (single + grid boxes). */
+            window._fsGradeFollow = false;
+            function _wireGradeClick(indCv) {
+                if (!indCv || indCv._gradeClickWired) return;
+                indCv._gradeClickWired = true;
+                const hit = ev => {
+                    const c = window._getRotatedCoords ? window._getRotatedCoords(ev, indCv) : (() => {
+                        const r = indCv.getBoundingClientRect();
+                        return { mx: ev.clientX - r.left, my: ev.clientY - r.top };
+                    })();
+                    return (indCv._gradeRects || []).some(r => c.mx >= r.x && c.mx <= r.x + r.w && c.my >= r.y && c.my <= r.y + r.h);
+                };
+                indCv.addEventListener('click', ev => {
+                    if (!hit(ev)) return;
+                    ev.stopPropagation();   // not a grid-box select / chart click
+                    window._fsGradeFollow = !window._fsGradeFollow;
+                    _drawnCharts.forEach(cv => {
+                        if (!cv.isConnected) { _drawnCharts.delete(cv); return; }
+                        const st = cv._chartState;
+                        if (st) { try { drawChartCore(st.ticker, st.period, cv, st.vCv, st.loadEl, st.widthEl); } catch (e) { } }
+                    });
+                });
+                indCv.addEventListener('mousemove', ev => {
+                    const on = hit(ev);
+                    indCv.title = on ? (window._fsGradeFollow
+                        ? 'Grades follow the cursor — click to fix them on the last candle'
+                        : 'Grades fixed on the last candle — click to make them follow the cursor') : '';
+                    // The chart redraw resets the cursor to crosshair; it reads this flag.
+                    indCv._gradeHover = on;
+                    indCv.style.cursor = on ? 'pointer' : 'crosshair';
+                });
+            }
+
             function drawChartCore(ticker, period, pCv, vCv, loadEl, widthEl) {
                 const UC = ticker.toUpperCase();
                 _drawnCharts.add(pCv);
@@ -22483,9 +22697,34 @@
                 }
 
                 const isFs = pCv.id === 'fs-chart-pcv';
+                /* Sidebar → Indicators toggles apply to the full chart AND its
+                   multi-chart grid boxes (card-mode charts that live inside the
+                   full chart). Company cards and pop-ups still draw everything. */
+                const indFs = isFs || !!(widthEl && widthEl._fsgFitH);
                 const groupSel = isFs ? document.getElementById('fs-group-select') : null;
                 const isIdxMain = groupSel && groupSel.value === 'index_main';
-                const _rsCvEl = (isFs && !isIdxMain) ? document.getElementById('fs-chart-rscv') : null;
+                const _rsCvEl = (isFs && !isIdxMain) ? document.getElementById('fs-chart-rscv')
+                    : (!isFs && indFs && indCv) ? (function () {
+                        // Grid box: its own Deliv · MRS pane, placed above A/D · OBV
+                        let c = indCv.parentNode.querySelector('.card-chart-canvas-rs');
+                        if (!c) {
+                            c = document.createElement('canvas');
+                            c.className = 'card-chart-canvas-rs';
+                            c.style.cssText = 'display:none;cursor:crosshair;';
+                            indCv.parentNode.insertBefore(c, indCv);
+                            // The mode label (top-left) cycles Deliv % → Deliv Vol → MRS
+                            c.addEventListener('click', function (ev) {
+                                const r = c.getBoundingClientRect();
+                                const hit = c._modeRect;
+                                if (!hit) return;
+                                const mx = ev.clientX - r.left, my = ev.clientY - r.top;
+                                if (mx < hit.x || mx > hit.x + hit.w || my < hit.y || my > hit.y + hit.h) return;
+                                ev.stopPropagation();
+                                if (typeof window.fsToggleRscvMode === 'function') window.fsToggleRscvMode();
+                            });
+                        }
+                        return c;
+                    })() : null;
                 if (_rsCvEl && indCv && _rsCvEl.parentNode === indCv.parentNode) {
                     _rsCvEl.parentNode.insertBefore(_rsCvEl, indCv);
                 }
@@ -22848,7 +23087,7 @@
                    Date objects and as many date strings per frame just to look
                    the week up. Now they are computed once for the ticker's whole
                    history, stamped on the cached array, and reused. */
-                const _delivSeries = isFs && window._fsDelivFor ? window._fsDelivFor(UC) : null;
+                const _delivSeries = indFs && window._fsDelivFor ? window._fsDelivFor(UC) : null;
                 const _delivStamp = (window._fsDelivVersion || 0) + '|' +
                     (_delivSeries ? _delivSeries.day.length : 'none');
                 if (fullProcessed._delivStamp !== _delivStamp) {
@@ -22925,11 +23164,12 @@
                        height, so split it instead of the card's width ratios
                        (those would overflow a wide, short cell). 16px is left
                        for the Deals strip. */
-                    const avail = Math.max(120, (widthEl.clientHeight || 0) - 16);
-                    VH = Math.round(avail * 0.13);
-                    IH = Math.round(avail * 0.15);
-                    PH = avail - VH - IH;
-                    RSH = 0;
+                    const dealsOn = _fsIndOn(true, 'deals');
+                    const avail = Math.max(120, (widthEl.clientHeight || 0) - (dealsOn ? 16 : 0));
+                    VH = _fsIndOn(true, 'vol') ? Math.round(avail * 0.12) : 0;
+                    IH = _fsIndOn(true, 'ad') ? Math.round(avail * 0.14) : 0;
+                    RSH = (_rsCvEl && _fsIndOn(true, 'rs')) ? Math.round(avail * 0.13) : 0;
+                    PH = avail - VH - IH - RSH;
                 } else {
                     PH = Math.round(W * 0.62);   // ~8:5 ratio — taller, more chart real-estate
                     VH = Math.round(W * 0.14);   // volume panel ~14% of width
@@ -23145,7 +23385,7 @@
                 pc.fillStyle = '#000000'; pc.fillRect(0, 0, W, PH);
 
                 // ── Dim Volume Profile — uses ALL available history, mapped onto visible price range ──
-                if (_fsIndOn(isFs, 'vp')) {
+                if (_fsIndOn(indFs, 'vp')) {
                     const VP_BINS = 40;
                     const VP_MAX_W = pW * 0.22; // max bar width = 22% of chart area
                     const VP_ALPHA = 0.3;       // dim but visible behind candles
@@ -23289,7 +23529,7 @@
                 // MA10: Gold Bold line
                 pc.strokeStyle = '#ffd700'; pc.lineWidth = 2.0; pc.lineJoin = 'round'; pc.lineCap = 'round'; pc.setLineDash([]);
                 pc.beginPath(); let st = false;
-                if (_fsIndOn(isFs, 'ma10')) raw.forEach((r, i) => {
+                if (_fsIndOn(indFs, 'ma10')) raw.forEach((r, i) => {
                     if (!r.ma10) return;
                     const x = toX(i), y = toY(r.ma10);
                     st ? pc.lineTo(x, y) : (pc.moveTo(x, y), st = true);
@@ -23298,7 +23538,7 @@
                 // MA20: Blue line
                 pc.strokeStyle = '#2563eb'; pc.lineWidth = 1.2; pc.lineJoin = 'round'; pc.lineCap = 'round'; pc.setLineDash([]);
                 pc.beginPath(); st = false;
-                if (_fsIndOn(isFs, 'ma20')) raw.forEach((r, i) => {
+                if (_fsIndOn(indFs, 'ma20')) raw.forEach((r, i) => {
                     if (!r.ma20) return;
                     const x = toX(i), y = toY(r.ma20);
                     st ? pc.lineTo(x, y) : (pc.moveTo(x, y), st = true);
@@ -23307,7 +23547,7 @@
                 // MA30: Lavender line
                 pc.strokeStyle = '#8b5cf6'; pc.lineWidth = 1.2; pc.lineJoin = 'round'; pc.lineCap = 'round'; pc.setLineDash([]);
                 pc.beginPath(); st = false;
-                if (_fsIndOn(isFs, 'ma30')) raw.forEach((r, i) => {
+                if (_fsIndOn(indFs, 'ma30')) raw.forEach((r, i) => {
                     if (!r.ma30) return;
                     const x = toX(i), y = toY(r.ma30);
                     st ? pc.lineTo(x, y) : (pc.moveTo(x, y), st = true);
@@ -23316,7 +23556,7 @@
                 // MA40: Pink Bold line
                 pc.strokeStyle = '#ec4899'; pc.lineWidth = 2.0; pc.lineJoin = 'round'; pc.lineCap = 'round'; pc.setLineDash([]);
                 pc.beginPath(); st = false;
-                if (_fsIndOn(isFs, 'ma40')) raw.forEach((r, i) => {
+                if (_fsIndOn(indFs, 'ma40')) raw.forEach((r, i) => {
                     if (!r.ma40) return;
                     const x = toX(i), y = toY(r.ma40);
                     st ? pc.lineTo(x, y) : (pc.moveTo(x, y), st = true);
@@ -23326,7 +23566,7 @@
                 // Uptrend (line rides below price as support) = RED, per user preference.
                 // Downtrend (line rides above price as resistance) = GREEN, per user preference.
                 // Multiplier is user-selectable (2x/3x) via #fs-atr-mult-toggle.
-                if (isFs && _fsIndOn(isFs, 'st') && window._fhTickers && window._fhTickers.H && window._fhTickers.H.has(UC) && raw.length > 1) {
+                if (indFs && _fsIndOn(indFs, 'st') && window._fhTickers && window._fhTickers.H && window._fhTickers.H.has(UC) && raw.length > 1) {
                     const ST_MULT = window._fsAtrMult || 2;
                     const lastAbsIdx = actualStart + raw.length - 1;
                     // Walk back far enough before the visible window to seed the band/trend state with real
@@ -23407,7 +23647,7 @@
                 }
 
                 // ── Index Line ──
-                if (raw.length > 0 && !isIdxMain && _fsIndOn(isFs, 'idx')) {
+                if (raw.length > 0 && !isIdxMain && _fsIndOn(indFs, 'idx')) {
                     // Index Line (Low Opacity Gray/Blue)
                     pc.strokeStyle = 'rgba(148, 163, 184, 0.4)'; pc.lineWidth = 1.2; pc.lineJoin = 'round'; pc.lineCap = 'round'; pc.setLineDash([]);
                     pc.beginPath();
@@ -23615,7 +23855,7 @@
                 }
 
                 // ── Trade-log BUY/SELL markers (full chart only, sidebar → Indicators → Trades) ──
-                if (isFs && _fsIndOn(isFs, 'trades')) {
+                if (indFs && _fsIndOn(indFs, 'trades')) {
                     _fsDrawTradeMarkers(pc, {
                         ticker: UC, raw, toX, toY, PP, pH, W,
                         compact: fsCompact,
@@ -24253,6 +24493,46 @@
                     ic.fillStyle = '#00ccff';
                     ic.fillText(fmtV(lastObv), W - 4, obvY);
 
+                    // A/D and OBV grades — right side of the plot, top or bottom
+                    // (whichever the lines leave free). Full chart and grid boxes;
+                    // sidebar → Indicators → A/D Grade. Fixed on the last candle
+                    // by default; clicking a chip makes them follow the cursor.
+                    indCv._gradeRects = null;
+                    if ((isFs || (widthEl && widthEl._fsgFitH)) && window._fsInd && window._fsInd.adstats !== false) {
+                        const follow = !!window._fsGradeFollow;
+                        const hIdx = pCv._hoverIdx;
+                        const hov = follow && hIdx !== undefined && hIdx !== null && raw[hIdx];
+                        const eIdx = hov ? actualStart + hIdx : actualEnd - 1;
+                        const gAD = _lineGrade(currentData, eIdx, 'ad', 'adSma');
+                        const gOBV = _lineGrade(currentData, eIdx, 'obv', 'obvSma');
+                        if (gAD || gOBV) {
+                            indCv._gradeRects = _drawAdObvGrades(ic, [
+                                { label: 'A/D', color: '#ff4dff', g: gAD },
+                                { label: 'OBV', color: '#22d3ee', g: gOBV }
+                            ], {
+                                right: W - IP.r - 6, minX: IP.l + 2,
+                                size: isFs ? (fsCompact ? 12 : 15) : (W < 520 ? 11 : 13),
+                                follow,
+                                when: hov ? fmtChartDate(raw[hIdx].date) : '',
+                                pickY: (x0, x1, h) => {
+                                    const yTop = 3, yBot = Math.max(3, IH - h - 3);
+                                    let top = 0, bot = 0;
+                                    raw.forEach((r, i) => {
+                                        const x = toX(i);
+                                        if (x < x0 || x > x1) return;
+                                        [toYAD(r.ad), toYOBV(r.obv)].forEach(yy => {
+                                            if (yy <= yTop + h + 2) top++;
+                                            if (yy >= yBot - 2) bot++;
+                                        });
+                                    });
+                                    return bot < top ? yBot : yTop;
+                                }
+                            });
+                            _wireGradeClick(indCv);
+                            if (indCv._gradeHover) indCv.style.cursor = 'pointer';
+                        }
+                    }
+
                     // Crosshair lines for this pane are painted right after its
                     // background (drawCrosshairLines) so they sit under the plots.
                 }
@@ -24261,7 +24541,7 @@
                    MANSFIELD RS OSCILLATOR PANE (full-screen only)
                 ════════════════════════════════════════ */
                 if (rsc && RSH > 0) {
-                    const toggleBtn = document.getElementById('fs-rscv-toggle-btn');
+                    const toggleBtn = isFs ? document.getElementById('fs-rscv-toggle-btn') : null;
                     if (toggleBtn) {
                         const isSm = W < 500 || window.innerWidth < 768;
                         toggleBtn.style.display = 'flex';
@@ -24274,7 +24554,8 @@
                     }
 
                     window.fsRscvMode = window.fsRscvMode || 'MRS';
-                    const RP = fsCompact ? { t: 3, b: 3, l: 6, r: 58 } : { t: 6, b: 8, l: 8, r: 70 };
+                    const RP = !isFs ? { t: 3, b: 3, l: 6, r: 48 }
+                        : fsCompact ? { t: 3, b: 3, l: 6, r: 58 } : { t: 6, b: 8, l: 8, r: 70 };
                     const rH = RSH - RP.t - RP.b;
 
                     // Background
@@ -24572,7 +24853,26 @@
                         }
                         rsc.restore();
                     }
-                } else {
+                    // Grid box: mode label top-left (click cycles the mode)
+                    if (!isFs) {
+                        const lbl = window.fsRscvMode === 'DELIV' ? '📊 Deliv %' : window.fsRscvMode === 'DELIV_VOL' ? '📦 Deliv Vol' : '📈 MRS';
+                        rsc.save();
+                        rsc.font = 'bold 9px "Lexend",monospace';
+                        rsc.textAlign = 'left'; rsc.textBaseline = 'middle';
+                        const lw = rsc.measureText(lbl).width + 10, lh = 14;
+                        rsc.fillStyle = 'rgba(15,23,42,0.92)';
+                        rsc.strokeStyle = 'rgba(56,189,248,0.5)'; rsc.lineWidth = 1;
+                        rsc.beginPath();
+                        if (rsc.roundRect) rsc.roundRect(RP.l, 2, lw, lh, 4); else rsc.rect(RP.l, 2, lw, lh);
+                        rsc.fill(); rsc.stroke();
+                        rsc.fillStyle = '#38bdf8';
+                        rsc.fillText(lbl, RP.l + 5, 2 + lh / 2 + 0.5);
+                        rsc.restore();
+                        _rsCvEl._modeRect = { x: RP.l, y: 2, w: lw, h: lh };
+                    }
+                } else if (isFs) {
+                    // A grid box or card drawing without this pane must not hide
+                    // the single chart's button.
                     const toggleBtn = document.getElementById('fs-rscv-toggle-btn');
                     if (toggleBtn) toggleBtn.style.display = 'none';
                 }
@@ -24580,7 +24880,7 @@
                 /* ════════════════════════════════════════
                    DEAL STRIP PANEL (INLINE ONLY)
                 ════════════════════════════════════════ */
-                if (dealCv && isFs && !_fsIndOn(isFs, 'deals')) { dealCv.style.display = 'none'; dealCv._sparks = []; }
+                if (dealCv && indFs && !_fsIndOn(indFs, 'deals')) { dealCv.style.display = 'none'; dealCv._sparks = []; }
                 else if (dealCv) {
                     /* All four Deals-pane feeds (insider, bulk, block, SAST) plus the
                        non-trade disclosures. One equal-size circle per week, filling the
@@ -36343,6 +36643,122 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
         }
 
+        /* ── Filter button + docked main filter bar ── */
+        #fs-filter-btn {
+            position: relative;
+            flex: 0 0 auto;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            color: rgba(235, 235, 245, 0.7);
+            background: rgba(118, 118, 128, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 7px;
+            cursor: pointer;
+        }
+
+        #fs-filter-btn svg {
+            width: 14px;
+            height: 14px;
+        }
+
+        #fs-filter-btn:hover,
+        #fs-filter-btn.open {
+            color: #fff;
+            background: rgba(10, 132, 255, 0.35);
+            border-color: rgba(10, 132, 255, 0.6);
+        }
+
+        #fs-filter-btn.active {
+            color: #10b981;
+            border-color: rgba(16, 185, 129, 0.6);
+        }
+
+        .fs-filter-cnt {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            min-width: 15px;
+            padding: 0 3px;
+            border-radius: 8px;
+            background: #10b981;
+            color: #04110b;
+            font-size: 8.5px;
+            font-weight: 800;
+            line-height: 15px;
+            text-align: center;
+            box-sizing: border-box;
+        }
+
+        .fs-filter-cnt:empty {
+            display: none;
+        }
+
+        #fs-filter-dock {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 70;
+            background: rgba(12, 12, 16, 0.98);
+            border-bottom: 1px solid rgba(10, 132, 255, 0.45);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+        }
+
+        #fs-filter-dock[hidden] {
+            display: none;
+        }
+
+        #fs-filter-dock-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 6px 14px 0;
+            font-size: 11.5px;
+            font-weight: 700;
+            color: #e2e8f0;
+        }
+
+        #fs-filter-dock-head b {
+            color: #10b981;
+        }
+
+        #fs-filter-dock-head i {
+            font-style: normal;
+            font-weight: 500;
+            color: #94a3b8;
+        }
+
+        #fs-filter-dock-done {
+            font: inherit;
+            font-weight: 800;
+            padding: 3px 12px;
+            color: #fff;
+            background: #0a84ff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        /* Card-view controls mean nothing on a chart */
+        #fs-filter-dock #live-ohlc-btn,
+        #fs-filter-dock #view-mode-filter,
+        #fs-filter-dock #card-chart-period-filter,
+        #fs-filter-dock #peer-rank-dur-filter,
+        #fs-filter-dock #col-filter {
+            display: none !important;
+        }
+
+        /* The bar's pop-out panels live on <body>; lift them over the full chart */
+        body.fs-filter-docked .flt-panel,
+        body.fs-filter-docked .inv-ms-panel {
+            z-index: 100060 !important;
+        }
+
         /* ── View options chip (duration · boxes · chart type) ── */
         #fs-view-chip {
             display: flex;
@@ -36548,6 +36964,41 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
             letter-spacing: 0.4px;
         }
 
+        /* SuperStar investor circle in a grid box title / on the single chart */
+        .superstar-badge.fsg-ss {
+            width: 19px;
+            height: 19px;
+            font-size: 10px;
+            text-shadow: none;
+            z-index: 3;
+        }
+
+        .superstar-badge.fsg-ss:hover {
+            transform: scale(1.15);
+        }
+
+        .fsg-compact .superstar-badge.fsg-ss {
+            width: 16px;
+            height: 16px;
+            font-size: 9px;
+        }
+
+        .superstar-badge.fs-ss-badge {
+            width: 26px;
+            height: 26px;
+            font-size: 12px;
+            align-self: center;
+        }
+
+        #fs-ss-slot:empty {
+            display: none;
+        }
+
+        #fs-ss-slot {
+            display: flex;
+            justify-content: center;
+        }
+
         /* Favourite / Holding toggles in a grid box's title */
         .fsg-fh {
             flex: 0 0 auto;
@@ -36653,8 +37104,8 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
 
         /* Small boxes: the returns strip gets priority over the name. */
         .fsg-compact .fsg-head {
-            gap: 5px;
-            padding-right: 5px;
+            gap: 6px;
+            padding-right: 6px;
         }
 
         .fsg-compact .fsg-tk {
@@ -36670,23 +37121,8 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
         }
 
         .fsg-compact .fsg-rets {
-            gap: 4px;
+            gap: 6px;
             font-size: 11px;
-        }
-
-        .fsg-compact .fsg-rl {
-            margin-right: -1px;
-        }
-
-        .fsg-compact .fsg-fh {
-            gap: 2px;
-        }
-
-        .fsg-compact .fsg-fhbtn {
-            width: 16px;
-            height: 16px;
-            font-size: 9.5px;
-            line-height: 14px;
         }
 
         .fsg-compact .fsg-rl {
@@ -36721,6 +37157,11 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
             transform: scale(0.72);
             top: 4px;
             left: 5px;
+        }
+
+        /* Sidebar slide: canvases follow the box width until the final redraw */
+        .fsg-resizing .fsg-body canvas {
+            width: 100% !important;
         }
 
         .fsg-body .card-chart-loading {
@@ -38408,12 +38849,14 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                 padding: 4px 18px 4px 6px !important;
             }
 
-            #fs-gem-search {
+            #fs-gem-search,
+            #fs-filter-btn {
                 width: 26px;
                 height: 26px;
             }
 
-            #fs-gem-search svg {
+            #fs-gem-search svg,
+            #fs-filter-btn svg {
                 width: 13px;
                 height: 13px;
             }
@@ -38598,6 +39041,12 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                     <div class="fs-sel-wrap">
                         <select id="fs-group-select" class="fs-sel" onchange="updateFSTickers(false)"></select>
                     </div>
+                    <button id="fs-filter-btn" type="button" title="Filters — the main page's filter bar (F2)"
+                        aria-label="Filters" onclick="window.fsToggleFilterDock()">
+                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor"
+                            d="M3 5h18l-7 8.5V19l-4 2v-7.5L3 5z" /></svg>
+                        <span class="fs-filter-cnt" id="fs-filter-cnt"></span>
+                    </button>
                     <button id="fs-gem-search" type="button" title="Search tickers"
                         aria-label="Search tickers" onclick="window.gsxOpen('chart')">
                         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -38953,6 +39402,7 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                         <button class="fs-ind-btn" data-ind="vol" onclick="window.fsToggleIndicator('vol')" title="Volume bars + 9MA + Q/Y/E markers at the bottom of the price chart">Volume</button>
                         <button class="fs-ind-btn" data-ind="vp" onclick="window.fsToggleIndicator('vp')" title="Volume profile (left side histogram)">Vol Profile</button>
                         <button class="fs-ind-btn" data-ind="ad" onclick="window.fsToggleIndicator('ad')" title="A/D and OBV pane">A/D · OBV</button>
+                        <button class="fs-ind-btn" data-ind="adstats" onclick="window.fsToggleIndicator('adstats')" title="A/D and OBV grades (A+ / A / B / C / D) on the left of that pane, from 52-week range position, 26-week trend, 13-week change, 9-week average, price divergence, accumulation / distribution weeks and 52-week highs. ↗ / ↘ = grade improving / weakening vs 4 weeks ago">A/D Grade</button>
                         <button class="fs-ind-btn" data-ind="rs" onclick="window.fsToggleIndicator('rs')" title="Deliv % / Deliv Vol / MRS pane">Deliv · MRS</button>
                         <button class="fs-ind-btn" data-ind="trades" style="color:#00e676;" onclick="window.fsToggleIndicator('trades')" title="Your BUY (▲ below low) / SELL (▼ above high) fills from the trade log — units only; hover a pill for price and every fill."><i class="fs-ind-dot"></i>Trades</button>
                         <button class="fs-ind-btn" data-ind="deals" style="color:#22d3ee;" onclick="window.fsToggleIndicator('deals')" title="Deals strip at the bottom — all four Deals-pane feeds. Green = buy / acquisition, red = sell, orange = both; ♛ grey crown = the week includes an insider filing (buy, sell, ESOP, pledge, gift …); ♛ gold crown = a Superman investor traded that week (same list as the Deals pane's Superman filter; gold crown with a grey ring = Superman and insider in the same week; 🦸 marks them in the list). Number in a circle = trades that week (SAST ₹ ≈ qty × that week's close). Grey circle / badge = other disclosures (ESOP, pledge, gift, off-market — not in net). ⚡D next to the label = intraday round trips (same person buys and sells the same day, sell ₹ amount within ±10% of buy ₹ amount) — hidden from the strip, click it to list them. Hover or tap for who, role, ₹ Cr and the net."><i class="fs-ind-dot"></i>Deals</button>
@@ -39012,6 +39462,8 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                             onclick="window.fsToggleActiveFH('H')" title="Toggle Holding">
                             H
                         </button>
+                        <!-- SuperStar investor circle for the shown ticker (filled by the grid script) -->
+                        <span id="fs-ss-slot"></span>
                     </div>
 
                 </div>
@@ -39323,6 +39775,14 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
 
                 <!-- Drawing overlay -->
                 <canvas id="fs-draw-canvas"></canvas>
+            </div>
+            <!-- Main filter bar, docked here while the sidebar's Filter button is on -->
+            <div id="fs-filter-dock" hidden>
+                <div id="fs-filter-dock-head">
+                    <span>🔎 Filters <b id="fs-filter-dock-n"></b> <i>— same filters as the main page; the chart list shows the result</i></span>
+                    <button type="button" id="fs-filter-dock-done" onclick="window.fsToggleFilterDock(false)">Done ✓</button>
+                </div>
+                <div id="fs-filter-dock-slot"></div>
             </div>
             <!-- Multi-chart grid (sidebar → layout pills). Covers the single
                  chart while more than one box is chosen. -->
@@ -39710,6 +40170,7 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                 const prevGroup = groupSel ? groupSel.value : null;
 
                 groupSel.innerHTML = '<option value="all">All Tickers</option>' +
+                    '<option value="main_filter">🔎 Main Filter</option>' +
                     window.fhGroupOptionsHtml() +
                     '<option value="index_main">📈 Index_main</option>';
 
@@ -39801,9 +40262,10 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                 if (!(opts && opts.silent)) {
                     try { localStorage.setItem(_FS_SB_KEY, collapsed ? '1' : '0'); } catch (e) { }
                 }
-                // Re-render chart after transition to use the new width
+                // Follow the width transition smoothly, then a full render at the end
                 if (was !== collapsed && modal.style.display === 'flex') {
-                    setTimeout(() => { window.renderFullScreenChart(); }, 280);
+                    if (typeof window._fsAnimateResize === 'function') window._fsAnimateResize(280);
+                    else setTimeout(() => { window.renderFullScreenChart(); }, 280);
                 }
             }
             function _fsSbPeek(on) {
@@ -40063,6 +40525,12 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                 } else if (window.fhIsGroup(group)) {
                     const fhSet = window.fhGroupSet(group);
                     if (fhSet) fhSet.forEach(t => tickerSet.add(t));
+                } else if (group === 'main_filter') {
+                    // Whatever the main page's filters leave, in its sort order
+                    (window.currentFilteredData || []).forEach(r => {
+                        const t = String(r._ticker || '').replace(/\.NS$/i, '').toUpperCase();
+                        if (t) tickerSet.add(t);
+                    });
                 } else if (group === 'index_main') {
                     // Index_main: use the sequence defined in the watchlist (indices.parquet)
                     const key = Object.keys(window.indexDataMap || {}).find(k => k.toLowerCase() === 'index_main') || 'Index_main';
@@ -40090,7 +40558,7 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                 }
 
                 // Sort alphabetically EXCEPT for index_main which should preserve its watchlist sequence
-                const tickers = group === 'index_main' ? Array.from(tickerSet) : Array.from(tickerSet).sort();
+                const tickers = (group === 'index_main' || group === 'main_filter') ? Array.from(tickerSet) : Array.from(tickerSet).sort();
 
                 const listContainer = document.getElementById('fs-ticker-list');
                 let hasMatchForPrevVal = false;
@@ -46849,6 +47317,39 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
             cursor: grabbing;
         }
 
+        /* Docked in the main toolbar: a fixed place, no dragging. Size comes
+           from the neighbouring buttons (set in JS) so it lines up with them
+           at every breakpoint. */
+        #gsx-slot {
+            display: flex;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        #gsx-slot:empty {
+            display: none;
+        }
+
+        #gsx-slot #gsx-spark {
+            position: relative !important;
+            left: auto !important;
+            top: auto !important;
+            width: var(--gsx-size, 30px);
+            height: var(--gsx-size, 30px);
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+            z-index: 5;
+        }
+
+        #gsx-slot #gsx-spark svg {
+            width: 60%;
+            height: 60%;
+        }
+
+        #gsx-slot #gsx-spark:active {
+            cursor: pointer;
+        }
+
         #gsx-spark.gsx-dragging {
             transition: none;     /* follow the finger exactly */
             transform: scale(1.12);
@@ -47582,9 +48083,10 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                 const n = activeCount();
                 spark.classList.toggle('gsx-active', n > 0);
                 countEl.textContent = n > 9 ? '9+' : String(n);
+                const drag = spark.classList.contains('gsx-docked') ? '' : ', drag to move';
                 spark.title = n
-                    ? n + (n === 1 ? ' search active' : ' searches active') + ' — click to edit, drag to move'
-                    : 'Search (Ctrl+K) — drag to move';
+                    ? n + (n === 1 ? ' search active' : ' searches active') + ' — click to edit' + drag
+                    : 'Search (Ctrl+K)' + (drag ? ' — drag to move' : '');
                 clearAllBtn.classList.toggle('gsx-on', n > 0);
                 /* The chart sidebar's fixed spark is the only readout for the
                    ticker list's own filter, now that its bar is off screen. */
@@ -48333,6 +48835,7 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
 
             spark.addEventListener('pointerdown', function (ev) {
                 if (ev.button !== undefined && ev.button !== 0) return;
+                if (spark.classList.contains('gsx-docked')) return;   // fixed in the toolbar: a press is a click
                 dragging = true; moved = false; tapOpened = false;
                 sx = ev.clientX; sy = ev.clientY;
                 const r = spark.getBoundingClientRect();
@@ -48411,7 +48914,27 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                 place(p.x, p.y);
             })();
 
+            /* ── fixed home in the main toolbar ──
+               The spark used to float wherever it was dragged, over the company
+               cards. It now sits in the toolbar where the search box it replaced
+               used to be, between the F / G / H / C / U / 🥇 buttons and the
+               filter button, sized like them. Clicks still open the same panel;
+               Ctrl+K and / still work. */
+            const slot = document.getElementById('gsx-slot');
+            const sizeRef = document.getElementById('hold-filter-btn');
+            function sizeDocked() {
+                const h = sizeRef && sizeRef.offsetHeight;
+                if (h) spark.style.setProperty('--gsx-size', h + 'px');
+            }
+            if (slot) {
+                slot.appendChild(spark);
+                spark.classList.add('gsx-docked');
+                sizeDocked();
+                window.addEventListener('resize', sizeDocked);
+            }
+
             window.addEventListener('resize', function () {
+                if (spark.classList.contains('gsx-docked')) return;
                 // A hidden spark measures zero; re-placing from that rect would
                 // move it to the corner and lose where it was parked.
                 if (spark.classList.contains('gsx-away')) return;
@@ -48623,6 +49146,18 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                 return ' data-score="' + sc + '" title="Quarterly Result: ' + lbl + '"';
             }
 
+            /* SuperStar investor circle — the same badge as the company card and
+               the sidebar list: holder count, names on hover (ss-tip), full list
+               on click (showInvestorPopup). Nothing when no SuperStar holds it. */
+            function ssBadgeHtml(UC, cls) {
+                const list = (window.superStarMap && window.superStarMap[UC]) || [];
+                if (!list.length) return '';
+                const names = esc(list.map(function (e) { return e.investor; }).join('\n'));
+                return '<span class="superstar-badge ' + cls + (list.length > 1 ? ' multi' : '') + '"' +
+                    ' data-tip="' + names + '" onclick="showInvestorPopup(event,\'' + esc(UC) + '\')">' +
+                    list.length + '</span>';
+            }
+
             function headHtml(tk) {
                 const UC = tk.toUpperCase();
                 const r = window._fsRowIndex ? window._fsRowIndex().get(UC) : null;
@@ -48637,7 +49172,7 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                     '<button type="button" class="fsg-fhbtn fav-toggle-' + esc(UC) + (isF ? ' is-fav' : '') + '" data-fh="F" title="Toggle Favorite">F</button>' +
                     '<button type="button" class="fsg-fhbtn hold-toggle-' + esc(UC) + (isH ? ' is-hold' : '') + '" data-fh="H" title="Toggle Holding">H</button>' +
                     '</span>';
-                return '<span class="fsg-tk">' + esc(UC) + '</span>' + fhHtml +
+                return '<span class="fsg-tk">' + esc(UC) + '</span>' + fhHtml + ssBadgeHtml(UC, 'fsg-ss') +
                     '<span class="fsg-name" title="' + esc(name) + '">' + esc(name) + '</span>' +
                     (rows && rows.length ? retsHtml(rows) : '');
             }
@@ -48656,6 +49191,11 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                 });
             }
 
+            // Small boxes (6 / 8 / 9 layouts, short screens) get a smaller score box.
+            function setCompact(cellsEl, rows, cols) {
+                cellsEl.classList.toggle('fsg-compact', cellsEl.clientHeight / rows < 380 || cellsEl.clientWidth / cols < 520);
+            }
+
             function renderGrid() {
                 const cellsEl = $('fs-grid-cells');
                 const list = tickerList();
@@ -48667,8 +49207,25 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                 const start = Math.floor(idx / n) * n;
                 const page = list.slice(start, start + n);
 
-                const key = [n, tf, page.join(','), cellsEl.clientWidth, cellsEl.clientHeight].join('|');
+                const contentKey = [n, tf, page.join(',')].join('|');
+                const key = contentKey + '|' + cellsEl.clientWidth + '|' + cellsEl.clientHeight;
                 if (key === drawnKey) { markSelected(sel); return; }
+                /* Same boxes, new size (sidebar toggle, window resize): redraw the
+                   existing canvases where they are. Rebuilding them blanked every
+                   box and flashed "Loading…" — the blink on a sidebar toggle. */
+                if (drawnKey && drawnKey.indexOf(contentKey + '|') === 0) {
+                    drawnKey = key;
+                    setCompact(cellsEl, rows, cols);
+                    markSelected(sel);
+                    cellsEl.querySelectorAll('.fsg-cell[data-tk]').forEach(function (cell) {
+                        const body = cell.querySelector('.fsg-body');
+                        const pCv = body && body.querySelector('.card-chart-canvas-price');
+                        if (!pCv || !pCv._chartState || typeof window._renderCardCandleChart !== 'function') return;
+                        window._renderCardCandleChart(cell.getAttribute('data-tk'), tf, pCv,
+                            body.querySelector('.card-chart-canvas-vol'), body.querySelector('.card-chart-loading'), body);
+                    });
+                    return;
+                }
                 drawnKey = key;
 
                 cellsEl.style.gridTemplateColumns = 'repeat(' + cols + ', minmax(0, 1fr))';
@@ -48687,8 +49244,7 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                         '</div></div>';
                 }
                 cellsEl.innerHTML = html;
-                // Small boxes (6 / 8 / 9 layouts, short screens) get a smaller score box.
-                cellsEl.classList.toggle('fsg-compact', cellsEl.clientHeight / rows < 380 || cellsEl.clientWidth / cols < 520);
+                setCompact(cellsEl, rows, cols);
                 markSelected(sel);
 
                 // Draw after layout so every body has its real size.
@@ -48775,19 +49331,181 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                 };
             }
 
+            /* SuperStar circle under F / H on the single chart. Hidden while a
+               trainer runs, so it cannot give the masked ticker away. */
+            function syncSsSlot() {
+                const slot = $('fs-ss-slot');
+                if (!slot) return;
+                const tk = (($('fs-ticker-select') || {}).value || '').toUpperCase();
+                slot.innerHTML = (!tk || window._fsTrainingMode) ? '' : ssBadgeHtml(tk, 'fs-ss-badge');
+            }
+
+            /* Sidebar slide (≈250 ms width transition). Single chart: redrawn in
+               every frame at the width that frame lays out, so it tracks the
+               edge instead of trailing it. Grid: each box's canvases stretch
+               with the box for the slide (redrawing 4–9 charts per frame would
+               stutter), then all redraw in place once at the final size. */
+            let slideRaf = 0;
+            window._fsAnimateResize = function (ms) {
+                cancelAnimationFrame(slideRaf);
+                const cells = $('fs-grid-cells');
+                const grid = gridOn() && $('fs-grid') && !$('fs-grid').hidden;
+                if (grid && cells) cells.classList.add('fsg-resizing');
+                const t0 = performance.now();
+                const step = function () {
+                    if (!modalOpen()) { if (cells) cells.classList.remove('fsg-resizing'); return; }
+                    const done = performance.now() - t0 >= ms;
+                    if (!grid && !done) {
+                        try { window.renderFullScreenChart({ skipChrome: true }); } catch (e) { }
+                    }
+                    if (!done) { slideRaf = requestAnimationFrame(step); return; }
+                    if (cells) cells.classList.remove('fsg-resizing');
+                    window.renderFullScreenChart();
+                };
+                slideRaf = requestAnimationFrame(step);
+            };
+
+            /* ── Filters ──
+               The sidebar's Filter button docks the main page's own filter bar
+               over the chart (moved, not copied, so there is one set of filters)
+               and switches the list to "Main Filter". Every doFilter() then
+               rebuilds that list live; the grid follows. Done / Esc / F2 / closing
+               the chart puts the bar back where it came from. */
+            let dockHome = null;
+            function dockOpen() { const d = $('fs-filter-dock'); return !!(d && !d.hidden); }
+            window.fsToggleFilterDock = function (force) {
+                const dock = $('fs-filter-dock'), slot = $('fs-filter-dock-slot');
+                const bar = $('filter-bar');
+                if (!dock || !slot || !bar) return;
+                const open = typeof force === 'boolean' ? force : dock.hidden;
+                if (open === !dock.hidden) return;
+                if (open) {
+                    dockHome = { parent: bar.parentNode, next: bar.nextSibling, shown: bar.classList.contains('show') };
+                    slot.appendChild(bar);
+                    bar.classList.add('show');
+                    dock.hidden = false;
+                    document.body.classList.add('fs-filter-docked');
+                    const gs = $('fs-group-select');
+                    if (gs && gs.value !== 'main_filter') {
+                        gs.value = 'main_filter';
+                        window.updateFSTickers(false);
+                        drawnKey = '';
+                        window.renderFullScreenChart();
+                    }
+                } else {
+                    if (typeof window.fltCloseAll === 'function') window.fltCloseAll();
+                    if (dockHome && dockHome.parent) {
+                        dockHome.parent.insertBefore(bar, dockHome.next);
+                        bar.classList.toggle('show', dockHome.shown);
+                    }
+                    dockHome = null;
+                    dock.hidden = true;
+                    document.body.classList.remove('fs-filter-docked');
+                }
+                const btn = $('fs-filter-btn');
+                if (btn) btn.classList.toggle('open', open);
+                syncFilterBadge();
+            };
+
+            function syncFilterBadge() {
+                const n = (window.currentFilteredData || []).length;
+                // Is any main-page filter actually set? (The unfiltered list is
+                // not "all rows", so the count alone cannot tell.)
+                const val = id => (($(id) || {}).value || '');
+                const ms = id => (typeof window.msVals === 'function' ? window.msVals($(id)) : []);
+                const idx = ms('index-filter');
+                const filtered = !!(val('search-input').trim() ||
+                    // Nifty_ALL is the app's default index (and what reset returns to)
+                    (idx.length && !(idx.length === 1 && idx[0] === 'Nifty_ALL')) ||
+                    ['qtr-filter', 'sec-filter', 'ind-filter'].some(id => ms(id).length) ||
+                    (($('fund-cnt') || {}).textContent || '') || (($('tech-cnt') || {}).textContent || '') ||
+                    (val('ipo-filter') && val('ipo-filter') !== 'all') ||
+                    ($('investor-ms-btn') && $('investor-ms-btn').classList.contains('on')) ||
+                    (typeof activeFilter !== 'undefined' && activeFilter !== 'all'));
+                const cnt = $('fs-filter-cnt'), btn = $('fs-filter-btn');
+                if (cnt) cnt.textContent = filtered ? (n > 999 ? '999+' : String(n)) : '';
+                if (btn) btn.classList.toggle('active', filtered);
+                const dn = $('fs-filter-dock-n');
+                if (dn) dn.textContent = n + ' stock' + (n === 1 ? '' : 's');
+                const opt = document.querySelector('#fs-group-select option[value="main_filter"]');
+                if (opt) opt.textContent = '🔎 Main Filter (' + n + ')';
+            }
+
+            // Re-read the filter result whenever the main page filters.
+            let filterSyncT = 0;
+            const origDoFilter = window.doFilter;
+            if (typeof origDoFilter === 'function') {
+                window.doFilter = function () {
+                    const out = origDoFilter.apply(this, arguments);
+                    clearTimeout(filterSyncT);
+                    filterSyncT = setTimeout(function () {
+                        if (!modalOpen()) return;
+                        syncFilterBadge();
+                        const gs = $('fs-group-select');
+                        if (gs && gs.value === 'main_filter') {
+                            window.updateFSTickers(true);
+                            drawnKey = '';
+                            window.renderFullScreenChart();
+                        }
+                    }, 80);
+                    return out;
+                };
+            }
+
+            // Esc closes the dock first (not the whole chart); F2 toggles it.
+            window.addEventListener('keydown', function (e) {
+                if (!modalOpen()) return;
+                if (e.key === 'F2') { e.preventDefault(); e.stopPropagation(); window.fsToggleFilterDock(); return; }
+                if (e.key === 'Escape' && dockOpen()) {
+                    const panelOpen = document.querySelector('.flt-panel.open, .inv-ms-panel.open');
+                    e.preventDefault(); e.stopPropagation();
+                    if (panelOpen && typeof window.fltCloseAll === 'function') window.fltCloseAll();
+                    else window.fsToggleFilterDock(false);
+                }
+            }, true);
+
+            const origClose = window.closeFullScreenChart;
+            if (typeof origClose === 'function') {
+                window.closeFullScreenChart = function () {
+                    window.fsToggleFilterDock(false);
+                    return origClose.apply(this, arguments);
+                };
+            }
+
             /* ── Hook the full chart render ── */
             const origRender = window.renderFullScreenChart;
             if (typeof origRender === 'function') {
                 window.renderFullScreenChart = function (opts) {
                     // Duration can also change from code (open, trainers); keep the chip honest.
-                    if (!(opts && opts.skipChrome)) syncViewChip();
+                    if (!(opts && opts.skipChrome)) { syncViewChip(); syncFilterBadge(); }
                     if (!gridOn()) {
                         showGrid(false);
-                        return origRender.apply(this, arguments);
+                        const out = origRender.apply(this, arguments);
+                        if (!(opts && opts.skipChrome)) syncSsSlot();
+                        return out;
                     }
                     if (!$('fs-ticker-select') || !$('fs-ticker-select').value) return;
                     showGrid(true);
                     renderGrid();
+                };
+            }
+
+            /* Deliv · MRS mode and the SuperTrend ATR multiplier change every box. */
+            ['fsToggleRscvMode', 'setFsAtrMult'].forEach(function (name) {
+                const orig = window[name];
+                if (typeof orig !== 'function') return;
+                window[name] = function () {
+                    drawnKey = '';
+                    return orig.apply(this, arguments);
+                };
+            });
+
+            /* Indicator toggles (e.g. A/D Stats) change how every box draws. */
+            const origIndToggle = window.fsToggleIndicator;
+            if (typeof origIndToggle === 'function') {
+                window.fsToggleIndicator = function () {
+                    drawnKey = '';
+                    return origIndToggle.apply(this, arguments);
                 };
             }
 
@@ -48871,7 +49589,7 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                     if (typeof window._fsRenderGuruPanel === 'function') window._fsRenderGuruPanel(tk);
                 });
                 cellsEl.addEventListener('dblclick', function (e) {
-                    if (e.target.closest && e.target.closest('.fsg-fhbtn')) return;   // fast F/H taps are not "open alone"
+                    if (e.target.closest && e.target.closest('.fsg-fhbtn, .superstar-badge')) return;   // fast F/H / investor taps are not "open alone"
                     const cell = e.target.closest && e.target.closest('.fsg-cell[data-tk]');
                     if (!cell) return;
                     const sel = $('fs-ticker-select');
@@ -48892,6 +49610,39 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                     }).observe(cellsEl);
                 }
             }
+
+            /* Ctrl + 1/2/3/4/6/8/9 → that many boxes (Alt + number does the
+               same: Chrome usually keeps Ctrl + number for switching tabs).
+               Alt pressed and released on its own → hide / show the sidebar.
+               Capture phase, so nothing else sees these keys first. */
+            let altAlone = false;
+            window.addEventListener('keydown', function (e) {
+                if (!modalOpen()) return;
+                if (e.key === 'Alt') { if (!e.repeat) altAlone = true; e.preventDefault(); return; }
+                altAlone = false;
+                if ((e.ctrlKey || e.metaKey || e.altKey) && !e.shiftKey) {
+                    const m = /^Digit([1-9])$/.exec(e.code || '') || /^Numpad([1-9])$/.exec(e.code || '');
+                    const n = m ? +m[1] : 0;
+                    if (n && LAYOUTS[n]) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.setFsGridLayout(n);
+                    }
+                }
+            }, true);
+            window.addEventListener('keyup', function (e) {
+                if (e.key !== 'Alt') return;
+                const was = altAlone;
+                altAlone = false;
+                if (!was || !modalOpen()) return;
+                const tag = ((document.activeElement && document.activeElement.tagName) || '').toLowerCase();
+                if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+                e.preventDefault();   // keep Alt from focusing the browser menu
+                if (typeof window.toggleFsSidebar === 'function') window.toggleFsSidebar();
+            }, true);
+            // A click while Alt is held (e.g. Alt + click) is not a lone Alt.
+            window.addEventListener('mousedown', function () { altAlone = false; }, true);
+            window.addEventListener('blur', function () { altAlone = false; });
 
             /* G cycles the layout; PageUp / PageDown flip pages. */
             window.addEventListener('keydown', function (e) {
