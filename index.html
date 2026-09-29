@@ -9470,7 +9470,7 @@
                     <button class="fh-filter-btn" id="hold-filter-btn" onclick="toggleFHFilter('H')"
                         title="Holding Tickers">H</button>
                     <button class="fh-filter-btn" id="fs-chart-btn" onclick="openFullScreenChart()"
-                        title="Full Screen Chart">C</button>
+                        title="Full Screen Chart (Alt+C)">C</button>
                     <button class="fh-filter-btn" id="upcoming-results-btn" onclick="openUpcomingResults()"
                         title="Upcoming Results">U</button>
                     <button class="top-filter-btn" id="top-filter-btn" onclick="toggleTopPanel(event)"
@@ -9732,10 +9732,10 @@
                     <option value="ebitp">EBITDA↓</option>
                     <option value="npp">Net Profit↓</option>
                     <option value="techscore">Tech Score↓</option>
-                    <option value="techstdev">StDev↓</option>
-                    <option value="techr2">Tech R2↓</option>
-                    <option value="techvol">Tech Vol↓</option>
-                    <option value="tech52w">Tech 52W↓</option>
+                    <option value="techrs">Tech RS↓</option>
+                    <option value="techstage">Stage 2 first↓</option>
+                    <option value="techhi">Near 52W High↓</option>
+                    <option value="techud">Up/Down Vol↓</option>
                 </select>
             </div>
 
@@ -10214,7 +10214,6 @@
                 insights: 'insights.parquet',
                 namesMap: 'namesMap.parquet',
                 superstar: 'SuperStar.parquet',
-                epsales: 'epsSales.parquet',
                 screener: 'screener.parquet'
             };
             window._PARQUET_FILES = PARQUET_FILES;
@@ -11021,19 +11020,9 @@
            (see initCardCharts / drawCardChart below). ── */
         function buildCardChartSection(r) {
             const ticker = r._ticker;
-            // Build return badges for 1M 3M 6M 1Y
-            const retPairs = [
-                { lbl: '1M', v: isNaN(r._ret1m) ? NaN : r._ret1m },
-                { lbl: '3M', v: isNaN(r._ret3m) ? NaN : r._ret3m },
-                { lbl: '6M', v: isNaN(r._ret6m) ? NaN : r._ret6m },
-                { lbl: '1Y', v: isNaN(r._ret1y) ? NaN : r._ret1y }
-            ];
-            const retHtml = retPairs.map(p => {
-                if (isNaN(p.v)) return `<span class="cch-ret-badge cch-ret-na"><span class="cch-ret-lbl">${p.lbl}</span>—</span>`;
-                const cls = p.v >= 0 ? 'cch-ret-pos' : 'cch-ret-neg';
-                const sign = p.v >= 0 ? '+' : '';
-                return `<span class="cch-ret-badge ${cls}"><span class="cch-ret-lbl">${p.lbl}</span>${sign}${p.v.toFixed(1)}%</span>`;
-            }).join('');
+            // Tech metrics strip: RS / ST / HI / UD
+            const retHtml = techMetrics(r).map(m =>
+                `<span class="tm-chip tm-${m.tone}" title="${m.title}"><span class="tm-l">${m.lbl}</span>${m.disp}</span>`).join('');
             const defP = window._cardChartDefaultPeriod || '1y';
             const pill = (per, lbl) => `<span class="ccp-pill${per === defP ? ' active' : ''}" data-period="${per}" onclick="setCardChartPeriod(event,this,'${per}')">${lbl}</span>`;
             return `
@@ -11055,11 +11044,44 @@
         }
 
         let selectedCardTicker = null;
-        /* Tech Score box (score + σ / R² / V / 1Y + sector rank). Shared by the
+        /* Tech Score box (score + RS / ST / HI / UD + sector rank). Shared by the
            company card and the full chart's multi-chart grid boxes; the grid
            passes { fin: true } to swap the 2×2 for NP / EPS / EBIT / SALE
            (quarterly-result performance, coloured as in the full chart's
            mini financial card). */
+        /* The four chart metrics shown next to the Tech Score: RS rating, Weinstein
+           stage, % below the 52W high, up/down volume. tone is the iscore colour
+           (green / orange / red / blue / gray). Used by the card's score box, the
+           card's Chart view strip and the full chart's grid box headers. */
+        function techMetrics(r) {
+            const out = [];
+            const rs = parseFloat(r && r._techRS);
+            out.push({ lbl: 'RS', disp: isNaN(rs) ? '-' : Math.round(rs),
+                tone: isNaN(rs) ? 'gray' : (rs >= 80 ? 'green' : (rs >= 60 ? 'orange' : 'red')),
+                title: 'RS rating: 1-99 percentile of 3/6/9/12-month performance vs all stocks' });
+            const stg = parseFloat(r && r._techStage);
+            out.push({ lbl: 'ST', disp: isNaN(stg) ? '-' : stg,
+                tone: isNaN(stg) ? 'gray' : ({ 1: 'blue', 2: 'green', 3: 'orange', 4: 'red' })[stg],
+                title: isNaN(stg) ? 'Stage: needs 34+ weeks of history' : 'Stage ' + stg + ': ' + TECH_STAGE_NAMES[stg] + ' (Weinstein, from the 30-week average)' });
+            const offHi = -parseFloat(r && r._techOffHi);
+            out.push({ lbl: 'HI', disp: isNaN(offHi) ? '-' : Math.round(offHi),
+                tone: isNaN(offHi) ? 'gray' : (offHi <= 10 ? 'green' : (offHi <= 25 ? 'orange' : 'red')),
+                title: '% below the 52-week high' });
+            const ud = parseFloat(r && r._techUD);
+            out.push({ lbl: 'UD', disp: isNaN(ud) ? '-' : (ud >= 10 ? Math.round(ud) : ud.toFixed(1)),
+                tone: isNaN(ud) ? 'gray' : (ud >= 1.5 ? 'green' : (ud >= 1 ? 'orange' : 'red')),
+                title: 'Up/down volume: volume on up weeks ÷ down weeks, last 26 weeks' });
+            return out;
+        }
+        window.techMetrics = techMetrics;
+
+        function sectorRankTitle(r) {
+            if (!r || isNaN(r._sectorRank)) return 'Sector momentum rank';
+            return 'Sector momentum rank ' + r._sectorRank + ' of ' + r._sectorCount + ' — ' + r._sec +
+                ' (Breadth momentum score ' + r._sectorMom + ')';
+        }
+        window.sectorRankTitle = sectorRankTitle;
+
         function techScoreBoxHtml(r, opts) {
             const fin = !!(opts && opts.fin);
             if (!r) return '';
@@ -11070,26 +11092,12 @@
                 ['SALE', r['Revenue Performance'], 'Performance', 'Revenue Performance']
             ] : null;
             const hasFin = fin && finVals.some(f => f[1] !== '' && f[1] !== undefined && f[1] !== null);
-            if (!r._techScore && !hasFin) return '';
+            if ((r._techScore === '' || r._techScore == null) && !hasFin) return '';
             const sc = parseFloat(r._techScore);
             const scCls = isNaN(sc) ? 'gray' : (sc >= 70 ? 'green' : (sc >= 40 ? 'orange' : 'red'));
             const scDisp = isNaN(sc) ? '-' : Math.round(sc);
 
-            const an = parseFloat(r._techStDev) * 100;
-            const anCls = isNaN(an) ? 'gray' : (an <= 20 ? 'green' : (an <= 40 ? 'orange' : 'red'));
-            const anDisp = isNaN(an) ? '-' : Math.round(an);
-
-            const r2 = parseFloat(r._techR2) * 100;
-            const r2Cls = isNaN(r2) ? 'gray' : (r2 < 50 ? 'red' : (r2 < 70 ? 'orange' : 'green'));
-            const r2Disp = isNaN(r2) ? '-' : Math.round(r2);
-
-            const vol = parseFloat(r._techVol);
-            const volCls = isNaN(vol) ? 'gray' : (vol >= 1.8 ? 'green' : (vol >= 1 ? 'orange' : 'red'));
-            const volDisp = isNaN(vol) ? '-' : vol.toFixed(1);
-
-            const p52 = parseFloat(r._tech52w);
-            const p52Cls = isNaN(p52) ? 'gray' : (p52 >= 90 ? 'green' : (p52 >= 70 ? 'orange' : 'red'));
-            const p52Disp = isNaN(p52) ? '-' : Math.round(p52);
+            const tm = techMetrics(r);
 
             const sRnk = parseFloat(r._sectorRank);
             const sRnkCls = isNaN(sRnk) ? 'gray' : (sRnk <= 5 ? 'green' : (sRnk <= 10 ? 'blue' : (sRnk <= 15 ? 'orange' : 'red')));
@@ -11100,7 +11108,7 @@
 
             return `
         <div class="tech-score-box">
-          <div class="iscore ${scCls}" style="width: 34px; height: 34px; padding: 4px; box-sizing: border-box; margin: 0; overflow: hidden;">
+          <div class="iscore ${scCls}" title="${techScoreTitle(r)}" style="width: 34px; height: 34px; padding: 4px; box-sizing: border-box; margin: 0; overflow: hidden;">
             <span class="iscore-val" style="font-size: ${dynFs(scDisp, 20)}px; font-weight: 800; line-height: 1;">${scDisp}</span>
           </div>
           <div class="ts-grid" style="position: relative;">
@@ -11113,12 +11121,14 @@
                 const align = i % 2 === 0 ? 'flex-start' : 'flex-end';
                 const dir = i < 2 ? 'column' : 'column-reverse';
                 return `<div class="iscore ${cls}" title="${f[3]}" style="width: 34px; height: 34px; min-width: 0; padding: 3px 4px; box-sizing: border-box; margin: 0; flex-direction: ${dir}; justify-content: space-between; align-items: ${align}; overflow: hidden;"><span class="iscore-label" style="font-size: 9px; line-height: 1; font-weight: 800;">${f[0]}</span><span class="iscore-val" style="font-size: ${dynFs(disp, 14)}px; line-height: 1; font-weight: 800;">${disp}</span></div>`;
-            }).join('') : `
-            <div class="iscore ${anCls}" style="width: 34px; height: 34px; min-width: 0; padding: 3px 5px; box-sizing: border-box; margin: 0; justify-content: space-between; align-items: flex-start; overflow: hidden;"><span class="iscore-val" style="font-size: ${dynFs(anDisp, 13)}px; line-height: 1; font-weight: 700;">${anDisp}</span><span class="iscore-label" style="font-size: 16px; line-height: 1; text-transform: none;">&sigma;</span></div>
-            <div class="iscore ${r2Cls}" style="width: 34px; height: 34px; min-width: 0; padding: 3px 5px; box-sizing: border-box; margin: 0; justify-content: space-between; align-items: flex-end; overflow: hidden;"><span class="iscore-val" style="font-size: ${dynFs(r2Disp, 13)}px; line-height: 1; font-weight: 700;">${r2Disp}</span><span class="iscore-label" style="font-size: 14px; line-height: 1; text-transform: none;">R&sup2;</span></div>
-            <div class="iscore ${volCls}" style="width: 34px; height: 34px; min-width: 0; padding: 3px 5px; box-sizing: border-box; margin: 0; justify-content: space-between; align-items: flex-start; overflow: hidden;"><span class="iscore-label" style="font-size: 13px; line-height: 1;">V</span><span class="iscore-val" style="font-size: ${dynFs(volDisp, 13)}px; line-height: 1; font-weight: 700;">${volDisp}</span></div>
-            <div class="iscore ${p52Cls}" style="width: 34px; height: 34px; min-width: 0; padding: 3px 5px; box-sizing: border-box; margin: 0; justify-content: space-between; align-items: flex-end; overflow: hidden;"><span class="iscore-label" style="font-size: 11px; line-height: 1;">1Y</span><span class="iscore-val" style="font-size: ${dynFs(p52Disp, 13)}px; line-height: 1; font-weight: 700;">${p52Disp}</span></div>`}
-            ${!isNaN(sRnk) ? `<div class="iscore ${sRnkCls}" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 24px; height: 24px; min-width: 0; box-sizing: border-box; margin: 0; display: flex; align-items: center; justify-content: center; padding: 0; border: 1.5px solid var(--bg-card); border-radius: 4px; z-index: 5; box-shadow: 0 1px 3px rgba(0,0,0,0.5);" title="Sector Rank">
+            }).join('') : tm.map((m, i) => {
+                // Values on the outer edges (top row: top, bottom row: bottom)
+                // so the Sector Rank badge in the middle never covers them.
+                const align = i % 2 === 0 ? 'flex-start' : 'flex-end';
+                const dir = i < 2 ? 'column' : 'column-reverse';
+                return `<div class="iscore ${m.tone}" title="${m.title}" style="width: 34px; height: 34px; min-width: 0; padding: 3px 5px; box-sizing: border-box; margin: 0; flex-direction: ${dir}; justify-content: space-between; align-items: ${align}; overflow: hidden;"><span class="iscore-val" style="font-size: ${dynFs(m.disp, 13)}px; line-height: 1; font-weight: 700;">${m.disp}</span><span class="iscore-label" style="font-size: 10px; line-height: 1;">${m.lbl}</span></div>`;
+            }).join('')}
+            ${!isNaN(sRnk) ? `<div class="iscore ${sRnkCls}" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 24px; height: 24px; min-width: 0; box-sizing: border-box; margin: 0; display: flex; align-items: center; justify-content: center; padding: 0; border: 1.5px solid var(--bg-card); border-radius: 4px; z-index: 5; box-shadow: 0 1px 3px rgba(0,0,0,0.5);" title="${sectorRankTitle(r)}">
               <span class="iscore-val" style="font-size: 14px; line-height: 1; margin: 0; font-weight: 800;">${sRnkDisp}</span>
             </div>` : ''}
           </div>
@@ -13061,10 +13071,10 @@
             else if (sortMode === 'ebitp') { final.forEach(r => { r._sk = r._ebitp; }); }
             else if (sortMode === 'npp') { final.forEach(r => { r._sk = r._npp; }); }
             else if (sortMode === 'techscore') { final.forEach(r => { r._sk = parseFloat(r._techScore); }); }
-            else if (sortMode === 'techstdev') { final.forEach(r => { r._sk = parseFloat(r._techStDev); }); }
-            else if (sortMode === 'techr2') { final.forEach(r => { r._sk = parseFloat(r._techR2); }); }
-            else if (sortMode === 'techvol') { final.forEach(r => { r._sk = parseFloat(r._techVol); }); }
-            else if (sortMode === 'tech52w') { final.forEach(r => { r._sk = parseFloat(r._tech52w); }); }
+            else if (sortMode === 'techrs') { final.forEach(r => { r._sk = parseFloat(r._techRS); }); }
+            else if (sortMode === 'techstage') { final.forEach(r => { const o = ({ 2: 4, 1: 3, 3: 2, 4: 1 })[r._techStage]; r._sk = o ? o * 1000 + (+r._techScore || 0) : NaN; }); }
+            else if (sortMode === 'techhi') { final.forEach(r => { r._sk = parseFloat(r._techOffHi); }); }
+            else if (sortMode === 'techud') { final.forEach(r => { r._sk = parseFloat(r._techUD); }); }
             final.sort((a, b) => {
                 // When searching, strong prefix matches always come first
                 if (orGroups.length > 0) {
@@ -13077,7 +13087,7 @@
                 else if (sortMode === 'str') { vA = a._str; vB = b._str; }
                 else if (sortMode === 'roce') { vA = a._roce; vB = b._roce; }
                 else if (sortMode === 'mcap') { vA = a._mcap; vB = b._mcap; }
-                else if (['dur', 'val', 'gwth', 'prof', 'cons', 'balsht', 'revp', 'ebitp', 'npp', 'techscore', 'techstdev', 'techr2', 'techvol', 'tech52w'].includes(sortMode)) { vA = a._sk; vB = b._sk; }
+                else if (['dur', 'val', 'gwth', 'prof', 'cons', 'balsht', 'revp', 'ebitp', 'npp', 'techscore', 'techrs', 'techstage', 'techhi', 'techud'].includes(sortMode)) { vA = a._sk; vB = b._sk; }
                 else { vA = a._sno; vB = b._sno; desc = false; }
                 const nA = isNaN(vA) ? -Infinity : vA, nB = isNaN(vB) ? -Infinity : vB;
                 if (nA === nB) return 0;
@@ -13917,7 +13927,6 @@
                 { id: 'ohlcv', name: 'Weekly OHLCV', ico: '🕯️' },
                 { id: 'indices', name: 'Index Members', ico: '🧭' },
                 { id: 'names', name: 'Company Names', ico: '🏷️' },
-                { id: 'epsales', name: 'EPS / Sales Tech', ico: '📈' },
                 { id: 'superstar', name: 'SuperStar Holdings', ico: '⭐' },
                 { id: 'news', name: 'News', ico: '📰' },
                 { id: 'insights', name: 'Insights', ico: '💡' },
@@ -14086,10 +14095,10 @@
             sb.className = 'sbox s-info'; sb.textContent = 'Connecting to data sources…'; sb.style.display = 'block';
 
             /* ── Try loading from IndexedDB first (unless forced refresh) ── */
-            let resT, idxT, namesT, newsT, insT, ohlcvT, ssT, epSalesT, scrT;
+            let resT, idxT, namesT, newsT, insT, ohlcvT, ssT, scrT;
             let loadedFromCache = false;
 
-            const _cacheIds = { results: 'resT', indices: 'idxT', names: 'namesT', news: 'newsT', insights: 'insT', superstar: 'ssT', epsales: 'epSalesT', screener: 'scrT' };
+            const _cacheIds = { results: 'resT', indices: 'idxT', names: 'namesT', news: 'newsT', insights: 'insT', superstar: 'ssT', screener: 'scrT' };
             if (!forceNetwork && window._idbCache) {
                 const rfUI = window._refreshUI;
                 try {
@@ -14102,7 +14111,7 @@
                     const t = performance.now();
                     const cached = await window._idbCache.load();
                     if (cached && cached.resT && cached.scrT) {
-                        ({ resT, idxT, namesT, newsT, insT, ssT, epSalesT, scrT } = cached);
+                        ({ resT, idxT, namesT, newsT, insT, ssT, scrT } = cached);
                         if (rfUI) Object.keys(_cacheIds).forEach(id => rfUI.set(id, cached[_cacheIds[id]] ? 'ok' : 'err', cached[_cacheIds[id]] ? 'cache' : 'missing'));
                         const db = await window._idbCache.openDB();
                         /* The OHLCV index is cached ready-made (typed arrays,
@@ -14151,7 +14160,6 @@
                             <div id="prog-superstar">⏳ SuperStar</div>
                             <div id="prog-indices">⏳ Indices</div>
                             <div id="prog-ohlcv">⏳ OHLCV</div>
-                            <div id="prog-epsales">⏳ EPS/Sales</div>
                             <div id="prog-screener">⏳ Screener</div>
                         </div>`;
 
@@ -14189,7 +14197,7 @@
                             return '';
                         }
                     };
-                    if (rfUI) rfUI.phase('Fetching ' + 9 + ' data files…');
+                    if (rfUI) rfUI.phase('Fetching ' + 8 + ' data files…');
 
                     const fetchOHLCVBinary = async () => {
                         let fetchUrl = 'OHLC.parquet';
@@ -14202,7 +14210,7 @@
                     };
 
                     // Fetch all data sources in parallel from local Parquet files via DuckDB
-                    [resT, idxT, namesT, newsT, insT, ohlcvT, ssT, epSalesT, scrT] = await Promise.all([
+                    [resT, idxT, namesT, newsT, insT, ohlcvT, ssT, scrT] = await Promise.all([
                         fetchWithProg('results', 'Results', window._parquetToCSV('Results.parquet')),
                         fetchWithProg('indices', 'Indices', window._parquetToCSV('indices.parquet')),
                         fetchWithProg('names', 'Names', window._parquetToCSV('namesMap.parquet')),
@@ -14210,13 +14218,12 @@
                         fetchWithProg('insights', 'Insights', window._parquetToCSV('insights.parquet')),
                         fetchWithProg('ohlcv', 'OHLCV', fetchOHLCVBinary()),
                         fetchWithProgNoThrow('superstar', 'SuperStar', window._parquetToCSV('SuperStar.parquet')),
-                        fetchWithProgNoThrow('epsales', 'EPS/Sales', window._parquetToCSV('epsSales.parquet')),
                         fetchWithProgNoThrow('screener', 'Screener', window._parquetToCSV('screener.parquet')),
                     ]);
 
                     // Save to IDB asynchronously (non-blocking — don’t await)
                     if (window._idbCache) {
-                        window._idbCache.save({ resT, idxT, namesT, newsT, insT, ssT, epSalesT, scrT })
+                        window._idbCache.save({ resT, idxT, namesT, newsT, insT, ssT, scrT })
                             .catch(e => console.warn('[loadAll] IDB save error (non-critical):', e.message));
                     }
                 }
@@ -14343,43 +14350,8 @@
 
                 allData = mergeAndPrecalc(res, tickerToName, scrMap);
                 window._peerAllData = allData; // expose for peer comparison popup
-                // ── Tech Score external data: build ticker map and attach to allData rows ──
-                window._techScoreMap = {};
-                if (epSalesT) {
-                    parseCSV(epSalesT).forEach(row => {
-                        const t = String(row['Ticker'] || row['ticker'] || '').trim().toUpperCase();
-                        if (!t) return;
-
-                        let sr = '';
-                        for (let k in row) {
-                            if (k.toLowerCase().replace(/_/g, '').replace(/\s+/g, '') === 'sectorrank') {
-                                sr = row[k];
-                                break;
-                            }
-                        }
-
-                        window._techScoreMap[t] = {
-                            score: row['score'] || '',
-                            downside_dev: row['downside_dev'] || '',
-                            r2: row['r2'] || '',
-                            vol_ratio: row['vol_ratio'] || '',
-                            pos_52w_pct: row['pos_52w_pct'] || '',
-                            sector_rank: sr
-                        };
-                    });
-                }
-                // Attach tech scores to each row for fast access in buildCard
-                allData.forEach(r => {
-                    const d = window._techScoreMap[String(r._ticker).toUpperCase()];
-                    if (d) {
-                        r._techScore = d.score;
-                        r._techStDev = d.downside_dev;
-                        r._techR2 = d.r2;
-                        r._techVol = d.vol_ratio;
-                        r._tech52w = d.pos_52w_pct;
-                        r._sectorRank = d.sector_rank;
-                    }
-                });
+                // Sector Rank (the badge in the middle of the Tech Score box) is
+                // the sector's Breadth momentum rank, set by calcSectorMomRank().
 
                 // Lay the live current-week bar (Google Sheet, last good copy)
                 // over the parquet history before anything is computed from it.
@@ -14409,6 +14381,11 @@
                 // A beat later, so the overlay fades and the first scroll or
                 // click is not fighting the deals parse for the main thread.
                 setTimeout(window._loadSecondarySources, 1500);
+
+                // Yahoo fill for tickers missing from OHLC.parquet (local file,
+                // written by yahoo_fill.py) — after the first render, so it
+                // never delays it.
+                if (window._yahooFill) setTimeout(function () { window._yahooFill.load(); }, 1000);
 
                 // Live current-week OHLC: first fetch + the 10:15–16:15 IST schedule
                 // (idempotent — a data refresh just re-checks it).
@@ -15274,6 +15251,155 @@
         window.addEventListener('scroll', () => hideSigTip(), true);
 
         /* Calculate returns from OHLCV close prices for all stocks */
+        /* Tech Score (0-100) from the weekly OHLCV chart. Built to put strong,
+           clean uptrends near their highs on top. Needs at least 10 weekly bars;
+           shorter windows fall back to whatever history exists.
+             Trend strength  25  annualised log-regression slope × R², average of
+                                 52W and 26W fits                       0 → 150
+             Smoothness      10  average R² of the 52W and 26W fits      0.20 → 0.95
+             RS rating       20  percentile (1-99) of 2×3M + 6M + 9M + 12M
+                                 return vs all stocks                   30 → 99
+             Trend template  15  Minervini checks passed (x / 8) on 10/30/40W averages
+             Near 52W high   10  % below the 52W high                   -30% → 0%
+             Up/down volume   5  volume on up weeks ÷ down weeks, 26W   0.8 → 3
+             Max drawdown    10  worst fall from a running peak, 26W    -40% → -5%
+             vs 10W average   5  price vs its 10-week average           -5% → +10%
+           Each part scales linearly between its bounds and is clamped.
+           The card chips show RS / TT / Hi (% below high) / UD. The old σ, R²,
+           V and 1Y values are still filled in for the breadth and peer views. */
+        const TECH_SCORE_PARTS = [
+            ['Trend strength (slope×R²)', 25], ['Smoothness (R²)', 10], ['RS rating', 20],
+            ['Trend template', 15], ['Near 52W high', 10], ['Up/down volume', 5],
+            ['Max drawdown 26W', 10], ['vs 10W average', 5]
+        ];
+        const TECH_STAGE_NAMES = { 1: 'basing', 2: 'uptrend', 3: 'topping', 4: 'downtrend' };
+        function calcChartTechScore() {
+            if (!window._ohlcvTickers || !allData.length) return;
+            const lin = (v, lo, hi) => Math.max(0, Math.min(1, (v - lo) / (hi - lo)));
+            const avg = xs => { const v = xs.filter(x => !isNaN(x)); return v.length ? v.reduce((a, x) => a + x, 0) / v.length : NaN; };
+            // Log-linear regression: annualised % slope and R²
+            const fit = c => {
+                const n = c.length;
+                let sx = 0, sy = 0, sxx = 0, sxy = 0, syy = 0;
+                for (let i = 0; i < n; i++) {
+                    const y = Math.log(c[i]);
+                    sx += i; sy += y; sxx += i * i; sxy += i * y; syy += y * y;
+                }
+                const vx = n * sxx - sx * sx, vy = n * syy - sy * sy, cov = n * sxy - sx * sy;
+                return { slope: (vx ? cov / vx : 0) * 52 * 100, r2: (vx && vy > 1e-12) ? (cov * cov) / (vx * vy) : 0 };
+            };
+
+            const rows = [];
+            allData.forEach(r => {
+                r._techScore = ''; r._techStDev = ''; r._techR2 = ''; r._techVol = ''; r._tech52w = '';
+                r._techSlope = NaN; r._techParts = null;
+                r._techRS = NaN; r._techTT = NaN; r._techOffHi = NaN; r._techUD = NaN; r._techDD = NaN; r._techStage = NaN;
+                const raw = window._ohlcvTickers.get(String(r._ticker).toUpperCase());
+                if (!raw) return;
+                const arr = raw.filter(b => b.close > 0);
+                const N = arr.length;
+                if (N < 10) return;
+                const C = arr.map(b => b.close), last = C[N - 1];
+                const px = w => C[Math.max(0, N - 1 - w)];
+                const ma = (w, end) => avg(C.slice(Math.max(0, N - (end || 0) - w), N - (end || 0)));
+
+                const f52 = fit(C.slice(-52)), f26 = N >= 26 ? fit(C.slice(-26)) : f52;
+                const trend = (f52.slope * f52.r2 + f26.slope * f26.r2) / 2;
+                const smooth = (f52.r2 + f26.r2) / 2;
+
+                let hi = -Infinity, lo = Infinity;
+                arr.slice(-52).forEach(b => { if (b.high > hi) hi = b.high; if (b.low < lo) lo = b.low; });
+                const offHi = hi > 0 ? (last / hi - 1) * 100 : NaN;
+
+                const m10 = ma(10), m30 = ma(30), m40 = ma(40), m40p = ma(40, 4);
+                const ttPass = [
+                    last > m30 && last > m40, m30 > m40, m40 > m40p,
+                    m10 > m30 && m10 > m40, last > m10, last >= lo * 1.3, last >= hi * 0.75
+                ];
+
+                // Up/down volume over the last 26 weeks
+                let upV = 0, dnV = 0;
+                for (let i = Math.max(1, N - 26); i < N; i++) {
+                    const v = arr[i].vol;
+                    if (isNaN(v)) continue;
+                    if (C[i] > C[i - 1]) upV += v; else if (C[i] < C[i - 1]) dnV += v;
+                }
+                const ud = dnV > 0 ? upV / dnV : (upV > 0 ? 3 : 1);
+
+                // Worst drawdown from a running peak over the last 26 weeks
+                let peak = 0, dd = 0;
+                C.slice(-26).forEach(v => { if (v > peak) peak = v; dd = Math.min(dd, (v / peak - 1) * 100); });
+
+                // Old σ / V / 1Y values, kept for the breadth and peer views
+                const c52 = C.slice(-52);
+                const neg = [];
+                for (let i = 1; i < c52.length; i++) { const ret = c52[i] / c52[i - 1] - 1; if (ret < 0) neg.push(ret); }
+                let sd = 0;
+                if (neg.length > 1) {
+                    const m = avg(neg);
+                    sd = Math.sqrt(neg.reduce((a, v) => a + (v - m) * (v - m), 0) / neg.length) * Math.sqrt(52);
+                }
+                let cLo = Infinity, cHi = -Infinity;
+                c52.forEach(v => { if (v < cLo) cLo = v; if (v > cHi) cHi = v; });
+                const recentN = Math.min(8, N - 1), vols = arr.map(b => b.vol);
+                const vPrior = avg(vols.slice(Math.max(0, N - recentN - 18), N - recentN));
+                const vr = vPrior > 0 ? avg(vols.slice(N - recentN)) / vPrior : NaN;
+                r._techStDev = sd;
+                r._techR2 = f52.r2;
+                r._techVol = isNaN(vr) ? '' : vr;
+                r._tech52w = cHi > cLo ? (last - cLo) / (cHi - cLo) * 100 : 50;
+
+                r._techSlope = f52.slope;
+                r._techOffHi = offHi;
+                r._techUD = ud;
+                r._techDD = dd;
+
+                // Weinstein stage from the 30W average: its 4-week slope (±1% = flat)
+                // and price above/below it. Flat or mixed cases are 3 (topping) if
+                // the average is well above where it was 26 weeks ago, else 1 (basing).
+                if (N >= 34) {
+                    const m30p = ma(30, 4), m30old = ma(30, Math.min(26, N - 30));
+                    const slope30 = m30 / m30p - 1, above = last > m30;
+                    r._techStage = slope30 > 0.01 && above ? 2
+                        : slope30 < -0.01 && !above ? 4
+                        : m30 > m30old * 1.05 ? 3 : 1;
+                }
+                rows.push({ r, perf: 2 * last / px(13) + last / px(26) + last / px(39) + last / px(52), trend, smooth, ttPass, d10: last / m10 - 1 });
+            });
+
+            // RS rating: percentile of the weighted performance across all stocks
+            rows.sort((a, b) => a.perf - b.perf);
+            const n = rows.length;
+            rows.forEach((x, k) => {
+                const r = x.r;
+                r._techRS = n > 1 ? Math.round(1 + (k / (n - 1)) * 98) : 50;
+                const tt = x.ttPass.filter(Boolean).length + (r._techRS >= 70 ? 1 : 0);
+                r._techTT = tt;
+                const parts = [
+                    25 * lin(x.trend, 0, 150),
+                    10 * lin(x.smooth, 0.20, 0.95),
+                    20 * lin(r._techRS, 30, 99),
+                    15 * tt / 8,
+                    10 * (isNaN(r._techOffHi) ? 0 : lin(r._techOffHi, -30, 0)),
+                    5 * lin(r._techUD, 0.8, 3),
+                    10 * lin(r._techDD, -40, -5),
+                    5 * lin(x.d10, -0.05, 0.10)
+                ];
+                r._techParts = parts;
+                r._techScore = Math.round(parts.reduce((a, v) => a + v, 0));
+            });
+        }
+        window.calcChartTechScore = calcChartTechScore;
+
+        function techScoreTitle(r) {
+            if (!r || !r._techParts) return 'Tech Score';
+            const lines = TECH_SCORE_PARTS.map((p, i) => p[0] + ': ' + r._techParts[i].toFixed(1) + ' / ' + p[1]);
+            const sl = isNaN(r._techSlope) ? '' : '\nTrend slope (52W): ' + (r._techSlope >= 0 ? '+' : '') + r._techSlope.toFixed(0) + '%/yr, R² ' + (+r._techR2).toFixed(2);
+            const st = TECH_STAGE_NAMES[r._techStage];
+            return 'Tech Score ' + r._techScore + ' / 100 (from weekly chart)\n' + lines.join('\n') + sl
+                + (st ? '\nStage ' + r._techStage + ': ' + st : '');
+        }
+
         function calcOHLCVReturns() {
             if (!window._ohlcvTickers || !allData.length) return;
             // Listing age (IPO filter): days from a ticker's first bar to the
@@ -15315,6 +15441,11 @@
                 r._ret1y = getRet(52);
                 r._ret2y = getRet(104);
             });
+
+            // Tech Score from the chart: must run before the breadth / tech
+            // screener calcs below, which read r._techScore.
+            calcChartTechScore();
+            calcSectorMomRank();
 
             // ── Pivot Distance Calculation (for Proximity-to-Pivot screener filter) ──
             const tickerRowMap = {};
@@ -15584,6 +15715,54 @@
         // ══════════════════════════════════════════════════════
         //   SECTOR & INDUSTRY BREADTH  (Feature 3)
         // ══════════════════════════════════════════════════════
+
+        // Momentum score 0-100: weighted breadth + return signal
+        function _breadthMomentum(above10Pct, above40Pct, avgRet3m) {
+            const breadthScore = (above10Pct * 40 + above40Pct * 30);
+            const retScore = !isNaN(avgRet3m) ? Math.min(30, Math.max(0, (avgRet3m + 20) / 60 * 30)) : 15;
+            return Math.round(breadthScore + retScore);
+        }
+
+        /* Sector Rank for the Tech Score box: every sector's Breadth momentum
+           score (same formula and stock rules as the Breadth tab's sector table,
+           but always over the whole universe, not the Breadth index filter),
+           ranked 1 = strongest. Ties share a rank. Sets r._sectorRank,
+           r._sectorMom and r._sectorCount on each row. */
+        function calcSectorMomRank() {
+            if (!window._ohlcvTickers || !allData.length) return;
+            const bk = {};
+            allData.forEach(r => {
+                r._sectorRank = NaN; r._sectorMom = NaN; r._sectorCount = NaN;
+                if (!r._sec) return;
+                const arr = window._ohlcvTickers.get(String(r._ticker).toUpperCase());
+                if (!arr || arr.length < 10) return;
+                const close = arr[arr.length - 1].close;
+                let sum10 = 0, cnt10 = 0, sum40 = 0, cnt40 = 0;
+                for (let j = Math.max(0, arr.length - 10); j < arr.length; j++) { sum10 += arr[j].close; cnt10++; }
+                for (let j = Math.max(0, arr.length - 40); j < arr.length; j++) { sum40 += arr[j].close; cnt40++; }
+                const ma10w = cnt10 > 0 ? sum10 / cnt10 : null;
+                const ma40w = cnt40 >= 10 ? sum40 / cnt40 : null;
+                const b = bk[r._sec] || (bk[r._sec] = { total: 0, above10: 0, above40: 0, retSum: 0, retN: 0 });
+                b.total++;
+                if (ma10w && close > ma10w) b.above10++;
+                if (ma40w && close > ma40w) b.above40++;
+                if (!isNaN(r._ret3m)) { b.retSum += r._ret3m; b.retN++; }
+            });
+            const list = Object.entries(bk).map(([sec, b]) => [sec,
+                _breadthMomentum(b.above10 / b.total, b.above40 / b.total, b.retN ? b.retSum / b.retN : NaN)]);
+            list.sort((a, z) => z[1] - a[1]);
+            const rank = {};
+            list.forEach(([sec, m], i) => { rank[sec] = i > 0 && m === list[i - 1][1] ? rank[list[i - 1][0]] : i + 1; });
+            const mom = Object.fromEntries(list);
+            allData.forEach(r => {
+                if (rank[r._sec] === undefined) return;
+                r._sectorRank = rank[r._sec];
+                r._sectorMom = mom[r._sec];
+                r._sectorCount = list.length;
+            });
+        }
+        window.calcSectorMomRank = calcSectorMomRank;
+
         function calcSectorBreadth() {
             if (!window._ohlcvTickers || !allData.length) return;
 
@@ -15680,10 +15859,7 @@
                     b.avg52w = avg(b.tech52w);
                     b.above10Pct = b.total > 0 ? b.above10 / b.total : 0;
                     b.above40Pct = b.total > 0 ? b.above40 / b.total : 0;
-                    // Momentum score 0-100: weighted breadth + return signal
-                    const breadthScore = (b.above10Pct * 40 + b.above40Pct * 30);
-                    const retScore = !isNaN(b.avgRet3m) ? Math.min(30, Math.max(0, (b.avgRet3m + 20) / 60 * 30)) : 15;
-                    b.momentum = Math.round(breadthScore + retScore);
+                    b.momentum = _breadthMomentum(b.above10Pct, b.above40Pct, b.avgRet3m);
 
                     // ── Relative Strength quadrant (RRG-style) — which sector/industry is
                     // actually GAINING strength, vs. one that's merely up because the whole
@@ -18600,7 +18776,8 @@
                     '<label class="lo-opt"><input type="radio" name="lo-src" value="sheet"><span><b>Google Sheet</b> (default) — live, updates hourly Mon–Fri 10:15–16:15 IST</span></label>' +
                     '<label class="lo-opt"><input type="radio" name="lo-src" value="parquet"><span><b>OHLC.parquet</b> only — use when the parquet already has this week</span></label>' +
                     '<div class="lo-status" id="lo-status"></div>' +
-                    '<button class="lo-btn" id="lo-update-btn" type="button">↻ Update now</button>';
+                    '<button class="lo-btn" id="lo-update-btn" type="button">↻ Update now</button>' +
+                    '<div id="yf-section"></div>';
                 document.body.appendChild(pop);
                 pop.addEventListener('change', e => {
                     if (e.target && e.target.name === 'lo-src') setSource(e.target.value);
@@ -18697,12 +18874,18 @@
                     update(false);   // one fetch per session start, whatever the time
                 },
                 update: function () { return update(true); },
+                // Recompute everything from the bars and refresh every view
+                refreshViews: function () { refreshViews(); },
                 setSource: setSource,
                 toggleSettings: function (ev) {
                     if (ev) ev.stopPropagation();
                     if (!pop) buildPop();
                     pop.hidden = !pop.hidden;
-                    if (!pop.hidden) { renderStatus(); placePop(); }
+                    if (!pop.hidden) {
+                        renderStatus();
+                        if (window._yahooFill) window._yahooFill.render();
+                        placePop();
+                    }
                 },
                 get source() { return source; }
             };
@@ -18714,6 +18897,201 @@
             }
             if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
             else init();
+        })();
+    </script>
+
+    <style>
+        /* Yahoo Finance fill section inside the ⚙ weekly-candle popover */
+        #live-ohlc-pop { max-height: calc(100vh - 80px); overflow-y: auto; }
+        #yf-section { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border2); }
+        #yf-section .yf-grid { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; margin: 6px 0; font-size: 11px; color: var(--text2); }
+        #yf-section .yf-grid b { color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+        #yf-section .yf-grid .yf-warn { color: var(--pop-orange); }
+        #yf-section .yf-grid .yf-bad { color: var(--pop-red); }
+        #yf-section .yf-grid .yf-ok { color: var(--pop-green); }
+        #yf-section .yf-note { font-size: 11px; color: var(--text3); margin: 6px 0; }
+        #yf-section .yf-cmd { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
+        #yf-section .yf-cmd code {
+            flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            font-size: 10.5px; padding: 4px 6px; border-radius: 5px; background: var(--surface2); color: var(--text);
+        }
+        #yf-section .yf-cmd button, #yf-section .yf-small {
+            border: 1px solid var(--border2); background: var(--surface2); color: var(--text2);
+            border-radius: 5px; font-size: 10.5px; padding: 3px 7px; cursor: pointer; white-space: nowrap;
+        }
+        #yf-section details { margin-top: 6px; font-size: 11px; color: var(--text2); }
+        #yf-section summary { cursor: pointer; color: var(--text); }
+        #yf-section .yf-list { max-height: 150px; overflow-y: auto; margin-top: 4px; line-height: 1.6; word-break: break-word; }
+        #yf-section .yf-list span { display: inline-block; margin-right: 6px; }
+    </style>
+
+    <script>
+        /* ══════════════════════════════════════════════════════
+           YAHOO FINANCE FILL — tickers missing from OHLC.parquet
+           A browser cannot call Yahoo (no CORS), so fetching is done by
+           yahoo_fill.py (GitHub Actions, Mon–Sat 6 PM IST), which writes Yahoo_OHLC.parquet +
+           Yahoo_OHLC_meta.json next to this page. This module only READS
+           those files: after the first render it adds their bars for
+           tickers OHLC.parquet does not have (window._ohlcvMergeYahoo),
+           recomputes, and shows in the ⚙ popover what is missing, what
+           needs an update or a full download, and which Yahoo tickers are
+           now in OHLC.parquet (removable) — with the command to run.
+           "Reload Yahoo file" re-reads the files after a script run.
+           The staleness rule matches yahoo_fill.py's is_stale().
+        ══════════════════════════════════════════════════════ */
+        (function () {
+            'use strict';
+            const FILE = 'Yahoo_OHLC.parquet', META = 'Yahoo_OHLC_meta.json';
+            const IST_MS = 5.5 * 3600000, DAY = 86400000;
+            let meta = {};            // ticker → { status, symbol, name, fetched, last }
+            let metaUpdated = '';
+            let lastLoad = null;      // { ts, found, stats, error }
+            let loading = null;
+
+            const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+            const iso = d => d.toISOString().slice(0, 10);
+
+            async function fetchFile(name, as) {
+                const r = await fetch(name + '?_ts=' + Date.now(), { cache: 'no-store' });
+                if (r.status === 404) return null;
+                if (!r.ok) throw new Error(name + ': HTTP ' + r.status);
+                return as === 'json' ? r.json() : r.arrayBuffer();
+            }
+
+            async function load(manual) {
+                if (loading) return loading;
+                if (typeof window._ohlcvMergeYahoo !== 'function' || !window._ohlcvTickers) return false;
+                loading = (async () => {
+                    try {
+                        const [buf, m] = await Promise.all([fetchFile(FILE), fetchFile(META, 'json').catch(() => null)]);
+                        meta = (m && m.tickers) || {};
+                        metaUpdated = (m && m.updated) || '';
+                        const hadBefore = window._ohlcvYahooSets().used.size > 0;
+                        const stats = await window._ohlcvMergeYahoo(buf);
+                        lastLoad = { ts: Date.now(), found: !!buf, stats, error: '' };
+                        // Merging reverted the live-week bar: lay it back, then
+                        // recompute when anything changed (or on a manual reload).
+                        if (window._liveOhlc) window._liveOhlc.applyStored();
+                        if ((stats && stats.added) || hadBefore || manual) {
+                            if (window._liveOhlc && window._liveOhlc.refreshViews) window._liveOhlc.refreshViews();
+                        }
+                        if (manual && typeof window._sxToast === 'function') {
+                            window._sxToast(buf ? 'Yahoo file loaded — ' + stats.added + ' tickers filled' : 'No ' + FILE + ' found', buf ? 'ok' : 'err');
+                        }
+                        return true;
+                    } catch (e) {
+                        lastLoad = { ts: Date.now(), found: false, stats: null, error: (e && e.message) || 'load failed' };
+                        console.warn('[yahooFill]', lastLoad.error);
+                        return false;
+                    } finally {
+                        loading = null;
+                        render();
+                    }
+                })();
+                render();
+                return loading;
+            }
+
+            // Same rule as yahoo_fill.py is_stale(): stale once a trading day
+            // (Mon–Fri 15:30 IST) has closed since the last fetch.
+            function lastMarketClose(now) {
+                const ist = new Date(now + IST_MS);          // UTC fields read as IST
+                let c = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate(), 15, 30);
+                if (c > now + IST_MS) c -= DAY;
+                while ([0, 6].indexOf(new Date(c).getUTCDay()) >= 0) c -= DAY;
+                return c - IST_MS;
+            }
+            function isStale(rec, latestParquetWeek, now) {
+                if (!rec || !rec.last) return true;
+                if (rec.last < latestParquetWeek) return true;
+                return Date.parse(rec.fetched) < lastMarketClose(now);
+            }
+
+            function status() {
+                const idx = window._ohlcvTickers;
+                if (!idx || typeof allData === 'undefined' || !allData.length) return null;
+                const sets = window._ohlcvYahooSets();
+                const latest = window._ohlcvParquetLatest();
+                const latestWeek = latest ? iso(new Date(latest)) : '';
+                const now = Date.now();
+                const universe = new Set();
+                allData.forEach(r => { const t = String(r._ticker || '').trim().toUpperCase(); if (t && t.indexOf('_') < 0) universe.add(t); });
+                const inParquet = tk => idx.has(tk) && !sets.used.has(tk);
+                const out = { latestWeek, missing: [], have: [], stale: [], fresh: [], newNeeded: [], notFound: [], removable: [] };
+                universe.forEach(tk => {
+                    if (inParquet(tk)) return;
+                    out.missing.push(tk);
+                    if (sets.file.has(tk)) {
+                        out.have.push(tk);
+                        (isStale(meta[tk], latestWeek, now) ? out.stale : out.fresh).push(tk);
+                    } else if (meta[tk] && meta[tk].status === 'notfound') out.notFound.push(tk);
+                    else out.newNeeded.push(tk);
+                });
+                sets.file.forEach(tk => { if (inParquet(tk)) out.removable.push(tk); });
+                Object.keys(out).forEach(k => { if (Array.isArray(out[k])) out[k].sort(); });
+                return out;
+            }
+
+            function listHtml(title, arr, withName) {
+                if (!arr.length) return '';
+                const items = arr.map(tk => {
+                    const m = meta[tk];
+                    const tip = m ? [m.name, m.symbol, m.last ? 'last ' + m.last : '', m.fetched ? 'fetched ' + m.fetched.slice(0, 10) : ''].filter(Boolean).join(' · ') : '';
+                    return '<span' + (tip ? ' title="' + esc(tip) + '"' : '') + '>' + esc(tk) + (withName && m && m.symbol ? ' <small>(' + esc(m.symbol.split('.').pop()) + ')</small>' : '') + '</span>';
+                }).join('');
+                return '<details><summary>' + esc(title) + ' (' + arr.length + ')</summary><div class="yf-list">' + items + '</div></details>';
+            }
+
+            function cmdHtml(cmd, why) {
+                return '<div class="yf-cmd" title="' + esc(why) + '"><code>' + esc(cmd) + '</code><button type="button" data-copy="' + esc(cmd) + '">Copy</button></div>';
+            }
+
+            function render() {
+                const el = document.getElementById('yf-section');
+                if (!el) return;
+                const s = status();
+                let h = '<div class="lo-title">Yahoo Finance fill — missing tickers</div>';
+                if (!s) { el.innerHTML = h + '<div class="yf-note">Waiting for data…</div>'; return; }
+                const row = (label, n, cls) => '<span>' + label + '</span><b class="' + (n ? cls : '') + '">' + n + '</b>';
+                h += '<div class="yf-grid">' +
+                    row('No data in OHLC.parquet', s.missing.length, 'yf-warn') +
+                    row('· filled from Yahoo', s.have.length, 'yf-ok') +
+                    row('· need update', s.stale.length, 'yf-warn') +
+                    row('· need full download', s.newNeeded.length, 'yf-warn') +
+                    row('· not on Yahoo', s.notFound.length, '') +
+                    row('Yahoo tickers now in OHLC.parquet (remove)', s.removable.length, 'yf-bad') +
+                    '</div>';
+                if (lastLoad && lastLoad.error) h += '<div class="yf-note yf-bad">⚠ ' + esc(lastLoad.error) + '</div>';
+                else if (lastLoad && !lastLoad.found) h += '<div class="yf-note">No ' + FILE + ' yet.</div>';
+                else if (metaUpdated) h += '<div class="yf-note">Yahoo file written ' + esc(new Date(metaUpdated).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })) + ' · parquet newest week ' + esc(s.latestWeek) + '</div>';
+                h += '<div class="yf-note">GitHub Actions runs <code>yahoo_fill.py all</code> Mon–Sat 6 PM IST. To run it by hand in the Terminal folder, then press Reload:</div>';
+                if (s.newNeeded.length) h += cmdHtml('python yahoo_fill.py new', 'Full history for the ' + s.newNeeded.length + ' tickers never fetched');
+                if (s.stale.length) h += cmdHtml('python yahoo_fill.py update', 'Refresh the ' + s.stale.length + ' out-of-date Yahoo tickers');
+                if (s.removable.length) h += cmdHtml('python yahoo_fill.py clean', 'Drop the ' + s.removable.length + ' Yahoo tickers OHLC.parquet now has');
+                if (s.newNeeded.length + s.stale.length + s.removable.length > 1) h += cmdHtml('python yahoo_fill.py all', 'clean + update + new in one run');
+                if (s.notFound.length) h += cmdHtml('python yahoo_fill.py new --retry-notfound', 'Also retry the ' + s.notFound.length + ' tickers Yahoo did not have');
+                h += listHtml('Need update', s.stale, true) +
+                    listHtml('Need full download', s.newNeeded, false) +
+                    listHtml('Removable (now in OHLC.parquet)', s.removable, true) +
+                    listHtml('Not on Yahoo', s.notFound, false) +
+                    listHtml('Filled from Yahoo, up to date', s.fresh, true);
+                h += '<button class="lo-btn" id="yf-reload-btn" type="button"' + (loading ? ' disabled' : '') + '>' +
+                    (loading ? 'Loading…' : '↻ Reload Yahoo file') + '</button>';
+                el.innerHTML = h;
+            }
+
+            document.addEventListener('click', e => {
+                const t = e.target;
+                if (!t || !t.closest || !t.closest('#yf-section')) return;
+                if (t.id === 'yf-reload-btn') { load(true); return; }
+                const cmd = t.getAttribute && t.getAttribute('data-copy');
+                if (cmd) {
+                    const done = () => { t.textContent = 'Copied'; setTimeout(() => { t.textContent = 'Copy'; }, 1200); };
+                    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(cmd).then(done, () => { });
+                }
+            });
+
+            window._yahooFill = { load: () => load(false), reload: () => load(true), status, render };
         })();
     </script>
 
@@ -19850,7 +20228,9 @@
                 const bases = [];
                 const tickers = [], offsets = [];
                 let n = 0;
-                _index.forEach((arr, tk) => { const b = baseOf(tk, arr); bases.push(b); tickers.push(tk); offsets.push(n); n += b.length; });
+                // Yahoo-filled tickers are not part of OHLC.parquet: never cached as parquet.
+                const yf = (_yahooIdx === _index) ? _yahoo : null;
+                _index.forEach((arr, tk) => { if (yf && yf.has(tk)) return; const b = baseOf(tk, arr); bases.push(b); tickers.push(tk); offsets.push(n); n += b.length; });
                 offsets.push(n);
                 const d = new Float64Array(n), o = new Float64Array(n), h = new Float64Array(n), l = new Float64Array(n), c = new Float64Array(n), v = new Float64Array(n);
                 let i = 0;
@@ -19861,6 +20241,64 @@
                     }
                 });
                 return { v1: true, tickers, offsets: Int32Array.from(offsets), d, o, h, l, c, v };
+            };
+
+            /* ── Yahoo Finance fill (Yahoo_OHLC.parquet, written by yahoo_fill.py) ──
+               Adds weekly bars ONLY for tickers OHLC.parquet does not have;
+               a ticker present in both keeps its parquet bars. _yahoo holds
+               the tickers added to the current _index, so a reload replaces
+               them cleanly and _ohlcvPack keeps them out of the parquet cache.
+               The caller reverts / re-applies the live-week overlay around it. */
+            const _yahoo = new Set();
+            let _yahooIdx = null;
+            const _yahooTickers = new Set();   // every ticker in the Yahoo file
+            window._ohlcvMergeYahoo = async function (buf) {
+                if (!_index) return null;
+                const st = { added: 0, inParquet: 0 };
+                let yIdx = new Map();
+                if (buf) {
+                    const { db, conn } = await window._getDuckDB();
+                    const name = 'yahoo_' + Date.now() + '.parquet';
+                    await db.registerFileBuffer(name, new Uint8Array(buf));
+                    try {
+                        yIdx = buildIndexFromParquetRows(await conn.query("SELECT * FROM '" + name + "' ORDER BY Ticker, Date"));
+                    } finally {
+                        try { await db.dropFile(name); } catch (e) { }
+                    }
+                }
+                _revertLive();
+                if (_yahooIdx === _index) _yahoo.forEach(tk => _index.delete(tk));
+                _yahoo.clear();
+                _yahooTickers.clear();
+                _yahooIdx = _index;
+                yIdx.forEach((arr, tk) => {
+                    _yahooTickers.add(tk);
+                    if (_index.has(tk)) { st.inParquet++; return; }
+                    _index.set(tk, arr);
+                    _yahoo.add(tk);
+                    st.added++;
+                });
+                return st;
+            };
+            // Newest week in OHLC.parquet itself: no Yahoo tickers, no live-sheet bar
+            window._ohlcvParquetLatest = function () {
+                let latest = 0;
+                if (!_index) return latest;
+                const yf = (_yahooIdx === _index) ? _yahoo : null;
+                const lvOn = _liveIdx === _index;
+                _index.forEach((arr, tk) => {
+                    if (!arr.length || (yf && yf.has(tk))) return;
+                    let b = arr[arr.length - 1];
+                    const lv = lvOn ? _live.get(tk) : null;
+                    if (lv && b === lv.bar) b = lv.replaced || arr[arr.length - 2];
+                    if (b && b.date.getTime() > latest) latest = b.date.getTime();
+                });
+                return latest;
+            };
+            // Tickers whose bars came from Yahoo / all tickers in the Yahoo file
+            window._ohlcvYahooSets = function () {
+                const cur = _yahooIdx === _index;
+                return { used: cur ? _yahoo : new Set(), file: cur ? _yahooTickers : new Set() };
             };
 
             /* ── Live current-week bar (Google Sheet) ──
@@ -22528,8 +22966,9 @@
             }
             window.__lineGrade = _lineGrade;                // test hook
 
-            /* Grade badges on the RIGHT of the A/D · OBV plot, ending just
-               left of the value labels (o.right). [mode tag] [A/D x] [OBV x]:
+            /* Grade badges on the A/D · OBV plot: starting at o.left when
+               given (the full chart puts them on the LEFT), otherwise ending
+               just left of the value labels (o.right). [mode tag] [A/D x] [OBV x]:
                coloured label, solid grade chip, ↗ / ↘ when the score moved 8+
                points in 4 weeks. o.pickY(x0, x1, h) chooses top or bottom —
                whichever the lines cross less there. Returns the hit areas. */
@@ -22559,7 +22998,7 @@
                 ctx.font = fTag;
                 const tagW = ctx.measureText(tag).width;
                 const total = tagW + gap + items.reduce((sum, m) => sum + m.w, 0) + gap * (items.length - 1);
-                let x = Math.max(o.minX || 0, o.right - total);
+                let x = o.left != null ? o.left : Math.max(o.minX || 0, o.right - total);
                 const y = o.pickY ? o.pickY(x, x + total, boxH) : 3;
                 const mid = y + boxH / 2;
                 const rects = [];
@@ -24493,7 +24932,7 @@
                     ic.fillStyle = '#00ccff';
                     ic.fillText(fmtV(lastObv), W - 4, obvY);
 
-                    // A/D and OBV grades — right side of the plot, top or bottom
+                    // A/D and OBV grades — left side of the plot, top or bottom
                     // (whichever the lines leave free). Full chart and grid boxes;
                     // sidebar → Indicators → A/D Grade. Fixed on the last candle
                     // by default; clicking a chip makes them follow the cursor.
@@ -24510,7 +24949,7 @@
                                 { label: 'A/D', color: '#ff4dff', g: gAD },
                                 { label: 'OBV', color: '#22d3ee', g: gOBV }
                             ], {
-                                right: W - IP.r - 6, minX: IP.l + 2,
+                                left: IP.l + 6, right: W - IP.r - 6, minX: IP.l + 2,
                                 size: isFs ? (fsCompact ? 12 : 15) : (W < 520 ? 11 : 13),
                                 follow,
                                 when: hov ? fmtChartDate(raw[hIdx].date) : '',
@@ -37086,6 +37525,33 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
         }
 
         .fsg-up { color: #22c55e; }
+        /* Tech metric chips (RS / ST / HI / UD) in the card chart strip and the
+           grid box header — same fills as the company card's .iscore chips. */
+        .tm-chip {
+            display: inline-flex;
+            align-items: baseline;
+            gap: 3px;
+            padding: 2px 6px;
+            border-radius: 5px;
+            font-family: 'Lexend', sans-serif;
+            font-size: 12px;
+            font-weight: 800;
+            line-height: 1.2;
+            color: #fff;
+            white-space: nowrap;
+        }
+        .tm-chip .tm-l {
+            font-size: 9.5px;
+            font-weight: 700;
+            opacity: 0.8;
+        }
+        .tm-chip.tm-green { background: #006400; }
+        .tm-chip.tm-blue { background: var(--blue); }
+        .tm-chip.tm-orange { background: var(--orange); }
+        .tm-chip.tm-red { background: var(--red); }
+        .tm-chip.tm-gray { background: var(--surface3); color: var(--text2); }
+        .fsg-compact .tm-chip { padding: 1px 4px; font-size: 11px; }
+        .fsg-compact .tm-chip .tm-l { font-size: 8.5px; }
         .fsg-dn { color: #f43f5e; }
         .fsg-na { color: rgba(255, 255, 255, 0.3); }
 
@@ -41112,7 +41578,7 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                             ${r['Revenue Performance'] ? `<div class="iscore ${getChipColor('Performance', r['Revenue Performance'])}" onclick="event.stopPropagation(); window.fsToggleQuickTrend();" title="SALE - Click to Select/Deselect Quick Trendline" style="width:${cw}px; height:${cw}px; min-width:0; padding:3px 4px; box-sizing:border-box; margin:0; justify-content:space-between; align-items:flex-end; overflow:hidden; cursor:pointer;"><span class="iscore-label" style="font-size:${lblFs}px; margin-bottom:0; font-weight:800; line-height:1;">SALE</span><span class="iscore-val" style="font-size:${fsDf(fmtWhole(r['Revenue Performance']))}px; font-weight:800; line-height:1;">${fmtWhole(r['Revenue Performance'])}</span></div>` : ''}
                             ${r['Net Profit Performance'] ? `<div class="iscore ${getChipColor('Performance', r['Net Profit Performance'])}" onclick="event.stopPropagation(); window.fsClearDrawings();" title="NP - Click to Clear All Drawings" style="width:${cw}px; height:${cw}px; min-width:0; padding:3px 4px; box-sizing:border-box; margin:0; justify-content:space-between; align-items:flex-start; overflow:hidden; cursor:pointer;"><span class="iscore-label" style="font-size:${lblFs}px; margin-bottom:0; font-weight:800; line-height:1;">NP</span><span class="iscore-val" style="font-size:${fsDf(fmtWhole(r['Net Profit Performance']))}px; font-weight:800; line-height:1;">${fmtWhole(r['Net Profit Performance'])}</span></div>` : ''}
                             ${!isNaN(r._eps) ? `<div class="iscore ${getChipColor('EPS Rank', r._eps)}" onclick="event.stopPropagation(); window.fsClearDrawings();" title="EPS - Click to Clear All Drawings" style="width:${cw}px; height:${cw}px; min-width:0; padding:3px 4px; box-sizing:border-box; margin:0; justify-content:space-between; align-items:flex-end; overflow:hidden; cursor:pointer;"><span class="iscore-label" style="font-size:${lblFs}px; margin-bottom:0; font-weight:800; line-height:1;">EPS</span><span class="iscore-val" style="font-size:${fsDf(fmtWhole(r._eps))}px; font-weight:800; line-height:1;">${fmtWhole(r._eps)}</span></div>` : ''}
-                            ${!isNaN(sRnk) ? `<div class="iscore ${sRnkCls}" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: ${srCw}px; height: ${srCw}px; min-width: 0; box-sizing: border-box; margin: 0; display: flex; align-items: center; justify-content: center; padding: 0; border: 1.5px solid var(--bg); border-radius: 4px; z-index: 5; box-shadow: 0 1px 3px rgba(0,0,0,0.5); pointer-events: none;" title="Sector Rank">
+                            ${!isNaN(sRnk) ? `<div class="iscore ${sRnkCls}" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: ${srCw}px; height: ${srCw}px; min-width: 0; box-sizing: border-box; margin: 0; display: flex; align-items: center; justify-content: center; padding: 0; border: 1.5px solid var(--bg); border-radius: 4px; z-index: 5; box-shadow: 0 1px 3px rgba(0,0,0,0.5); pointer-events: none;" title="${sectorRankTitle(r)}">
                                 <span class="iscore-val" style="font-size: ${srFs}px; line-height: 1; margin: 0; font-weight: 800; color: #ffffff;">${sRnkDisp}</span>
                             </div>` : ''}
                         `;
@@ -49098,12 +49564,11 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                 });
             }
 
-            /* Header returns, from the weekly bars the box draws:
-               1W / 1M / 3M / 6M / 1Y = 1 / 4 / 13 / 26 / 52 bars back (same
-               as the cards), and 10W = close vs its 10-week average, banded
-               like the cards' 10W signal chip. */
-            const RETS = [['1W', 1], ['1M', 4], ['3M', 13], ['6M', 26], ['1Y', 52]];
-            function retsHtml(rows) {
+            /* Header strip: the Tech Score's RS / ST / HI / UD metrics (same
+               values and colours as the card), then 10W = close vs its 10-week
+               average from the weekly bars the box draws, banded like the
+               cards' 10W signal chip. */
+            function retsHtml(rows, r) {
                 const n = rows ? rows.length : 0;
                 const last = n ? rows[n - 1].close : NaN;
                 // "%" is its own span so small boxes can drop it; -0.0 prints as 0.0.
@@ -49112,13 +49577,12 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                     return (a === '0.0' ? '' : v >= 0 ? '+' : '−') + a + '<span class="fsg-pct">%</span>';
                 };
                 let h = '';
-                RETS.forEach(function (p) {
-                    const b = n - 1 - p[1] >= 0 ? rows[n - 1 - p[1]].close : 0;
-                    const v = b ? (last / b - 1) * 100 : NaN;
-                    h += '<span class="fsg-ret"><span class="fsg-rl">' + p[0] + '</span>' +
-                        (isNaN(v) ? '<span class="fsg-na">—</span>' : '<span class="' + (v >= 0 ? 'fsg-up' : 'fsg-dn') + '">' + fmt(v) + '</span>') +
-                        '</span>';
-                });
+                if (r && typeof window.techMetrics === 'function') {
+                    window.techMetrics(r).forEach(function (m) {
+                        h += '<span class="tm-chip tm-' + m.tone + '" title="' + esc(m.title) + '"><span class="tm-l">' + m.lbl + '</span>' +
+                            (m.disp === '-' ? '—' : m.disp) + '</span>';
+                    });
+                }
                 let d = NaN;
                 if (n >= 10) {
                     let sum = 0;
@@ -49174,7 +49638,7 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                     '</span>';
                 return '<span class="fsg-tk">' + esc(UC) + '</span>' + fhHtml + ssBadgeHtml(UC, 'fsg-ss') +
                     '<span class="fsg-name" title="' + esc(name) + '">' + esc(name) + '</span>' +
-                    (rows && rows.length ? retsHtml(rows) : '');
+                    (rows && rows.length ? retsHtml(rows, r) : '');
             }
 
             /* The company card's Tech Score box, pinned to the box's top-left. */
@@ -49661,6 +50125,24 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                 }
             });
         })();
+
+        /* Alt + C → full chart, Alt + H → back to the main home screen.
+           Matched on e.code so a keyboard layout or Alt-produced character
+           does not change the key. Capture phase, and the event is stopped,
+           so the lone-Alt sidebar toggle and the browser menu stay out of it. */
+        window.addEventListener('keydown', function (e) {
+            if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.repeat) return;
+            const fsModal = document.getElementById('fs-chart-modal');
+            const fsOpen = !!(fsModal && fsModal.style.display === 'flex');
+            if (e.code === 'KeyC') {
+                e.preventDefault(); e.stopPropagation();
+                if (!fsOpen && typeof window.openFullScreenChart === 'function') window.openFullScreenChart();
+            } else if (e.code === 'KeyH') {
+                e.preventDefault(); e.stopPropagation();
+                if (fsOpen && typeof window.closeFullScreenChart === 'function') window.closeFullScreenChart();
+                if (typeof window.closeUpcomingResults === 'function') window.closeUpcomingResults();
+            }
+        }, true);
     </script>
 
     </body>
