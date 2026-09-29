@@ -1,0 +1,58 @@
+name: Yahoo fill
+
+# Runs "python yahoo_fill.py all" Monday–Saturday at 6 PM IST. It only touches
+# tickers that OHLC.parquet does NOT have:
+#   clean  – drops Yahoo data for tickers that OHLC.parquet now has
+#   update – refreshes Yahoo tickers whose data is out of date
+#   new    – downloads full history for newly missing tickers
+# Commits Yahoo_OHLC.parquet + Yahoo_OHLC_meta.json only when something changed.
+
+on:
+  schedule:
+    - cron: '30 12 * * 1-6'       # 12:30 UTC = 18:00 IST, Mon–Sat
+  workflow_dispatch:              # "Run workflow" button in the Actions tab
+
+permissions:
+  contents: write
+
+concurrency:
+  group: yahoo-fill
+  cancel-in-progress: false
+
+jobs:
+  fill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install packages
+        run: pip install pandas pyarrow requests
+
+      - name: Run yahoo_fill.py all
+        run: python yahoo_fill.py all
+
+      - name: Commit and push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898+github-actions[bot]@users.noreply.github.com"
+          git add Yahoo_OHLC.parquet Yahoo_OHLC_meta.json
+          if git diff --cached --quiet; then
+            echo "No changes to push."
+            exit 0
+          fi
+          git commit -m "Yahoo fill update — $(TZ=Asia/Kolkata date '+%Y-%m-%d %H:%M')"
+          for i in 1 2 3 4 5; do
+            if git push origin HEAD:main; then echo "Pushed."; exit 0; fi
+            echo "Push rejected (main moved); rebasing and retrying…"
+            git fetch --depth 50 origin main
+            git rebase origin/main
+            sleep 10
+          done
+          echo "Could not push after 5 attempts." && exit 1
