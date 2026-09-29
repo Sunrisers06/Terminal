@@ -337,7 +337,7 @@
    "status": "notfound"
   },
   "ATCOM": {
-   "fetched": "2026-09-29T15:05:39+00:00",
+   "fetched": "2026-09-29T15:57:10+00:00",
    "last": "2026-08-31",
    "name": "Atcom Technologies Ltd",
    "status": "ok",
@@ -362,7 +362,7 @@
    "status": "notfound"
   },
   "AVAILFC": {
-   "fetched": "2026-09-29T15:05:42+00:00",
+   "fetched": "2026-09-29T15:57:11+00:00",
    "last": "2026-06-01",
    "name": "Available Finance Limited",
    "status": "ok",
@@ -642,7 +642,7 @@
    "status": "notfound"
   },
   "CIGNITITEC": {
-   "fetched": "2026-09-29T15:06:26+00:00",
+   "fetched": "2026-09-29T15:57:11+00:00",
    "last": "2026-05-11",
    "name": "Cigniti Technologies Limited",
    "status": "ok",
@@ -1257,7 +1257,7 @@
    "symbol": "GSMFOILS.NS"
   },
   "GSPL": {
-   "fetched": "2026-09-29T15:07:57+00:00",
+   "fetched": "2026-09-29T15:57:12+00:00",
    "last": "2026-05-11",
    "name": "Gujarat State Petronet Limited",
    "status": "ok",
@@ -1300,7 +1300,7 @@
    "symbol": "HIGREEN.NS"
   },
   "HINDMOTORS": {
-   "fetched": "2026-09-29T15:08:02+00:00",
+   "fetched": "2026-09-29T15:57:12+00:00",
    "last": "2025-09-29",
    "name": "Hindustan Motors Limited",
    "status": "ok",
@@ -1535,7 +1535,7 @@
    "status": "notfound"
   },
   "JBCHEPHARM": {
-   "fetched": "2026-09-29T15:08:39+00:00",
+   "fetched": "2026-09-29T15:57:12+00:00",
    "last": "2026-07-13",
    "name": "J. B. Chemicals & Pharmaceuticals Limited",
    "status": "ok",
@@ -2076,7 +2076,7 @@
    "status": "notfound"
   },
   "NHIT": {
-   "fetched": "2026-09-29T15:10:03+00:00",
+   "fetched": "2026-09-29T15:57:13+00:00",
    "last": "2026-07-27",
    "name": "National Highways Infra Trust",
    "status": "ok",
@@ -2698,7 +2698,7 @@
    "symbol": "SANGANI.NS"
   },
   "SANGHIIND": {
-   "fetched": "2026-09-29T15:11:39+00:00",
+   "fetched": "2026-09-29T15:57:13+00:00",
    "last": "2026-03-30",
    "name": "Sanghi Industries Limited",
    "status": "ok",
@@ -3621,5 +3621,5 @@
    "symbol": "ZTECH.NS"
   }
  },
- "updated": "2026-09-29T15:13:52+00:00"
+ "updated": "2026-09-29T15:57:13+00:00"
 }
