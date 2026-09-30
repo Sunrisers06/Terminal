@@ -6,7 +6,7 @@ Results.parquet have no rows there (mostly NSE SME listings). This script fetche
 their weekly OHLCV from Yahoo Finance into Yahoo_OHLC.parquet, which index.html
 reads and uses ONLY for tickers that OHLC.parquet does not have.
 
-GitHub Actions (.github/workflows/yahoo_fill.yml) runs "all" Mon–Sat 6 PM IST.
+GitHub Actions (.github/workflows/yahoo_fill.yml) runs "all" Mon–Sat ~5:40 PM IST (backups ~8:15 PM, ~10:50 PM).
 Commands:
 
     python yahoo_fill.py            same as "status"
