@@ -1,7 +1,11 @@
 name: Yahoo fill
 
-# Runs "python yahoo_fill.py all" Monday–Saturday at 6 PM IST. It only touches
-# tickers that OHLC.parquet does NOT have:
+# Runs "python yahoo_fill.py all" Monday–Saturday around 6 PM IST, with two
+# backup runs later in the evening. GitHub may delay or silently drop a
+# scheduled run when its servers are busy, so one cron alone is not reliable.
+# The backups are cheap: once a run has succeeded, nothing is stale any more,
+# so a later run fetches almost nothing and commits nothing.
+# It only touches tickers that OHLC.parquet does NOT have:
 #   clean  – drops Yahoo data for tickers that OHLC.parquet now has
 #   update – refreshes Yahoo tickers whose data is out of date
 #   new    – downloads full history for newly missing tickers
@@ -9,7 +13,10 @@ name: Yahoo fill
 
 on:
   schedule:
-    - cron: '30 12 * * 1-6'       # 12:30 UTC = 18:00 IST, Mon–Sat
+    # Odd minutes on purpose: GitHub is busiest at :00 and :30.
+    - cron: '7 12 * * 1-6'        # 12:07 UTC = 17:37 IST, Mon–Sat (main run)
+    - cron: '43 14 * * 1-6'       # 14:43 UTC = 20:13 IST (backup)
+    - cron: '19 17 * * 1-6'       # 17:19 UTC = 22:49 IST (backup)
   workflow_dispatch:              # "Run workflow" button in the Actions tab
 
 permissions:
