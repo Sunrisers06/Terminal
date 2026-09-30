@@ -18929,7 +18929,7 @@
         /* ══════════════════════════════════════════════════════
            YAHOO FINANCE FILL — tickers missing from OHLC.parquet
            A browser cannot call Yahoo (no CORS), so fetching is done by
-           yahoo_fill.py (GitHub Actions, Mon–Sat 6 PM IST), which writes Yahoo_OHLC.parquet +
+           yahoo_fill.py (GitHub Actions, Mon–Sat ~5:40 PM IST + 2 backups), which writes Yahoo_OHLC.parquet +
            Yahoo_OHLC_meta.json next to this page. This module only READS
            those files: after the first render it adds their bars for
            tickers OHLC.parquet does not have (window._ohlcvMergeYahoo),
@@ -19064,7 +19064,7 @@
                 if (lastLoad && lastLoad.error) h += '<div class="yf-note yf-bad">⚠ ' + esc(lastLoad.error) + '</div>';
                 else if (lastLoad && !lastLoad.found) h += '<div class="yf-note">No ' + FILE + ' yet.</div>';
                 else if (metaUpdated) h += '<div class="yf-note">Yahoo file written ' + esc(new Date(metaUpdated).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })) + ' · parquet newest week ' + esc(s.latestWeek) + '</div>';
-                h += '<div class="yf-note">GitHub Actions runs <code>yahoo_fill.py all</code> Mon–Sat 6 PM IST. To run it by hand in the Terminal folder, then press Reload:</div>';
+                h += '<div class="yf-note">GitHub Actions runs <code>yahoo_fill.py all</code> Mon–Sat ~5:40 PM IST (backups ~8:15 PM, ~10:50 PM). To run it by hand in the Terminal folder, then press Reload:</div>';
                 if (s.newNeeded.length) h += cmdHtml('python yahoo_fill.py new', 'Full history for the ' + s.newNeeded.length + ' tickers never fetched');
                 if (s.stale.length) h += cmdHtml('python yahoo_fill.py update', 'Refresh the ' + s.stale.length + ' out-of-date Yahoo tickers');
                 if (s.removable.length) h += cmdHtml('python yahoo_fill.py clean', 'Drop the ' + s.removable.length + ' Yahoo tickers OHLC.parquet now has');
