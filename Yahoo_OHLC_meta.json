@@ -337,7 +337,7 @@
    "status": "notfound"
   },
   "ATCOM": {
-   "fetched": "2026-10-01T19:47:17+00:00",
+   "fetched": "2026-10-01T21:50:11+00:00",
    "last": "2026-08-31",
    "name": "Atcom Technologies Ltd",
    "status": "ok",
@@ -362,7 +362,7 @@
    "status": "notfound"
   },
   "AVAILFC": {
-   "fetched": "2026-10-01T19:47:17+00:00",
+   "fetched": "2026-10-01T21:50:11+00:00",
    "last": "2026-06-01",
    "name": "Available Finance Limited",
    "status": "ok",
@@ -642,7 +642,7 @@
    "status": "notfound"
   },
   "CIGNITITEC": {
-   "fetched": "2026-10-01T19:47:18+00:00",
+   "fetched": "2026-10-01T21:50:12+00:00",
    "last": "2026-05-11",
    "name": "Cigniti Technologies Limited",
    "status": "ok",
@@ -1236,7 +1236,7 @@
    "symbol": "GSMFOILS.NS"
   },
   "GSPL": {
-   "fetched": "2026-10-01T19:47:18+00:00",
+   "fetched": "2026-10-01T21:50:12+00:00",
    "last": "2026-05-11",
    "name": "Gujarat State Petronet Limited",
    "status": "ok",
@@ -1279,7 +1279,7 @@
    "symbol": "HIGREEN.NS"
   },
   "HINDMOTORS": {
-   "fetched": "2026-10-01T19:47:19+00:00",
+   "fetched": "2026-10-01T21:50:12+00:00",
    "last": "2025-09-29",
    "name": "Hindustan Motors Limited",
    "status": "ok",
@@ -1514,7 +1514,7 @@
    "status": "notfound"
   },
   "JBCHEPHARM": {
-   "fetched": "2026-10-01T19:47:19+00:00",
+   "fetched": "2026-10-01T21:50:13+00:00",
    "last": "2026-07-13",
    "name": "J. B. Chemicals & Pharmaceuticals Limited",
    "status": "ok",
@@ -1553,7 +1553,7 @@
    "symbol": "JIWANRAM.NS"
   },
   "JIYAECO": {
-   "fetched": "2026-10-01T19:47:19+00:00",
+   "fetched": "2026-10-01T21:50:13+00:00",
    "last": "2026-09-21",
    "name": "Jiya Eco-Products Limited",
    "status": "ok",
@@ -2497,7 +2497,7 @@
    "symbol": "RITEZONE.NS"
   },
   "RMCL": {
-   "fetched": "2026-10-01T19:47:20+00:00",
+   "fetched": "2026-10-01T21:50:14+00:00",
    "last": "2026-09-21",
    "name": "Radha Madhav Corporation Limited",
    "status": "ok",
@@ -2635,7 +2635,7 @@
    "symbol": "SANGANI.NS"
   },
   "SANGHIIND": {
-   "fetched": "2026-10-01T19:47:20+00:00",
+   "fetched": "2026-10-01T21:50:14+00:00",
    "last": "2026-03-30",
    "name": "Sanghi Industries Limited",
    "status": "ok",
@@ -3558,5 +3558,5 @@
    "symbol": "ZTECH.NS"
   }
  },
- "updated": "2026-10-01T19:47:20+00:00"
+ "updated": "2026-10-01T21:50:14+00:00"
 }
