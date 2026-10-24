@@ -176,7 +176,7 @@
    "status": "notfound"
   },
   "ATCOM": {
-   "fetched": "2026-10-24T15:50:21+00:00",
+   "fetched": "2026-10-24T17:34:13+00:00",
    "last": "2026-08-31",
    "name": "Atcom Technologies Ltd",
    "status": "ok",
@@ -194,7 +194,7 @@
    "status": "notfound"
   },
   "AVAILFC": {
-   "fetched": "2026-10-24T15:50:21+00:00",
+   "fetched": "2026-10-24T17:34:14+00:00",
    "last": "2026-06-01",
    "name": "Available Finance Limited",
    "status": "ok",
@@ -606,7 +606,7 @@
    "status": "notfound"
   },
   "GSPL": {
-   "fetched": "2026-10-24T15:50:22+00:00",
+   "fetched": "2026-10-24T17:34:15+00:00",
    "last": "2026-05-11",
    "name": "Gujarat State Petronet Limited",
    "status": "ok",
@@ -635,7 +635,7 @@
    "symbol": "HERCULES.NS"
   },
   "HINDMOTORS": {
-   "fetched": "2026-10-24T15:50:22+00:00",
+   "fetched": "2026-10-24T17:34:15+00:00",
    "last": "2025-09-29",
    "name": "Hindustan Motors Limited",
    "status": "ok",
@@ -679,7 +679,7 @@
    "symbol": "INDIGRID.NS"
   },
   "INDLMETER": {
-   "fetched": "2026-10-24T15:50:23+00:00",
+   "fetched": "2026-10-24T17:34:16+00:00",
    "last": "2026-09-28",
    "name": "IMP Powers Limited",
    "status": "ok",
@@ -751,7 +751,7 @@
    "status": "notfound"
   },
   "JBCHEPHARM": {
-   "fetched": "2026-10-24T15:50:23+00:00",
+   "fetched": "2026-10-24T17:34:16+00:00",
    "last": "2026-07-13",
    "name": "J. B. Chemicals & Pharmaceuticals Limited",
    "status": "ok",
@@ -956,7 +956,7 @@
    "status": "notfound"
   },
   "NHIT": {
-   "fetched": "2026-10-24T15:50:24+00:00",
+   "fetched": "2026-10-24T17:34:17+00:00",
    "last": "2026-09-28",
    "name": "National Highways Infra Trust",
    "status": "ok",
@@ -1160,7 +1160,7 @@
    "symbol": "RIIT.BO"
   },
   "RMCL": {
-   "fetched": "2026-10-24T15:50:24+00:00",
+   "fetched": "2026-10-24T17:34:17+00:00",
    "last": "2026-09-21",
    "name": "Radha Madhav Corporation Limited",
    "status": "ok",
@@ -1228,7 +1228,7 @@
    "symbol": "SANCO.NS"
   },
   "SANGHIIND": {
-   "fetched": "2026-10-24T15:50:25+00:00",
+   "fetched": "2026-10-24T17:34:18+00:00",
    "last": "2026-03-30",
    "name": "Sanghi Industries Limited",
    "status": "ok",
@@ -1339,7 +1339,7 @@
    "status": "notfound"
   },
   "SILLYMONKS": {
-   "fetched": "2026-10-24T15:50:25+00:00",
+   "fetched": "2026-10-24T17:34:18+00:00",
    "last": "2026-10-05",
    "name": "Cresto Techno Limited",
    "status": "ok",
@@ -1570,5 +1570,5 @@
    "status": "notfound"
   }
  },
- "updated": "2026-10-24T15:50:25+00:00"
+ "updated": "2026-10-24T17:34:18+00:00"
 }
