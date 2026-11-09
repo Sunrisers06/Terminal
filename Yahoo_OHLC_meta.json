@@ -9,7 +9,7 @@
    "status": "notfound"
   },
   "ABHISHEK": {
-   "fetched": "2026-11-06T19:17:01+00:00",
+   "fetched": "2026-11-09T22:15:06+00:00",
    "last": "2026-11-02",
    "name": "Abhishek Corporation Limited",
    "status": "ok",
@@ -48,14 +48,14 @@
    "status": "notfound"
   },
   "AIFL": {
-   "fetched": "2026-11-06T19:17:01+00:00",
+   "fetched": "2026-11-09T22:15:06+00:00",
    "last": "2026-11-02",
    "name": "Ashapura Intimates Fashion Limited",
    "status": "ok",
    "symbol": "AIFL.BO"
   },
   "AJRINFRA": {
-   "fetched": "2026-11-06T19:17:02+00:00",
+   "fetched": "2026-11-09T22:15:07+00:00",
    "last": "2026-11-02",
    "name": "AJR Infra and Tolling Limited",
    "status": "ok",
@@ -70,7 +70,7 @@
    "status": "notfound"
   },
   "ALPSINDUS": {
-   "fetched": "2026-11-06T19:17:02+00:00",
+   "fetched": "2026-11-09T22:15:07+00:00",
    "last": "2026-11-02",
    "name": "Alps Industries Limited",
    "status": "ok",
@@ -92,13 +92,6 @@
    "fetched": "2026-09-29T15:05:16+00:00",
    "status": "notfound"
   },
-  "ANANTAM": {
-   "fetched": "2026-11-06T19:17:03+00:00",
-   "last": "2026-11-02",
-   "name": "Anantam Highways Trust",
-   "status": "ok",
-   "symbol": "ANANTAM.BO"
-  },
   "ANONDITA": {
    "fetched": "2026-09-29T15:05:18+00:00",
    "status": "notfound"
@@ -106,13 +99,6 @@
   "ANYA": {
    "fetched": "2026-09-29T15:05:19+00:00",
    "status": "notfound"
-  },
-  "ANZEN": {
-   "fetched": "2026-11-06T19:17:03+00:00",
-   "last": "2026-11-02",
-   "name": "Anzen India Energy Yield Plus Trust",
-   "status": "ok",
-   "symbol": "ANZEN.BO"
   },
   "APRAMEYA": {
    "fetched": "2026-09-29T15:05:22+00:00",
@@ -127,7 +113,7 @@
    "status": "notfound"
   },
   "ARCOTECH": {
-   "fetched": "2026-11-06T19:17:04+00:00",
+   "fetched": "2026-11-09T22:15:08+00:00",
    "last": "2026-11-02",
    "name": "Arcotech Limited",
    "status": "ok",
@@ -142,7 +128,7 @@
    "status": "notfound"
   },
   "ARSSINFRA": {
-   "fetched": "2026-11-06T19:17:04+00:00",
+   "fetched": "2026-11-09T22:15:08+00:00",
    "last": "2026-11-02",
    "name": "ARSS Infrastructure Projects Limited",
    "status": "ok",
@@ -165,7 +151,7 @@
    "status": "notfound"
   },
   "ASIL": {
-   "fetched": "2026-11-06T19:17:04+00:00",
+   "fetched": "2026-11-09T22:15:09+00:00",
    "last": "2026-11-02",
    "name": "Amit Spinning Industries Limited",
    "status": "ok",
@@ -176,14 +162,14 @@
    "status": "notfound"
   },
   "ATCOM": {
-   "fetched": "2026-11-07T20:53:55+00:00",
+   "fetched": "2026-11-09T22:15:09+00:00",
    "last": "2026-08-31",
    "name": "Atcom Technologies Ltd",
    "status": "ok",
    "symbol": "ATCOM.NS"
   },
   "AURIGROW": {
-   "fetched": "2026-11-06T19:17:05+00:00",
+   "fetched": "2026-11-09T22:15:10+00:00",
    "last": "2026-11-02",
    "name": "Auri Grow India Limited",
    "status": "ok",
@@ -194,7 +180,7 @@
    "status": "notfound"
   },
   "AVAILFC": {
-   "fetched": "2026-11-07T20:53:55+00:00",
+   "fetched": "2026-11-09T22:15:10+00:00",
    "last": "2026-06-01",
    "name": "Available Finance Limited",
    "status": "ok",
@@ -216,13 +202,6 @@
    "fetched": "2026-09-29T15:05:48+00:00",
    "status": "notfound"
   },
-  "BAGMANE": {
-   "fetched": "2026-11-06T19:17:06+00:00",
-   "last": "2026-11-02",
-   "name": "Bagmane Prime Office REIT",
-   "status": "ok",
-   "symbol": "BAGMANE.BO"
-  },
   "BALCO": {
    "fetched": "2026-09-29T15:05:51+00:00",
    "status": "notfound"
@@ -240,8 +219,8 @@
    "status": "notfound"
   },
   "BCP": {
-   "fetched": "2026-11-06T19:17:07+00:00",
-   "last": "2026-11-02",
+   "fetched": "2026-11-09T22:15:10+00:00",
+   "last": "2026-11-09",
    "name": "B.C. Power Controls Limited",
    "status": "ok",
    "symbol": "BCP.BO"
@@ -250,19 +229,12 @@
    "fetched": "2026-09-29T15:05:58+00:00",
    "status": "notfound"
   },
-  "BGLOBAL": {
-   "fetched": "2026-11-06T19:17:07+00:00",
-   "last": "2026-11-02",
-   "name": "Bharatiya Global Infomedia Limited",
-   "status": "ok",
-   "symbol": "BGLOBAL.NS"
-  },
   "BHADORA": {
    "fetched": "2026-09-29T15:06:00+00:00",
    "status": "notfound"
   },
   "BHARATIDIL": {
-   "fetched": "2026-11-06T19:17:08+00:00",
+   "fetched": "2026-11-09T22:15:11+00:00",
    "last": "2026-11-02",
    "name": "Bharati Defence And Infrastructure Limited",
    "status": "ok",
@@ -276,22 +248,15 @@
    "fetched": "2026-09-29T15:06:04+00:00",
    "status": "notfound"
   },
-  "BIRET": {
-   "fetched": "2026-11-06T19:17:08+00:00",
-   "last": "2026-11-02",
-   "name": "Brookfield India Real Estate Trust",
-   "status": "ok",
-   "symbol": "BIRET.NS"
-  },
   "BKMINDST": {
-   "fetched": "2026-11-06T19:17:09+00:00",
+   "fetched": "2026-11-09T22:15:11+00:00",
    "last": "2026-11-02",
    "name": "BKM Industries Limited",
    "status": "ok",
    "symbol": "BKMINDST.NS"
   },
   "BLUEBLENDS": {
-   "fetched": "2026-11-06T19:17:09+00:00",
+   "fetched": "2026-11-09T22:15:12+00:00",
    "last": "2026-11-02",
    "name": "Blue Blends (India) Limited",
    "status": "ok",
@@ -318,29 +283,15 @@
    "status": "notfound"
   },
   "CANDC": {
-   "fetched": "2026-11-06T19:17:10+00:00",
+   "fetched": "2026-11-09T22:15:12+00:00",
    "last": "2026-11-02",
    "name": "C & C Constructions Limited",
    "status": "ok",
    "symbol": "CANDC.BO"
   },
-  "CAPINVIT": {
-   "fetched": "2026-11-06T19:17:10+00:00",
-   "last": "2026-11-02",
-   "name": "Capital Infra Trust",
-   "status": "ok",
-   "symbol": "CAPINVIT.BO"
-  },
   "CEDAAR": {
    "fetched": "2026-09-29T15:06:19+00:00",
    "status": "notfound"
-  },
-  "CEREBRAINT": {
-   "fetched": "2026-11-06T19:17:11+00:00",
-   "last": "2026-11-02",
-   "name": "Cerebra Integrated Technologies Limited",
-   "status": "ok",
-   "symbol": "CEREBRAINT.NS"
   },
   "CHAMUNDA": {
    "fetched": "2026-09-29T15:06:23+00:00",
@@ -361,26 +312,12 @@
    "status": "ok",
    "symbol": "CIGNITITEC.NS"
   },
-  "CITIUSINVT": {
-   "fetched": "2026-11-06T19:17:11+00:00",
-   "last": "2026-11-02",
-   "name": "Citius TransNet Investment Trust",
-   "status": "ok",
-   "symbol": "CITIUSINVT.BO"
-  },
   "CLASSICEIL": {
    "fetched": "2026-09-29T15:06:29+00:00",
    "status": "notfound"
   },
-  "CLCIND": {
-   "fetched": "2026-11-06T19:17:12+00:00",
-   "last": "2026-11-02",
-   "name": "CLC Industries Limited",
-   "status": "ok",
-   "symbol": "CLCIND.NS"
-  },
   "CMMIPL": {
-   "fetched": "2026-11-06T19:17:12+00:00",
+   "fetched": "2026-11-09T22:15:13+00:00",
    "last": "2026-11-02",
    "name": "CMM Infraprojects Limited",
    "status": "ok",
@@ -393,13 +330,6 @@
   "CSSL": {
    "fetched": "2026-09-29T15:06:37+00:00",
    "status": "notfound"
-  },
-  "CUBEINVIT": {
-   "fetched": "2026-11-06T19:17:13+00:00",
-   "last": "2026-11-02",
-   "name": "Cube Highways Trust",
-   "status": "ok",
-   "symbol": "CUBEINVIT.BO"
   },
   "CUDML": {
    "fetched": "2026-09-29T15:06:39+00:00",
@@ -438,14 +368,14 @@
    "status": "notfound"
   },
   "DHARSUGAR": {
-   "fetched": "2026-11-06T19:17:13+00:00",
+   "fetched": "2026-11-09T22:15:14+00:00",
    "last": "2026-11-02",
    "name": "Dharani Sugars and Chemicals Limited",
    "status": "ok",
    "symbol": "DHARSUGAR.BO"
   },
   "DIL": {
-   "fetched": "2026-11-06T19:17:14+00:00",
+   "fetched": "2026-11-09T22:15:14+00:00",
    "last": "2026-11-02",
    "name": "Debock Industries Limited",
    "status": "ok",
@@ -483,13 +413,6 @@
    "fetched": "2026-09-29T15:07:13+00:00",
    "status": "notfound"
   },
-  "EMBASSY": {
-   "fetched": "2026-11-06T19:17:14+00:00",
-   "last": "2026-11-02",
-   "name": "Embassy Office Parks REIT",
-   "status": "ok",
-   "symbol": "EMBASSY.NS"
-  },
   "ENCOMPAS": {
    "fetched": "2026-09-29T15:07:16+00:00",
    "status": "notfound"
@@ -503,7 +426,7 @@
    "status": "notfound"
   },
   "EROSMEDIA": {
-   "fetched": "2026-11-06T19:17:15+00:00",
+   "fetched": "2026-11-09T22:15:15+00:00",
    "last": "2026-11-02",
    "name": "Eros International Media Limited",
    "status": "ok",
@@ -534,7 +457,7 @@
    "status": "notfound"
   },
   "FCONSUMER": {
-   "fetched": "2026-11-06T19:17:15+00:00",
+   "fetched": "2026-11-09T22:15:15+00:00",
    "last": "2026-11-02",
    "name": "Future Consumer Limited",
    "status": "ok",
@@ -577,14 +500,14 @@
    "status": "notfound"
   },
   "GANGOTRI": {
-   "fetched": "2026-11-06T19:17:16+00:00",
+   "fetched": "2026-11-09T22:15:16+00:00",
    "last": "2026-11-02",
    "name": "Gangotri Textiles Limited",
    "status": "ok",
    "symbol": "GANGOTRI.NS"
   },
   "GBGLOBAL": {
-   "fetched": "2026-11-06T19:17:16+00:00",
+   "fetched": "2026-11-09T22:15:16+00:00",
    "last": "2026-11-02",
    "name": "GB Global Limited",
    "status": "ok",
@@ -595,7 +518,7 @@
    "status": "notfound"
   },
   "GOENKA": {
-   "fetched": "2026-11-06T19:17:17+00:00",
+   "fetched": "2026-11-09T22:15:16+00:00",
    "last": "2026-11-02",
    "name": "Goenka Diamond and Jewels Limited",
    "status": "ok",
@@ -606,7 +529,7 @@
    "status": "notfound"
   },
   "GSPL": {
-   "fetched": "2026-11-07T20:53:56+00:00",
+   "fetched": "2026-11-09T22:15:17+00:00",
    "last": "2026-05-11",
    "name": "Gujarat State Petronet Limited",
    "status": "ok",
@@ -621,21 +544,21 @@
    "status": "notfound"
   },
   "HEG": {
-   "fetched": "2026-11-06T19:17:18+00:00",
+   "fetched": "2026-11-09T22:15:17+00:00",
    "last": "2026-11-02",
    "name": "HEG Advanced Materials Ltd",
    "status": "ok",
    "symbol": "HEG.NS"
   },
   "HERCULES": {
-   "fetched": "2026-11-06T19:17:18+00:00",
+   "fetched": "2026-11-09T22:15:18+00:00",
    "last": "2026-11-02",
    "name": "Hercules Investments Limited",
    "status": "ok",
    "symbol": "HERCULES.NS"
   },
   "HINDMOTORS": {
-   "fetched": "2026-11-07T20:53:57+00:00",
+   "fetched": "2026-11-09T22:15:18+00:00",
    "last": "2025-09-29",
    "name": "Hindustan Motors Limited",
    "status": "ok",
@@ -646,7 +569,7 @@
    "status": "notfound"
   },
   "ICSA": {
-   "fetched": "2026-11-06T19:17:19+00:00",
+   "fetched": "2026-11-09T22:15:19+00:00",
    "last": "2026-11-02",
    "name": "ICSA (India) Limited",
    "status": "ok",
@@ -664,20 +587,6 @@
    "fetched": "2026-09-29T15:08:11+00:00",
    "status": "notfound"
   },
-  "IMPEXFERRO": {
-   "fetched": "2026-11-06T19:17:19+00:00",
-   "last": "2026-11-02",
-   "name": "Impex Ferro Tech Limited",
-   "status": "ok",
-   "symbol": "IMPEXFERRO.NS"
-  },
-  "INDIGRID": {
-   "fetched": "2026-11-06T19:17:20+00:00",
-   "last": "2026-11-02",
-   "name": "Indigrid Infrastructure Trust",
-   "status": "ok",
-   "symbol": "INDIGRID.NS"
-  },
   "INDLMETER": {
    "fetched": "2026-10-31T20:27:18+00:00",
    "last": "2026-09-28",
@@ -685,23 +594,9 @@
    "status": "ok",
    "symbol": "INDLMETER.NS"
   },
-  "INDUSINVIT": {
-   "fetched": "2026-11-06T19:17:21+00:00",
-   "last": "2026-11-02",
-   "name": "Indus Infra Trust",
-   "status": "ok",
-   "symbol": "INDUSINVIT.BO"
-  },
   "INTEGRITY": {
    "fetched": "2026-09-29T15:08:20+00:00",
    "status": "notfound"
-  },
-  "INTERISE": {
-   "fetched": "2026-11-06T19:17:21+00:00",
-   "last": "2026-11-02",
-   "name": "Interise Trust",
-   "status": "ok",
-   "symbol": "INTERISE.BO"
   },
   "INVICTA": {
    "fetched": "2026-09-29T15:08:22+00:00",
@@ -710,13 +605,6 @@
   "IPHL": {
    "fetched": "2026-09-29T15:08:24+00:00",
    "status": "notfound"
-  },
-  "IRBINVIT": {
-   "fetched": "2026-11-06T19:17:22+00:00",
-   "last": "2026-11-02",
-   "name": "IRB InvIT Fund",
-   "status": "ok",
-   "symbol": "IRBINVIT.NS"
   },
   "IRBIT": {
    "fetched": "2026-09-29T15:08:26+00:00",
@@ -751,14 +639,14 @@
    "status": "notfound"
   },
   "JBCHEPHARM": {
-   "fetched": "2026-11-07T20:53:58+00:00",
+   "fetched": "2026-11-09T22:15:20+00:00",
    "last": "2026-07-13",
    "name": "J. B. Chemicals & Pharmaceuticals Limited",
    "status": "ok",
    "symbol": "JBCHEPHARM.NS"
   },
   "JBFIND": {
-   "fetched": "2026-11-06T19:17:23+00:00",
+   "fetched": "2026-11-09T22:15:20+00:00",
    "last": "2026-11-02",
    "name": "JBF Industries Limited",
    "status": "ok",
@@ -769,7 +657,7 @@
    "status": "notfound"
   },
   "JIYAECO": {
-   "fetched": "2026-11-06T19:17:23+00:00",
+   "fetched": "2026-11-09T22:15:21+00:00",
    "last": "2026-11-02",
    "name": "Jiya Eco-Products Limited",
    "status": "ok",
@@ -792,7 +680,7 @@
    "status": "notfound"
   },
   "KEL": {
-   "fetched": "2026-11-06T19:17:24+00:00",
+   "fetched": "2026-11-09T22:15:21+00:00",
    "last": "2026-11-02",
    "name": "Kotia Enterprises Limited",
    "status": "ok",
@@ -810,15 +698,8 @@
    "fetched": "2026-09-29T15:09:09+00:00",
    "status": "notfound"
   },
-  "KRT": {
-   "fetched": "2026-11-06T19:17:24+00:00",
-   "last": "2026-11-02",
-   "name": "Knowledge Realty Trust",
-   "status": "ok",
-   "symbol": "KRT.BO"
-  },
   "KSERASERA": {
-   "fetched": "2026-11-06T19:17:25+00:00",
+   "fetched": "2026-11-09T22:15:22+00:00",
    "last": "2026-11-02",
    "name": "KSS Limited",
    "status": "ok",
@@ -836,15 +717,8 @@
    "fetched": "2026-09-29T15:09:15+00:00",
    "status": "notfound"
   },
-  "LASA": {
-   "fetched": "2026-11-06T19:17:25+00:00",
-   "last": "2026-11-02",
-   "name": "Lasa Supergenerics Limited",
-   "status": "ok",
-   "symbol": "LASA.NS"
-  },
   "LEEL": {
-   "fetched": "2026-11-06T19:17:26+00:00",
+   "fetched": "2026-11-09T22:15:22+00:00",
    "last": "2026-11-02",
    "name": "LEEL Electricals Limited",
    "status": "ok",
@@ -882,13 +756,6 @@
    "fetched": "2026-09-29T15:09:39+00:00",
    "status": "notfound"
   },
-  "MINDSPACE": {
-   "fetched": "2026-11-06T19:17:26+00:00",
-   "last": "2026-11-02",
-   "name": "Mindspace Business Parks REIT",
-   "status": "ok",
-   "symbol": "MINDSPACE.NS"
-  },
   "MIRCELECTR": {
    "fetched": "2026-09-29T15:09:42+00:00",
    "status": "notfound"
@@ -917,13 +784,6 @@
    "fetched": "2026-09-29T15:09:52+00:00",
    "status": "notfound"
   },
-  "NAGAFERT": {
-   "fetched": "2026-11-06T19:17:27+00:00",
-   "last": "2026-11-02",
-   "name": "Nagarjuna Fertilizers and Chemicals Limited",
-   "status": "ok",
-   "symbol": "NAGAFERT.NS"
-  },
   "NAMOEWASTE": {
    "fetched": "2026-09-29T15:09:55+00:00",
    "status": "notfound"
@@ -948,19 +808,12 @@
    "fetched": "2026-09-29T15:10:02+00:00",
    "status": "notfound"
   },
-  "NHIT": {
-   "fetched": "2026-11-07T20:53:58+00:00",
-   "last": "2026-09-28",
-   "name": "National Highways Infra Trust",
-   "status": "ok",
-   "symbol": "NHIT.BO"
-  },
   "NIKITA": {
    "fetched": "2026-09-29T15:10:05+00:00",
    "status": "notfound"
   },
   "NITINFIRE": {
-   "fetched": "2026-11-06T19:17:27+00:00",
+   "fetched": "2026-11-09T22:15:23+00:00",
    "last": "2026-11-02",
    "name": "Nitin Fire Protection Industries Limited",
    "status": "ok",
@@ -974,13 +827,6 @@
    "fetched": "2026-09-29T15:10:09+00:00",
    "status": "notfound"
   },
-  "NXST": {
-   "fetched": "2026-11-06T19:17:28+00:00",
-   "last": "2026-11-02",
-   "name": "Nexus Select Trust",
-   "status": "ok",
-   "symbol": "NXST.NS"
-  },
   "NXT-INFRA": {
    "fetched": "2026-09-29T15:10:11+00:00",
    "status": "notfound"
@@ -990,7 +836,7 @@
    "status": "notfound"
   },
   "OMKARCHEM": {
-   "fetched": "2026-11-06T19:17:28+00:00",
+   "fetched": "2026-11-09T22:15:23+00:00",
    "last": "2026-11-02",
    "name": "Omkar Speciality Chemicals Limited",
    "status": "ok",
@@ -1017,8 +863,8 @@
    "status": "notfound"
   },
   "PADMALAYAT": {
-   "fetched": "2026-11-06T19:17:29+00:00",
-   "last": "2026-11-02",
+   "fetched": "2026-11-09T22:15:24+00:00",
+   "last": "2026-11-09",
    "name": "Padmalaya Telefilms Limited",
    "status": "ok",
    "symbol": "PADMALAYAT.BO"
@@ -1042,13 +888,6 @@
   "PELATRO": {
    "fetched": "2026-09-29T15:10:30+00:00",
    "status": "notfound"
-  },
-  "PGINVIT": {
-   "fetched": "2026-11-06T19:17:29+00:00",
-   "last": "2026-11-02",
-   "name": "Powergrid Infrastructure Investment Trust",
-   "status": "ok",
-   "symbol": "PGINVIT.NS"
   },
   "PHOGLOBAL": {
    "fetched": "2026-09-29T15:10:33+00:00",
@@ -1115,8 +954,8 @@
    "status": "notfound"
   },
   "RAMGOPOLY": {
-   "fetched": "2026-11-06T19:17:30+00:00",
-   "last": "2026-11-02",
+   "fetched": "2026-11-09T22:15:24+00:00",
+   "last": "2026-11-09",
    "name": "Ramgopal Polytex Limited",
    "status": "ok",
    "symbol": "RAMGOPOLY.BO"
@@ -1145,13 +984,6 @@
    "fetched": "2026-09-29T15:11:15+00:00",
    "status": "notfound"
   },
-  "RIIT": {
-   "fetched": "2026-11-06T19:17:30+00:00",
-   "last": "2026-11-02",
-   "name": "Raajmarg Infra Investment Trust",
-   "status": "ok",
-   "symbol": "RIIT.BO"
-  },
   "RMCL": {
    "fetched": "2026-10-24T19:30:04+00:00",
    "last": "2026-09-21",
@@ -1168,7 +1000,7 @@
    "status": "notfound"
   },
   "ROADSTAR": {
-   "fetched": "2026-11-06T19:17:31+00:00",
+   "fetched": "2026-11-09T22:15:25+00:00",
    "last": "2026-11-02",
    "name": "Roadstar Infra Investment Trust Fund",
    "status": "ok",
@@ -1187,7 +1019,7 @@
    "status": "notfound"
   },
   "SABEVENTS": {
-   "fetched": "2026-11-06T19:17:32+00:00",
+   "fetched": "2026-11-09T22:15:26+00:00",
    "last": "2026-11-02",
    "name": "SAB Events & Governance Now Media Limited",
    "status": "ok",
@@ -1214,21 +1046,21 @@
    "status": "notfound"
   },
   "SANCO": {
-   "fetched": "2026-11-06T19:17:32+00:00",
+   "fetched": "2026-11-09T22:15:26+00:00",
    "last": "2026-11-02",
    "name": "Sanco Industries Limited",
    "status": "ok",
    "symbol": "SANCO.NS"
   },
   "SANGHIIND": {
-   "fetched": "2026-11-07T20:53:59+00:00",
+   "fetched": "2026-11-09T22:15:27+00:00",
    "last": "2026-03-30",
    "name": "Sanghi Industries Limited",
    "status": "ok",
    "symbol": "SANGHIIND.NS"
   },
   "SANGINITA": {
-   "fetched": "2026-11-06T19:17:33+00:00",
+   "fetched": "2026-11-09T22:15:27+00:00",
    "last": "2026-11-02",
    "name": "Agastya Energy and Infrastructure Ltd",
    "status": "ok",
@@ -1263,7 +1095,7 @@
    "status": "notfound"
   },
   "SECL": {
-   "fetched": "2026-11-06T19:17:34+00:00",
+   "fetched": "2026-11-09T22:15:28+00:00",
    "last": "2026-11-02",
    "name": "Salasar Exteriors and Contour Limited",
    "status": "ok",
@@ -1276,13 +1108,6 @@
   "SELLOWRAP": {
    "fetched": "2026-09-29T15:11:55+00:00",
    "status": "notfound"
-  },
-  "SELMC": {
-   "fetched": "2026-11-06T19:17:34+00:00",
-   "last": "2026-11-02",
-   "name": "SEL Manufacturing Company Limited",
-   "status": "ok",
-   "symbol": "SELMC.NS"
   },
   "SFML": {
    "fetched": "2026-09-29T15:11:57+00:00",
@@ -1299,13 +1124,6 @@
   "SHKSIL": {
    "fetched": "2026-09-29T15:12:03+00:00",
    "status": "notfound"
-  },
-  "SHREMINVIT": {
-   "fetched": "2026-11-06T19:17:34+00:00",
-   "last": "2026-11-02",
-   "name": "Shrem Invit",
-   "status": "ok",
-   "symbol": "SHREMINVIT.NS"
   },
   "SHRIAHIMSA": {
    "fetched": "2026-09-29T15:12:07+00:00",
@@ -1332,7 +1150,7 @@
    "status": "notfound"
   },
   "SILLYMONKS": {
-   "fetched": "2026-11-07T20:53:59+00:00",
+   "fetched": "2026-11-09T22:15:28+00:00",
    "last": "2026-10-05",
    "name": "Cresto Techno Limited",
    "status": "ok",
@@ -1366,16 +1184,9 @@
    "fetched": "2026-09-29T15:12:30+00:00",
    "status": "notfound"
   },
-  "SPELS": {
-   "fetched": "2026-11-06T19:17:35+00:00",
-   "last": "2026-11-02",
-   "name": "SPEL Semiconductor Limited",
-   "status": "ok",
-   "symbol": "SPELS.NS"
-  },
   "SPICEJET": {
-   "fetched": "2026-11-06T19:17:36+00:00",
-   "last": "2026-11-02",
+   "fetched": "2026-11-09T22:15:29+00:00",
+   "last": "2026-11-09",
    "name": "SpiceJet Limited",
    "status": "ok",
    "symbol": "SPICEJET.BO"
@@ -1389,7 +1200,7 @@
    "status": "notfound"
   },
   "SRPL": {
-   "fetched": "2026-11-06T19:17:36+00:00",
+   "fetched": "2026-11-09T22:15:29+00:00",
    "last": "2026-11-02",
    "name": "Shree Ram Proteins Limited",
    "status": "ok",
@@ -1420,7 +1231,7 @@
    "status": "notfound"
   },
   "TALWALKARS": {
-   "fetched": "2026-11-06T19:17:37+00:00",
+   "fetched": "2026-11-09T22:15:30+00:00",
    "last": "2026-11-02",
    "name": "Talwalkars Better Value Fitness Limited",
    "status": "ok",
@@ -1443,7 +1254,7 @@
    "status": "notfound"
   },
   "TECHIN": {
-   "fetched": "2026-11-06T19:17:37+00:00",
+   "fetched": "2026-11-09T22:15:30+00:00",
    "last": "2026-11-02",
    "name": "Techindia Nirman Limited",
    "status": "ok",
@@ -1476,13 +1287,6 @@
   "UNILEX": {
    "fetched": "2026-09-29T15:13:11+00:00",
    "status": "notfound"
-  },
-  "UNIVAFOODS": {
-   "fetched": "2026-11-06T19:17:38+00:00",
-   "last": "2026-11-02",
-   "name": "Univa Foods Limited",
-   "status": "ok",
-   "symbol": "UNIVAFOODS.NS"
   },
   "USHAFIN": {
    "fetched": "2026-09-29T15:13:14+00:00",
@@ -1517,8 +1321,8 @@
    "status": "notfound"
   },
   "VIKASWSP": {
-   "fetched": "2026-11-06T19:17:38+00:00",
-   "last": "2026-11-02",
+   "fetched": "2026-11-09T22:15:31+00:00",
+   "last": "2026-11-09",
    "name": "Vikas WSP Limited",
    "status": "ok",
    "symbol": "VIKASWSP.BO"
@@ -1548,7 +1352,7 @@
    "status": "notfound"
   },
   "WINSOME": {
-   "fetched": "2026-11-06T19:17:39+00:00",
+   "fetched": "2026-11-09T22:15:31+00:00",
    "last": "2026-11-02",
    "name": "Winsome Yarns Limited",
    "status": "ok",
@@ -1563,5 +1367,5 @@
    "status": "notfound"
   }
  },
- "updated": "2026-11-07T20:53:59+00:00"
+ "updated": "2026-11-09T22:15:31+00:00"
 }
