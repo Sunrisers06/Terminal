@@ -162,7 +162,7 @@
    "status": "notfound"
   },
   "ATCOM": {
-   "fetched": "2026-11-10T20:59:17+00:00",
+   "fetched": "2026-11-10T22:23:04+00:00",
    "last": "2026-08-31",
    "name": "Atcom Technologies Ltd",
    "status": "ok",
@@ -180,7 +180,7 @@
    "status": "notfound"
   },
   "AVAILFC": {
-   "fetched": "2026-11-10T20:59:18+00:00",
+   "fetched": "2026-11-10T22:23:04+00:00",
    "last": "2026-06-01",
    "name": "Available Finance Limited",
    "status": "ok",
@@ -529,7 +529,7 @@
    "status": "notfound"
   },
   "GSPL": {
-   "fetched": "2026-11-10T20:59:19+00:00",
+   "fetched": "2026-11-10T22:23:05+00:00",
    "last": "2026-05-11",
    "name": "Gujarat State Petronet Limited",
    "status": "ok",
@@ -558,7 +558,7 @@
    "symbol": "HERCULES.NS"
   },
   "HINDMOTORS": {
-   "fetched": "2026-11-10T20:59:19+00:00",
+   "fetched": "2026-11-10T22:23:06+00:00",
    "last": "2025-09-29",
    "name": "Hindustan Motors Limited",
    "status": "ok",
@@ -639,7 +639,7 @@
    "status": "notfound"
   },
   "JBCHEPHARM": {
-   "fetched": "2026-11-10T20:59:20+00:00",
+   "fetched": "2026-11-10T22:23:07+00:00",
    "last": "2026-07-13",
    "name": "J. B. Chemicals & Pharmaceuticals Limited",
    "status": "ok",
@@ -1053,7 +1053,7 @@
    "symbol": "SANCO.NS"
   },
   "SANGHIIND": {
-   "fetched": "2026-11-10T20:59:21+00:00",
+   "fetched": "2026-11-10T22:23:08+00:00",
    "last": "2026-03-30",
    "name": "Sanghi Industries Limited",
    "status": "ok",
@@ -1150,7 +1150,7 @@
    "status": "notfound"
   },
   "SILLYMONKS": {
-   "fetched": "2026-11-10T20:59:22+00:00",
+   "fetched": "2026-11-10T22:23:08+00:00",
    "last": "2026-10-05",
    "name": "Cresto Techno Limited",
    "status": "ok",
@@ -1367,5 +1367,5 @@
    "status": "notfound"
   }
  },
- "updated": "2026-11-10T20:59:22+00:00"
+ "updated": "2026-11-10T22:23:08+00:00"
 }
