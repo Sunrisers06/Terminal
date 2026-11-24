@@ -9510,6 +9510,11 @@
                     <option value="classic">Result · Classic</option>
                     <option value="chart">Chart</option>
                 </select>
+                <select id="result-method-filter" class="fi w110" onchange="setResultMethod(this.value)"
+                    title="How Best / Good / Moderate / Weak / Very Weak are decided.&#10;Current — YoY rules: all four YoY growths >50% = Best, >20% = Good, ≥0% = Moderate, up to 2 negative = Weak.&#10;Smart — reads YoY (70%) and QoQ (30%) together for Sales, EBITDA, Net Profit and EPS, with margin change, turnaround / loss handling, one-off detection, cash-flow quality, small-company damping and quality checks; score 0–100.">
+                    <option value="classic">Grade: Current</option>
+                    <option value="smart">Grade: Smart</option>
+                </select>
                 <select id="card-chart-period-filter" class="fi w90" style="display:none;"
                     onchange="setCardChartDefaultPeriod(this.value)"
                     title="Default duration for every company card chart (the pills on a card still change that card alone)">
@@ -10674,7 +10679,170 @@
         function shortQtr(q) { return String(q || '').replace('Dec', 'D').replace('Sep', 'S').replace('Mar', 'M').replace('Jun', 'J').replace(/20(\d\d)/, '$1').slice(0, 4); }
         function valCls(v) { const x = parseFloat(v); return isNaN(x) ? '' : x < 0 ? 'red' : x > 0 ? 'green' : ''; }
         function yoyGrowth(c, y) { const cv = parseFloat(c) || 0, yv = parseFloat(y) || 0; if (yv === 0) return '-'; return ((cv - yv) / Math.abs(yv)) * 100; }
+        /* ══════════════════════════════════════════════════════
+           RESULT GRADE — two methods, picked from the filter bar
+             classic : the original YoY rule set (calcScoreClassic)
+             smart   : QoQ + YoY composite (calcSmartGrade)
+           Both return 0 Very Weak … 4 Best into r._score, so every place
+           that colours or filters by the grade follows the chosen method.
+        ══════════════════════════════════════════════════════ */
+        window._resultMethod = (function () {
+            try { return localStorage.getItem('sx_result_method') === 'smart' ? 'smart' : 'classic'; } catch (e) { return 'classic'; }
+        })();
         function calcScore(r) {
+            const g = calcSmartGrade(r);
+            r._smartPts = g ? g.pts : null;
+            r._smartCat = g ? g.cat : null;
+            r._smartWhy = g ? g.why : '';
+            if (window._resultMethod === 'smart' && g) return g.cat;
+            return calcScoreClassic(r);   // classic method, or too little data for smart
+        }
+
+        /* ── SMART grade: reads YoY and QoQ together ──
+           Per metric (Sales, EBITDA, Net Profit, EPS) and per comparison
+           (same quarter last year = YoY, previous quarter = QoQ):
+             • both periods profitable → growth squashed through tanh, so a
+               900% jump off a tiny base counts as "very strong", not 900
+               (scale: Sales 30%, profits 50% → ±0.76 at those growths)
+             • profit → loss = −1 · loss → profit = turnaround, sized by the
+               new profit vs the old loss · loss → smaller loss = slightly
+               negative · loss → bigger loss = clearly negative
+             • tiny profits (<2% of sales on both sides) are halved — their
+               % moves are noise
+           Weights: Sales .30 · EBITDA .30 · Net Profit .25 · EPS .15
+           (missing metrics drop out, weights renormalise; < 2 metrics → no
+           smart grade, the classic rule is used). EBITDA-margin change adds
+           15% to each period. A net profit far above EBITDA is a one-off
+           (other income / exceptional gain): NP and EPS count 30% then.
+           QoQ growth is read on half the YoY scale (a quarter's growth is
+           naturally ~¼ of a year's: +15% QoQ sales counts like +30% YoY).
+           Composite = 70% YoY + 30% QoQ (YoY is free of seasonality; QoQ is
+           momentum). Then two adjustments:
+             • size reliability — sales under ₹100 Cr pull the composite
+               toward neutral (₹1 Cr ×0.5, ₹10 Cr ×0.75): tiny companies'
+               quarters swing on small amounts
+             • cash quality (annual CFO/PAT, profitable companies only):
+               negative −0.10, under 50% −0.05, over 100% +0.03
+           Score 0–100 = (composite + 1) × 50.
+           Grades: Best ≥ 82 · Good ≥ 68 · Moderate ≥ 50 (flat or better) ·
+           Weak ≥ 35 · Very Weak below. Roughly: Best ≈ sales +25% & profits
+           +40%; Good ≈ +12% & +20%; Moderate = flat or better.
+           Guards that keep the grade honest:
+             • QoQ may move the grade at most one step from the YoY picture
+               (a seasonal rebound cannot turn a falling year into "Good")
+             • loss-making now (NP or EBITDA ≤ 0) → at most Moderate; and a
+               loss that widened YoY → at most Weak
+             • sales down more than 10% YoY → at most Moderate
+             • Best also needs: sales up YoY, real (non one-off) profit growth
+               YoY, no sequential slump, and a net margin of at least 2%
+           Checked against the market on the Sep-2026 reporters (2,656
+           stocks, price 28 Sep → late Nov): median return rises steadily
+           Very Weak −7.6% → Weak −6.6% → Moderate −3.7% → Good −2.5% →
+           Best 0.0% with half of Best up (classic: Best −3.8%, below Good);
+           rank correlation 0.22 vs 0.17. Every refinement above (QoQ scale,
+           70/30, size, cash) was kept only if it improved BOTH random halves
+           of the stocks; industry-relative scoring was tried and dropped (it
+           did not). One quarter only — a sanity check, not a promise. */
+        const _SG_METRICS = [
+            { k: 'Sales', w: 0.30, scale: 0.30, profit: false },
+            { k: 'EBIDT', w: 0.30, scale: 0.50, profit: true },
+            { k: 'Net Profit', w: 0.25, scale: 0.50, profit: true },
+            { k: 'EPS', w: 0.15, scale: 0.50, profit: true }
+        ];
+        const _SG_CUTS = [82, 68, 50, 35];   // Best, Good, Moderate, Weak
+        function _sgGradeOf(pts) { return pts >= _SG_CUTS[0] ? 4 : pts >= _SG_CUTS[1] ? 3 : pts >= _SG_CUTS[2] ? 2 : pts >= _SG_CUTS[3] ? 1 : 0; }
+        function calcSmartGrade(r) {
+            const num = v => (v === null || v === undefined || v === '') ? NaN : parseFloat(String(v).replace(/,/g, ''));
+            const v = {};
+            _SG_METRICS.forEach(m => { v[m.k] = { c: num(r[m.k + ' (Current)']), p: num(r[m.k + ' (Previous)']), y: num(r[m.k + ' (YoY Qtr)']) }; });
+            const sales = v['Sales'], ebd = v['EBIDT'], np = v['Net Profit'];
+            // refC/refB: the ₹-crore amounts the "tiny profit" check compares with
+            // sales. EPS is ₹ per share — never comparable to sales in crore — so
+            // it borrows Net Profit's amounts (a tiny NP makes its EPS move noise too).
+            function gs(c, b, m, salesC, salesB, refC, refB, qoq) {
+                if (!isFinite(c) || !isFinite(b)) return null;
+                let s;
+                // one quarter of growth is naturally about a quarter of a year's, so
+                // QoQ is read on half the YoY scale (+15% QoQ sales ≈ +30% YoY)
+                if (b > 0 && c > 0) s = Math.tanh((c / b - 1) / (m.scale * (qoq ? 0.5 : 1)));
+                else if (b > 0 && c <= 0) s = -1;
+                else if (b <= 0 && c > 0) {
+                    if (!m.profit) return null;
+                    s = b < 0 ? 0.35 + 0.45 * Math.min(1, c / Math.abs(b)) : 0.6;
+                }
+                else if (b < 0 && c < 0) s = Math.max(-1, Math.min(1, (c - b) / Math.abs(b))) * 0.5 - 0.3;
+                else if (b === 0 && c === 0) s = 0;
+                else s = -0.75;
+                if (m.profit && salesC > 0 && salesB > 0 && isFinite(refB) && isFinite(refC) &&
+                    Math.abs(refB) < 0.02 * salesB && Math.abs(refC) < 0.02 * salesC) s *= 0.5;
+                return s;
+            }
+            const oneOff = isFinite(np.c) && isFinite(ebd.c) && np.c > 0 && np.c > Math.max(0, ebd.c) * 1.5 + 0.05 * Math.abs(sales.c || 0);
+            function period(which) {
+                let sum = 0, wsum = 0, n = 0;
+                const parts = {};
+                _SG_METRICS.forEach(m => {
+                    const x = v[m.k];
+                    const ref = m.k === 'EPS' ? np : x;
+                    const s = gs(x.c, which === 'y' ? x.y : x.p, m, sales.c, which === 'y' ? sales.y : sales.p,
+                        ref.c, which === 'y' ? ref.y : ref.p, which === 'p');
+                    parts[m.k] = s;
+                    if (s === null) return;
+                    const w = m.w * (oneOff && (m.k === 'Net Profit' || m.k === 'EPS') ? 0.3 : 1);
+                    sum += w * s; wsum += w; n++;
+                });
+                if (n < 2) return { s: null, parts };
+                let s = sum / wsum;
+                const eb = which === 'y' ? ebd.y : ebd.p, sb = which === 'y' ? sales.y : sales.p;
+                if (isFinite(ebd.c) && isFinite(eb) && sales.c > 0 && sb > 0) {
+                    s = 0.85 * s + 0.15 * Math.tanh(((ebd.c / sales.c - eb / sb) * 100) / 5);
+                }
+                return { s, parts };
+            }
+            const Y = period('y'), Q = period('p');
+            let S;
+            if (Y.s !== null && Q.s !== null) S = 0.70 * Y.s + 0.30 * Q.s;
+            else if (Y.s !== null) S = Y.s;
+            else if (Q.s !== null) S = 0.8 * Q.s;
+            else return null;
+            const why = [];
+            // Reliability: a tiny company's quarter swings on small amounts — pull
+            // its score toward neutral (₹1 Cr sales ×0.5, ₹10 Cr ×0.75, ₹100 Cr+ ×1)
+            if (isFinite(sales.c) && sales.c > 0 && sales.c < 100) {
+                S *= 0.5 + 0.5 * Math.max(0, Math.log10(sales.c) / 2);
+                if (sales.c < 10) why.push('small revenue → score pulled toward neutral');
+            }
+            // Cash quality (annual CFO / PAT): profit that is not turning into cash
+            // counts for less; strong conversion a little more
+            const cfoPat = num(r['CFO/PAT']);
+            if (isFinite(cfoPat) && isFinite(np.c) && np.c > 0) {
+                const adj = cfoPat < 0 ? -0.10 : cfoPat < 50 ? -0.05 : cfoPat > 100 ? 0.03 : 0;
+                S += adj;
+                if (adj < 0) why.push('cash flow ' + (cfoPat < 0 ? 'negative' : 'only ' + Math.round(cfoPat) + '% of profit') + ' (CFO/PAT)');
+            }
+            S = Math.max(-1, Math.min(1, S));
+            const pts = Math.max(0, Math.min(100, Math.round((S + 1) * 50)));
+            let cat = _sgGradeOf(pts);
+            if (Y.s !== null && Q.s !== null) {
+                const cy = _sgGradeOf(Math.round((Y.s + 1) * 50));
+                if (cat > cy + 1) { cat = cy + 1; why.push('QoQ lift limited to one grade'); }
+                if (cat < cy - 1) { cat = cy - 1; why.push('QoQ drag limited to one grade'); }
+            }
+            if (((isFinite(np.c) && np.c <= 0) || (isFinite(ebd.c) && ebd.c <= 0)) && cat > 2) { cat = 2; why.push('loss-making → max Moderate'); }
+            if (isFinite(np.c) && np.c < 0 && Y.parts['Net Profit'] !== null && Y.parts['Net Profit'] < 0 && cat > 1) { cat = 1; why.push('loss widened YoY → max Weak'); }
+            if (isFinite(sales.c) && sales.y > 0 && sales.c / sales.y - 1 < -0.10 && cat > 2) { cat = 2; why.push('sales down >10% YoY → max Moderate'); }
+            if (cat === 4) {
+                const okSales = Y.parts['Sales'] === null || Y.parts['Sales'] > 0.15;
+                const okNp = Y.parts['Net Profit'] !== null && Y.parts['Net Profit'] > 0.3 && !oneOff;
+                const okQ = (Q.parts['Net Profit'] === null || Q.parts['Net Profit'] > -0.4) && (Q.s === null || Q.s >= -0.1);
+                const okMargin = !(sales.c > 0) || !isFinite(np.c) || np.c / sales.c >= 0.02;
+                if (!(okSales && okNp && okQ && okMargin)) { cat = 3; why.push('Best needs sales + real profit growth YoY, no QoQ slump, net margin ≥ 2%'); }
+            }
+            if (oneOff) why.push('one-off: net profit far above EBITDA');
+            return { cat, pts, why: why.join(' · ') };
+        }
+
+        function calcScoreClassic(r) {
             const g = [yoyGrowth(r['Sales (Current)'], r['Sales (YoY Qtr)']), yoyGrowth(r['EBIDT (Current)'], r['EBIDT (YoY Qtr)']), yoyGrowth(r['Net Profit (Current)'], r['Net Profit (YoY Qtr)']), yoyGrowth(r['EPS (Current)'], r['EPS (YoY Qtr)'])];
             const absVals = [
                 parseFloat(r['Sales (Current)']), parseFloat(r['EBIDT (Current)']), parseFloat(r['Net Profit (Current)']), parseFloat(r['EPS (Current)']),
@@ -10695,6 +10863,38 @@
             2: { label: 'Moderate', desc: 'All >=0%', dot: 'var(--pop-purple)' },
             3: { label: 'Good', desc: 'All >20%', dot: 'var(--pop-blue)' },
             4: { label: 'Best', desc: 'All >50% & Pos', dot: 'var(--pop-green)' }
+        };
+        // Sub-labels under the Best … Very Weak counters, per grading method
+        const _RESULT_METHOD_SUBS = {
+            classic: { best: '(All >50%)', good: '(All >20%)', mod: '(All >=0%)', weak: '(2 Neg)', vweak: '(Rest)' },
+            smart: { best: '(Score ≥82)', good: '(Score ≥68)', mod: '(Score ≥50)', weak: '(Score ≥35)', vweak: '(Score <35)' }
+        };
+        function _applyResultMethodLabels() {
+            const subs = _RESULT_METHOD_SUBS[window._resultMethod] || _RESULT_METHOD_SUBS.classic;
+            ['best', 'good', 'mod', 'weak', 'vweak'].forEach(k => {
+                const el = document.querySelector('#summary .sc-' + k + ' .sum-label-sub');
+                if (el) el.textContent = subs[k];
+            });
+            const sel = document.getElementById('result-method-filter');
+            if (sel && sel.value !== window._resultMethod) sel.value = window._resultMethod;
+        }
+        /* Switch grading method: re-grade every company, then redraw the
+           list, counters and anything else coloured by the grade. */
+        window.setResultMethod = function (m) {
+            m = m === 'smart' ? 'smart' : 'classic';
+            window._resultMethod = m;
+            try { localStorage.setItem('sx_result_method', m); } catch (e) { }
+            if (Array.isArray(allData)) {
+                allData.forEach(r => {
+                    r._score = calcScore(r);
+                    if (r._tsResultScore !== undefined) r._tsResultScore = r._score;
+                });
+            }
+            if (typeof window._daResultScoreCacheReset === 'function') window._daResultScoreCacheReset();
+            _applyResultMethodLabels();
+            if (typeof doFilter === 'function') doFilter();
+            const fsM = document.getElementById('fs-chart-modal');
+            if (fsM && fsM.style.display === 'flex' && typeof window.renderFullScreenChart === 'function') window.renderFullScreenChart();
         };
 
         /* SECTOR AND INDUSTRY FILTER FUNCTIONS */
@@ -11259,6 +11459,7 @@
         ${techScoreBoxHtml(r)}
       </div>
       <div class="inline-scores">
+        ${window._resultMethod === 'smart' && r._smartPts != null ? `<div class="iscore ${['red', 'orange', 'purple', 'blue', 'green'][r._smartCat] || 'gray'}" title="Smart result grade: ${SI[r._smartCat] ? SI[r._smartCat].label : ''} · ${r._smartPts}/100 (YoY 70% + QoQ 30%)${r._smartWhy ? ' — ' + escHtml(r._smartWhy) : ''}"><span class="iscore-label">Grade</span><span class="iscore-val">${r._smartPts}</span></div>` : ''}
         ${!isNaN(r._mcap) ? `<div class="iscore w-wide ${getChipColor('Market Cap', r._mcap)}"><span class="iscore-label">Mcap</span><span class="iscore-val">${fmtMcap(r._mcap)}</span></div>` : ''}
         ${r['Trendlyne Durability Score'] ? `<div class="iscore ${getChipColor('Durability', r['Trendlyne Durability Score'])}"><span class="iscore-label">Dur</span><span class="iscore-val">${fmtWhole(r['Trendlyne Durability Score'])}</span></div>` : ''}
         ${r['Trendlyne Growth Score'] ? `<div class="iscore ${getChipColor('Growth', r['Trendlyne Growth Score'])}"><span class="iscore-label">Gwth</span><span class="iscore-val">${fmtWhole(r['Trendlyne Growth Score'])}</span></div>` : ''}
@@ -11441,6 +11642,7 @@
                 for (let i = 0; i < 6; i++) {
                     _sumCardEls[i].classList.toggle('active-sum', activeFilter === _sumOrder[i]);
                 }
+                _applyResultMethodLabels();
                 return;
             }
             // Fallback: full rebuild if elements not found
@@ -11470,6 +11672,7 @@
       <div class="sum-label">Very Weak<span class="sum-label-sub">(Rest)</span></div>
     </div>`;
             _sumValEls = null; _sumCardEls = null; // reset cache after full rebuild
+            _applyResultMethodLabels();
         }
 
         /* ══════════════════════════════
@@ -13127,13 +13330,41 @@
                 });
             }
         }
-        function loadMore() {
+        function appendCards(count) {
             const start = currentRenderLimit;
-            currentRenderLimit += RENDER_CHUNK;
+            if (start >= currentFilteredData.length) return;
+            currentRenderLimit += count;
             document.getElementById('cards').insertAdjacentHTML('beforeend', currentFilteredData.slice(start, currentRenderLimit).map((r, i) => buildCard(r, i)).join(''));
             updatePaginationUI();
             initCardCharts();
         }
+        function loadMore() { appendCards(RENDER_CHUNK); }
+
+        /* ── Auto-load: more cards arrive as you scroll ──
+           When the end of the list comes within ~1200px of the bottom of the
+           screen, the next small batch is appended (one batch per frame, so
+           the scroll never stutters the way a 100-card insert did). Works
+           whichever element is scrolling (window on desktop, the body on
+           phones): a capture-phase scroll listener hears them all. The
+           "Load Next" button stays as a fallback. */
+        (function () {
+            const AUTO_CHUNK = IS_MOBILE ? 15 : 30;
+            const AHEAD_PX = 1200;
+            let raf = 0;
+            function check() {
+                raf = 0;
+                if (currentRenderLimit >= currentFilteredData.length) return;
+                const cont = document.getElementById('load-more-container');
+                if (!cont || cont.style.display === 'none' || !cont.offsetParent) return;   // list hidden (another tab open)
+                if (cont.getBoundingClientRect().top - window.innerHeight > AHEAD_PX) return;
+                appendCards(AUTO_CHUNK);
+                schedule();   // still close to the end (tall screen, short cards)? next batch next frame
+            }
+            function schedule() { if (!raf) raf = requestAnimationFrame(check); }
+            window._cardsAutoLoadCheck = schedule;
+            document.addEventListener('scroll', schedule, { capture: true, passive: true });
+            window.addEventListener('resize', schedule, { passive: true });
+        })();
         function renderCards() {
             const cardsEl = document.getElementById('cards');
             const html = currentFilteredData.slice(0, currentRenderLimit).map((r, i) => buildCard(r, i)).join('');
@@ -13189,6 +13420,8 @@
             const cont = document.getElementById('load-more-container');
             if (rem > 0) { document.getElementById('load-more-btn').textContent = `Load Next ${Math.min(RENDER_CHUNK, rem)} Results`; cont.style.display = 'block'; }
             else cont.style.display = 'none';
+            // a fresh / short list may already end on screen: let auto-load top it up
+            if (rem > 0 && window._cardsAutoLoadCheck) window._cardsAutoLoadCheck();
         }
 
         function setFilterById(f) {
@@ -22019,10 +22252,20 @@
                 const modal = document.getElementById('fs-chart-modal');
                 const fsOpen = !!(modal && modal.style.display === 'flex');
                 let fsDone = false, drew = false;
+                const gridEl = document.getElementById('fs-grid');
+                const gridShown = !!(gridEl && !gridEl.hidden);
+                const gridCells = gridShown ? document.querySelectorAll('#fs-grid-cells .card-chart-canvas-price').length : 0;
                 _volSparkCanvases.forEach(cv => {
                     if (!cv.isConnected) { _volSparkCanvases.delete(cv); return; }
+                    /* Multi-chart grid boxes live inside the modal too, but
+                       renderFullScreenChart only re-runs the grid's cached layout
+                       (identical → nothing redrawn), so their Q/Y/E letters never
+                       sparkled. Each box redraws itself like a card chart below. */
+                    const inGrid = !!(cv.closest && cv.closest('#fs-grid-cells'));
+                    if (inGrid && !fsOpen) { _volSparkCanvases.delete(cv); return; }
                     // Full chart: its own renderer (the Deliv panes share this set)
-                    if (cv.closest && cv.closest('#fs-chart-modal')) {
+                    if (!inGrid && cv.closest && cv.closest('#fs-chart-modal')) {
+                        if (gridShown) return;   // hidden behind the grid; resumes when it shows again
                         if (fsOpen && !fsDone && typeof window.renderFullScreenChart === 'function') {
                             fsDone = true;
                             window.renderFullScreenChart({ skipChrome: true });
@@ -22036,8 +22279,11 @@
                     if (popup && popup.contains(cv) && !popup.classList.contains('csp-visible')) return;   // pop-up closed
                     const b = cv.getBoundingClientRect();
                     if (!b.width || b.bottom < 0 || b.top > vh || b.right < 0 || b.left > vw) return;          // off screen
-                    // Card charts: every other tick (~9 fps) — a page can show several
-                    if (!(popup && popup.contains(cv)) && (_volSparkN & 1)) { drew = true; return; }
+                    if (owner._fsPanBusy) { drew = true; return; }   // a pan is already redrawing it every frame
+                    // Card charts: every other tick (~9 fps) — a page can show several.
+                    // Grid boxes up to 4 run every tick like the full chart.
+                    const everyTick = (popup && popup.contains(cv)) || (inGrid && gridCells <= 4);
+                    if (!everyTick && (_volSparkN & 1)) { drew = true; return; }
                     if (owner._volSparkTick === _volSparkN) { drew = true; return; }   // price + volume canvas: one redraw
                     owner._volSparkTick = _volSparkN;
                     try { drawChartCore(st.ticker, st.period, owner, st.vCv, st.loadEl, st.widthEl); drew = true; } catch (e) { _volSparkCanvases.delete(cv); }
@@ -23497,14 +23743,61 @@
                 const n = standardSlots;
 
                 // Pan offset: how many candles the user has scrolled backward in time
+                /* The window keeps the size the period gives it at rest and slides
+                   back through the WHOLE history — the old limit (periodN -
+                   standardSlots) only counted candles inside the period, so it was
+                   ~0 and the chart could never be dragged. _panFrac (0..1 of a
+                   candle) is the sub-candle part of a drag: everything shifts right
+                   by that much and one extra older candle fills the gap it opens on
+                   the left, so the drag tracks the pointer pixel for pixel. */
+                const restStart = Math.max(defaultStartIdx, currentData.length - standardSlots);
                 let pOffset = (pCv && pCv._panOffset !== undefined) ? pCv._panOffset : 0;
-                const maxOffset = Math.max(0, periodN - standardSlots);
+                /* Panned back while candles arrive at the right edge (replay
+                   ticks, a data refresh): stay on the same dates, like
+                   TradingView — » catches up. At the latest (offset 0) the chart
+                   keeps following new candles as before. A step back shrinks
+                   the series and the offset follows it the other way. */
+                if (pCv) {
+                    const lenKey = UC + '|' + period;
+                    const prevLen = pCv._panLenKey === lenKey ? pCv._panLastLen : 0;
+                    // A different ticker or period on this canvas opens on the latest
+                    // candle (the full chart's duration switch re-anchors just below).
+                    if (pCv._panLenKey && pCv._panLenKey !== lenKey) { pOffset = 0; pCv._panFrac = 0; }
+                    const panned = pOffset > 0 || pCv._panFrac > 0;
+                    if (prevLen && panned && pCv._panAnchorIdx == null) {
+                        const grow = currentData.length - prevLen;
+                        if (grow > 1 && window._fsTrainingMode && pCv.id === 'fs-chart-pcv') {
+                            // a trainer revealing the outcome: show it, don't hold the old view
+                            pOffset = 0;
+                            pCv._panFrac = 0;
+                            if (typeof window._fsPanReset === 'function') window._fsPanReset();
+                        } else if (grow) {
+                            const hold = typeof window._fsPanShift === 'function' ? window._fsPanShift(pCv, grow) !== false : true;
+                            if (hold) pOffset += grow;
+                        }
+                    }
+                    pCv._panLenKey = lenKey;
+                    pCv._panLastLen = currentData.length;
+                }
+                const maxOffset = Math.max(0, restStart);
+                if (pCv && pCv._panAnchorIdx != null) {
+                    // A duration switch while panned: centre the candle that was
+                    // centred before, so the new span opens on the same dates.
+                    const wsz = currentData.length - restStart;
+                    pOffset = currentData.length - (pCv._panAnchorIdx + 1 + Math.floor(wsz / 2));
+                    pCv._panAnchorIdx = null;
+                    pCv._panFrac = 0;
+                }
                 pOffset = Math.max(0, Math.min(maxOffset, pOffset));
                 if (pCv) pCv._panOffset = pOffset;
+                let panFrac = (pCv && pCv._panFrac > 0 && pCv._panFrac < 1) ? pCv._panFrac : 0;
+                if (pOffset >= maxOffset) { panFrac = 0; if (pCv) pCv._panFrac = 0; }
 
                 // actualEnd / actualStart: slice of data to render, date-filtered
                 const actualEnd = currentData.length - pOffset;
-                const actualStart = Math.max(defaultStartIdx, actualEnd - standardSlots);
+                let actualStart = Math.max(0, restStart - pOffset);
+                if (panFrac > 0 && actualStart > 0) actualStart--;
+                else panFrac = 0;
                 const raw = currentData.slice(actualStart, actualEnd);
 
                 // drawIndexOffset: left-side empty slots for tickers with less history.
@@ -23693,13 +23986,37 @@
                 logMin -= logPad;
                 logMax += logPad * (fsCompact ? 1.75 : 1.5);
 
+                let _scaleEasing = false;
+                if (pCv) {
+                    const _scKey = UC + '|' + period + '|' + PH + '|' + W + '|' + currentData.length;
+                    const _sc = pCv._fsScale;
+                    if ((pCv._fsPanBusy || pCv._fsScaleEase) && _sc && _sc.key === _scKey) {
+                        const tLo = logMin, tHi = logMax;
+                        const eps = (tHi - tLo) * 0.003;
+                        const lo = _sc.lo + (tLo - _sc.lo) * 0.22;
+                        const hi = _sc.hi + (tHi - _sc.hi) * 0.22;
+                        if (Math.abs(lo - tLo) > eps || Math.abs(hi - tHi) > eps) {
+                            logMin = lo; logMax = hi; _scaleEasing = true;
+                        }
+                    }
+                    // Settled and converged: back to the exact fitted range.
+                    if (!_scaleEasing && !pCv._fsPanBusy) pCv._fsScaleEase = false;
+                    pCv._fsScale = { key: _scKey, lo: logMin, hi: logMax };
+                }
+
                 const logR = logMax - logMin || 1;
 
                 const toY = v => {
                     if (v <= 0) return PP.t + pH;
                     return PP.t + pH * (1 - (Math.log(v) - logMin) / logR);
                 };
-                const fractionalShift = (pCv && pCv._panFractional ? pCv._panFractional : 0) + (pCv && pCv._panFractionalTouch ? pCv._panFractionalTouch : 0);
+                const fractionalShift = panFrac * (pW / n);
+                /* While a drag is mid-candle the plots slide under the right price
+                   axis; clip them to the plot area then. At rest (whole-candle
+                   offsets) nothing is clipped, so the chart draws exactly as before. */
+                const _panClipOn = fractionalShift > 0 || _scaleEasing;
+                const _panClip = (ctx, right, h) => { if (_panClipOn && ctx) { ctx.save(); ctx.beginPath(); ctx.rect(0, 0, right, h); ctx.clip(); } };
+                const _panUnclip = ctx => { if (_panClipOn && ctx) ctx.restore(); };
 
                 const toX = i => PP.l + (i + drawIndexOffset + 0.5) * (pW / n) + fractionalShift;
                 const toPaneX = (i, panePad, paneW) => panePad.l + (i + drawIndexOffset + 0.5) * (paneW / n) + fractionalShift;
@@ -23742,8 +24059,13 @@
                     barStep,
                     maxPanOffset: maxOffset,
                     fractionalShift,
-                    drawIndexOffset
+                    drawIndexOffset,
+                    toY,
+                    actualStart,
+                    panOffset: pOffset,
+                    panFrac
                 };
+                if (window._fsPanAfterDraw && (isFs || (widthEl && widthEl._fsgFitH))) window._fsPanAfterDraw(pCv);
                 pCv.style.cursor = 'crosshair';
                 pCv.style.touchAction = 'pan-y';
                 if (vCv) { vCv.style.cursor = 'crosshair'; vCv.style.touchAction = 'pan-y'; }
@@ -23763,6 +24085,7 @@
                     if (!canvas || canvas._hasCrosshairEvent) return;
 
                     const onPointerMove = (e) => {
+                        if (pCv._fsPanBusy) return;
                         const state = pCv._chartState;
                         if (!state || !state.raw || state.n === 0) return;
 
@@ -23963,6 +24286,8 @@
 
                 // ── Crosshair lines — under the MAs, candles and volume bars ──
                 drawCrosshairLines(pc, pCv._hoverX, pCv._hoverY, PP, W, PH, pCv._hoverCanvas === pCv);
+
+                _panClip(pc, W - PP.r, _scaleEasing ? PH - PP.b : PH);
 
                 // ── MA lines ──
                 // MA10: Gold Bold line
@@ -24302,6 +24627,8 @@
                         hoverIdx: pCv._hoverCanvas ? pCv._hoverIdx : null
                     });
                 }
+
+                _panUnclip(pc);
 
                 // ── Last close: dashed horizontal line + price tag ──
                 const lc = raw[raw.length - 1].close;
@@ -24657,6 +24984,7 @@
                     vc.strokeStyle = 'rgba(255,255,255,0.15)'; vc.lineWidth = 0.8;
                     vc.beginPath(); vc.moveTo(0, 0); vc.lineTo(W, 0); vc.stroke();
 
+                    _panClip(vc, W - VP.r, VH);
                     // Volume bars — vivid blue bull, vivid magenta bear
                     raw.forEach((r, i) => {
                         const x = toPaneX(i, VP, vW2);
@@ -24681,6 +25009,7 @@
                     });
                     vc.stroke();
                     vc.setLineDash([]);
+                    _panUnclip(vc);
 
                     // Volume right-side labels — full white bold, right-aligned
                     vc.font = isFs ? 'bold 11px "Lexend",monospace' : 'bold 7.5px "Lexend",monospace'; vc.fillStyle = '#ffffff';
@@ -24861,6 +25190,7 @@
                     ic.beginPath(); ic.moveTo(IP.l, IP.t + iH * 0.5); ic.lineTo(W - IP.r, IP.t + iH * 0.5); ic.stroke();
                     ic.setLineDash([]);
 
+                    _panClip(ic, W - IP.r, IH);
                     // Draw A/D line: Bright Pink
                     ic.strokeStyle = '#ff00ff'; ic.lineWidth = 1.2; ic.lineJoin = 'round'; ic.lineCap = 'round';
                     ic.beginPath();
@@ -24906,6 +25236,8 @@
                     });
                     ic.stroke();
                     ic.setLineDash([]);
+
+                    _panUnclip(ic);
 
                     // Right-side indicators values for the last close
                     const lastAd = raw[raw.length - 1].ad;
@@ -25023,6 +25355,7 @@
 
 
 
+                        _panClip(rsc, W - RP.r, RSH);
                         raw.forEach((r, i) => {
                             const v = r.delivPer;
                             if (v === null || v === undefined) return;
@@ -25034,6 +25367,7 @@
                             rsc.fillStyle = r._dColor || '#00bfff';
                             rsc.fillRect(x - bW2 / 2, bTop, bW2, bH);
                         });
+                        _panUnclip(rsc);
 
                         // Current Deliv value label
                         const hoverIdx = pCv._hoverIdx;
@@ -25083,6 +25417,7 @@
 
 
 
+                        _panClip(rsc, W - RP.r, RSH);
                         raw.forEach((r, i) => {
                             const v = r.delivVol;
                             if (v === null || v === undefined) return;
@@ -25094,6 +25429,7 @@
                             rsc.fillStyle = r._dColor || '#00bfff';
                             rsc.fillRect(x - bW2 / 2, bTop, bW2, bH);
                         });
+                        _panUnclip(rsc);
 
                         // Current Deliv Vol value & SMA label
                         const hoverIdx = pCv._hoverIdx;
@@ -25161,6 +25497,7 @@
                         rsc.beginPath(); rsc.moveTo(RP.l, zeroY); rsc.lineTo(W - RP.r, zeroY); rsc.stroke();
                         rsc.setLineDash([]);
 
+                        _panClip(rsc, W - RP.r, RSH);
                         raw.forEach((r, i) => {
                             const v = r.rsMansfield;
                             if (v === null || v === undefined) return;
@@ -25183,6 +25520,7 @@
                             stRS ? rsc.lineTo(x, y) : (rsc.moveTo(x, y), stRS = true);
                         });
                         rsc.stroke();
+                        _panUnclip(rsc);
 
                         // Both readouts below are crosshair-only: with no active
                         // hover there is no "current" candle to report, so nothing
@@ -25492,7 +25830,7 @@
                     }
                 }
                 if (isFs) {
-                    if (typeof window.updateFsDeliveryAnalysis === 'function') {
+                    if (typeof window.updateFsDeliveryAnalysis === 'function' && !pCv._fsPanBusy) {
                         window.updateFsDeliveryAnalysis(raw);
                     }
                 }
@@ -29695,6 +30033,8 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                on the array IDENTITY — a reload or a peer-mode swap produces
                a different array and invalidates this for free. */
             const _resultScoreCache = { src: null, map: null };
+            // the grading method can change under the same array (filter bar → Grade)
+            window._daResultScoreCacheReset = function () { _resultScoreCache.src = null; };
             function daAllData() {
                 if (typeof allData !== 'undefined' && Array.isArray(allData)) return allData;
                 return (window.allData && Array.isArray(window.allData)) ? window.allData : [];
@@ -37733,6 +38073,83 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
             letter-spacing: 0.3px;
         }
 
+        /* Fundamentals card during Replay / Trainers: today's ranks blanked */
+        #fs-mini-financial-card.fs-mini-masked .iscore {
+            filter: grayscale(1);
+            opacity: 0.45;
+        }
+
+        /* Replay progress: thin scrubbable bar + "23 / 60 · 37 left" */
+        .fs-rp-prog {
+            margin-top: 6px;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .fs-rp-prog[hidden] {
+            display: none;
+        }
+
+        .fs-rp-track {
+            position: relative;
+            height: 14px;
+            cursor: pointer;
+            touch-action: none;
+        }
+
+        .fs-rp-track::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 5px;
+            height: 4px;
+            border-radius: 2px;
+            background: rgba(255, 255, 255, 0.12);
+        }
+
+        .fs-rp-fill {
+            position: absolute;
+            left: 0;
+            top: 5px;
+            height: 4px;
+            width: 0;
+            border-radius: 2px;
+            background: linear-gradient(90deg, #2563eb, #60a5fa);
+        }
+
+        .fs-rp-knob {
+            position: absolute;
+            top: 2px;
+            width: 10px;
+            height: 10px;
+            margin-left: -5px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.55), 0 1px 3px rgba(0, 0, 0, 0.5);
+            transition: transform 0.12s;
+        }
+
+        .fs-rp-track:hover .fs-rp-knob,
+        .fs-rp-prog.scrubbing .fs-rp-knob {
+            transform: scale(1.25);
+        }
+
+        .fs-rp-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 9px;
+            color: rgba(255, 255, 255, 0.45);
+            letter-spacing: 0.3px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* compact copy inside the floating trade pad */
+        #fs-replay-trade-controls .fs-rp-prog {
+            margin: 2px 0 0;
+            width: 100%;
+        }
+
         /* Paper trade */
         .fs-pt-row {
             display: flex;
@@ -38134,15 +38551,130 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
             cursor: crosshair;
         }
 
+        /* The chart owns every touch gesture (TradingView-style): a swipe in
+           any direction pans it, so the browser must never claim it as a
+           scroll — under the rotated phone layout a "horizontal" chart swipe
+           is a vertical screen swipe, which pan-y used to hand to the browser
+           (pointercancel → the drag died). Nothing in here scrolls. The grid
+           boxes sit inside overflow:hidden cells (scroll containers that reset
+           the touch-action chain), so every descendant opts out too. */
+        #fs-chart-wrapper,
+        #fs-chart-wrapper > canvas,
+        #fs-grid-cells,
+        #fs-grid-cells * {
+            touch-action: none;
+        }
+
         #fs-chart-wrapper {
-            touch-action: pan-y;
             cursor: grab;
             user-select: none;
             -webkit-user-select: none;
         }
 
-        #fs-chart-wrapper.fs-panning {
-            cursor: grabbing;
+        /* Home page card charts + hover pop-up: drag sideways to pan. pan-y
+           keeps a vertical swipe scrolling the page (the full chart's grid
+           boxes override this with touch-action:none via #fs-grid-cells *). */
+        .card-chart-body canvas,
+        #csph-body canvas {
+            touch-action: pan-y;
+            cursor: grab;
+        }
+
+        html.mp-panning,
+        html.mp-panning * {
+            cursor: grabbing !important;
+            user-select: none !important;
+            -webkit-user-select: none !important;
+        }
+
+        #fs-chart-wrapper.fs-panning,
+        #fs-chart-wrapper.fs-panning canvas,
+        #fs-grid-cells.fs-panning,
+        #fs-grid-cells.fs-panning canvas {
+            cursor: grabbing !important;
+        }
+
+        /* Pan overlay (drag-to-pan): » jump-to-latest, date range while
+           moving, edge glow when the start / end of history is hit. */
+        #fs-pan-ui {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 46;
+            overflow: hidden;
+        }
+
+        #fs-pan-ui .fsp-edge {
+            position: absolute;
+            width: 34px;
+            opacity: 0;
+            transition: opacity .35s ease;
+        }
+
+        #fs-pan-ui .fsp-edge-l {
+            background: linear-gradient(90deg, rgba(56, 189, 248, .30), rgba(56, 189, 248, 0));
+        }
+
+        #fs-pan-ui .fsp-edge-r {
+            background: linear-gradient(270deg, rgba(56, 189, 248, .30), rgba(56, 189, 248, 0));
+        }
+
+        #fs-pan-ui .fsp-edge.on {
+            opacity: 1;
+            transition: opacity .08s ease;
+        }
+
+        #fs-pan-ui .fsp-range {
+            position: absolute;
+            transform: translateX(-50%);
+            padding: 3px 11px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, .9);
+            border: 1px solid rgba(148, 163, 184, .35);
+            color: #e2e8f0;
+            font: 600 11px "Lexend", sans-serif;
+            white-space: pre;
+            opacity: 0;
+            transition: opacity .3s ease;
+        }
+
+        #fs-pan-ui.fsp-show-range .fsp-range {
+            opacity: 1;
+            transition: opacity .1s ease;
+        }
+
+        #fs-pan-ui .fsp-latest {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 0 2px;
+            border-radius: 8px;
+            border: 1px solid rgba(148, 163, 184, .45);
+            background: rgba(15, 23, 42, .92);
+            color: #e2e8f0;
+            font: 700 18px/1 "Lexend", sans-serif;
+            cursor: pointer;
+            pointer-events: auto;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateX(8px);
+            transition: opacity .2s ease, transform .2s ease, visibility 0s linear .2s;
+        }
+
+        #fs-pan-ui.fsp-show-latest .fsp-latest {
+            opacity: 1;
+            visibility: visible;
+            transform: none;
+            transition: opacity .2s ease, transform .2s ease;
+        }
+
+        #fs-pan-ui .fsp-latest:hover {
+            background: #1e6eff;
+            border-color: #1e6eff;
+            color: #fff;
         }
 
         /* fs-date-wrap (qty input) */
@@ -41488,6 +42020,8 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
 
                 // ── Index_main mode ──
                 if (group === 'index_main') {
+                    const _panUi = document.getElementById('fs-pan-ui');
+                    if (_panUi) _panUi.classList.remove('fsp-show-latest', 'fsp-show-range');
                     // Remembered so the next stock render knows it has canvases
                     // to put back — and so it leaves them alone when it does not.
                     window._fsWasIndexMode = true;
@@ -41527,7 +42061,12 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
 
                 if (pCv) {
                     if (pCv._lastTicker !== tk || pCv._lastTf !== tf) {
+                        const _st = pCv._chartState;
+                        pCv._panAnchorIdx = (pCv._lastTicker === tk && _st && _st.raw && _st.panOffset > 0 && _st.ticker === tk)
+                            ? _st.actualStart + Math.floor(_st.raw.length / 2) : null;
                         pCv._panOffset = 0;
+                        pCv._panFrac = 0;
+                        if (typeof window._fsPanReset === 'function') window._fsPanReset();
                         pCv._lastTicker = tk;
                         pCv._lastTf = tf;
                     }
@@ -41583,6 +42122,17 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                             </div>` : ''}
                         `;
                         cardEl.style.display = 'grid';
+                        /* These ranks are TODAY's. During a replay that is the future
+                           (look-ahead), and in a trainer it hints at which company
+                           it is — so blank the values. The card stays clickable
+                           (Quick Trendline / Clear Drawings). */
+                        const maskFund = !!(window._fsReplay && window._fsReplay.active);
+                        cardEl.classList.toggle('fs-mini-masked', maskFund);
+                        if (maskFund) {
+                            cardEl.querySelectorAll('.iscore-val').forEach(v => { v.textContent = '–'; });
+                            cardEl.querySelectorAll('.iscore').forEach(ch => { if (!ch.getAttribute('onclick')) ch.removeAttribute('title'); });
+                            cardEl.title = "Ranks hidden during Replay / Trainers (they are today's values, not as of the replay date). Top: Quick Trendline · Bottom: Clear Drawings";
+                        }
                     } else {
                         cardEl.style.display = 'none';
                     }
@@ -41598,8 +42148,10 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
 
                     // Add active states if already in window._fhTickers
                     if (window._fhTickers) {
-                        const isFav = window._fhTickers.F ? window._fhTickers.F.has(tkUpper) : false;
-                        const isHold = window._fhTickers.H ? window._fhTickers.H.has(tkUpper) : false;
+                        // In a trainer the glow would say "this hidden stock is in your list"
+                        const blind = !!window._fsTrainingMode;
+                        const isFav = !blind && (window._fhTickers.F ? window._fhTickers.F.has(tkUpper) : false);
+                        const isHold = !blind && (window._fhTickers.H ? window._fhTickers.H.has(tkUpper) : false);
                         window._setFHGlow(btnFav, 'F', isFav);
                         window._setFHGlow(btnHold, 'H', isHold);
                         const atrToggle = document.getElementById('fs-atr-mult-toggle');
@@ -41646,7 +42198,17 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
             };
 
             // ── Candlestick Replay engine ──────────────────────────────────────────
-            window._fsReplay = { timer: null, paused: false, active: false, currentMaxDate: 0, endDate: 0 };
+            window._fsReplay = { timer: null, paused: false, active: false, currentMaxDate: 0, endDate: 0, startDate: 0 };
+
+            /* Replay status date. Trainers hide the year everywhere else (axis,
+               last-candle label, pan range pill) — the status line has to as
+               well, or a single press of › gives the year away. */
+            const _FS_RP_MOS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            window._fsReplayDateTxt = function (ts) {
+                const d = ts instanceof Date ? ts : new Date(ts);
+                if (isNaN(d)) return '';
+                return window._fsTrainingMode ? d.getDate() + ' ' + _FS_RP_MOS[d.getMonth()] : d.toISOString().slice(0, 10);
+            };
 
             window._fsUpdateFloatingPaperTradeUI = function () {
                 const tradeBox = document.getElementById('fs-replay-trade-controls');
@@ -41791,9 +42353,9 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                     if (t < 1) {
                         window._fsReplay._animRaf = requestAnimationFrame(frame);
                     } else {
-                        // Snap to final completed candle
+                        // Snap to final completed candle (chart only — see _fsReplayTick)
                         window._fsReplay.partialCandle = null;
-                        window.renderFullScreenChart();
+                        window.renderFullScreenChart({ skipChrome: true });
                     }
                 }
 
@@ -41830,7 +42392,7 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
 
                 if (statusEl) {
                     const d = new Date(window._fsReplay.currentMaxDate);
-                    statusEl.textContent = d.toISOString().slice(0, 10);
+                    statusEl.textContent = window._fsReplayDateTxt(d);
                 }
 
                 if (window._fsReplay.currentMaxDate >= window._fsReplay.endDate) {
@@ -41855,9 +42417,11 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                     // Only animate if we have enough time (≥ 100ms)
                     _fsAnimateCandle(nextCandle, animMs);
                 } else {
-                    // Fast replay (≥5 candles/sec): skip sub-candle animation
+                    // Fast replay (≥5 candles/sec): skip sub-candle animation.
+                    // Chart only — the sidebar chrome (watermark, Guru panel,
+                    // fundamentals card) doesn't change from candle to candle.
                     window._fsReplay.partialCandle = null;
-                    window.renderFullScreenChart();
+                    window.renderFullScreenChart({ skipChrome: true });
                 }
             }
 
@@ -41916,8 +42480,12 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
 
                 window._fsReplay.active = true;
                 window._fsReplay.currentMaxDate = startTs;
+                window._fsReplay.startDate = startTs;
                 window._fsReplay.endDate = endTs;
                 window._fsReplay.paused = false;
+                // One full render as the replay begins: the chrome (fundamentals
+                // card → masked) is only rebuilt here; ticks redraw the chart alone.
+                window.renderFullScreenChart();
                 if (btn) btn.textContent = '⏸';
                 if (mBtn) mBtn.textContent = '⏸';
 
@@ -43344,12 +43912,12 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                     window._fsReplay.currentMaxDate += 86400000;
                 }
 
-                window.renderFullScreenChart();
+                window.renderFullScreenChart({ skipChrome: true });
 
                 const statusEl = document.getElementById('fs-replay-status');
                 if (statusEl) {
                     const d = new Date(window._fsReplay.currentMaxDate);
-                    statusEl.textContent = d.toISOString().slice(0, 10);
+                    statusEl.textContent = window._fsReplayDateTxt(d);
                 }
 
                 if (window._fsReplay.currentMaxDate >= window._fsReplay.endDate) {
@@ -43389,11 +43957,11 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                     window._fsReplay.currentMaxDate -= 86400000;
                 }
 
-                window.renderFullScreenChart();
+                window.renderFullScreenChart({ skipChrome: true });
                 const statusEl = document.getElementById('fs-replay-status');
                 if (statusEl) {
                     const d = new Date(window._fsReplay.currentMaxDate);
-                    statusEl.textContent = d.toISOString().slice(0, 10);
+                    statusEl.textContent = window._fsReplayDateTxt(d);
                 }
 
                 if (typeof window._fsUpdatePnlDisplay === 'function') window._fsUpdatePnlDisplay();
@@ -43402,6 +43970,130 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
             // ═══════════════════════════════════════════════════════
             // PAPER TRADE ENGINE
             // ═══════════════════════════════════════════════════════
+            /* ═══ Replay progress — thin scrubbable bar + "23 / 60 · 37 left" ═══
+               One copy under the sidebar transport, one in the floating trade
+               pad (the pad is what phones / iPads see). Updated after every
+               full-chart draw, so ticks, steps, scrubs and stops all show.
+               Hidden in trainers: their runway length is part of the secret. */
+            (function () {
+                const bars = [];
+                let lastKey = '';
+                const idxAtOrBefore = function (arr, ts) {
+                    let lo = 0, hi = arr.length - 1, ans = -1;
+                    while (lo <= hi) {
+                        const mid = (lo + hi) >> 1;
+                        if (arr[mid].date.getTime() <= ts) { ans = mid; lo = mid + 1; } else hi = mid - 1;
+                    }
+                    return ans;
+                };
+                function range() {
+                    const R = window._fsReplay;
+                    if (!R || !R.active || window._fsTrainingMode || !(R.endDate < Infinity)) return null;
+                    const arr = _fsGetReplayArray();
+                    if (!arr || !arr.length) return null;
+                    const s = Math.max(0, idxAtOrBefore(arr, R.startDate || R.currentMaxDate));
+                    const e = idxAtOrBefore(arr, R.endDate);
+                    if (e <= s) return null;
+                    const c = Math.max(s, Math.min(e, idxAtOrBefore(arr, R.currentMaxDate)));
+                    return { arr, s, e, c };
+                }
+                function update() {
+                    const r = range();
+                    const key = r ? r.s + '|' + r.e + '|' + r.c : '';
+                    if (key === lastKey) return;
+                    lastKey = key;
+                    bars.forEach(el => {
+                        el.hidden = !r;
+                        if (!r) return;
+                        const total = r.e - r.s, done = r.c - r.s;
+                        const pct = (done / total * 100).toFixed(2) + '%';
+                        el.querySelector('.fs-rp-fill').style.width = pct;
+                        el.querySelector('.fs-rp-knob').style.left = pct;
+                        el.querySelector('.fs-rp-count').textContent = done + ' / ' + total;
+                        el.querySelector('.fs-rp-left').textContent = (total - done) ? (total - done) + ' left' : 'end';
+                    });
+                }
+                window._fsReplayProgressUpdate = update;
+
+                function pauseForScrub() {
+                    const R = window._fsReplay;
+                    if (R.timer) { clearInterval(R.timer); R.timer = null; }
+                    if (R._animRaf) { cancelAnimationFrame(R._animRaf); R._animRaf = null; }
+                    R.partialCandle = null;
+                    R.paused = true;
+                    ['fs-replay-btn', 'fs-mobile-replay-btn'].forEach(id => {
+                        const b = document.getElementById(id);
+                        if (b) b.textContent = '▶';
+                    });
+                }
+                let scrubRaf = 0;
+                function seekTo(track, e) {
+                    const r = range();
+                    if (!r) return;
+                    const rect = track.getBoundingClientRect();
+                    // rotated phone layout: the bar's length runs down the screen
+                    const rotated = window.innerWidth <= 1024 && window.innerHeight > window.innerWidth && !!track.closest('#fs-chart-modal');
+                    const f = rotated
+                        ? (e.clientY - rect.top) / Math.max(1, rect.height)
+                        : (e.clientX - rect.left) / Math.max(1, rect.width);
+                    const idx = r.s + Math.round(Math.max(0, Math.min(1, f)) * (r.e - r.s));
+                    const ts = r.arr[idx].date.getTime();
+                    if (ts === window._fsReplay.currentMaxDate) return;
+                    window._fsReplay.currentMaxDate = ts;
+                    const statusEl = document.getElementById('fs-replay-status');
+                    if (statusEl) statusEl.textContent = window._fsReplayDateTxt(ts);
+                    if (!scrubRaf) scrubRaf = requestAnimationFrame(function () {
+                        scrubRaf = 0;
+                        window.renderFullScreenChart({ skipChrome: true });
+                        if (typeof window._fsUpdatePnlDisplay === 'function') window._fsUpdatePnlDisplay();
+                    });
+                }
+                function wire(el) {
+                    const track = el.querySelector('.fs-rp-track');
+                    track.addEventListener('pointerdown', function (e) {
+                        if (e.pointerType === 'mouse' && e.button !== 0) return;
+                        if (!range()) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        pauseForScrub();
+                        el.classList.add('scrubbing');
+                        try { track.setPointerCapture(e.pointerId); } catch (err) { }
+                        seekTo(track, e);
+                        const move = ev => { if (ev.pointerId === e.pointerId) seekTo(track, ev); };
+                        const up = ev => {
+                            if (ev.pointerId !== e.pointerId) return;
+                            el.classList.remove('scrubbing');
+                            track.removeEventListener('pointermove', move);
+                            track.removeEventListener('pointerup', up);
+                            track.removeEventListener('pointercancel', up);
+                        };
+                        track.addEventListener('pointermove', move);
+                        track.addEventListener('pointerup', up);
+                        track.addEventListener('pointercancel', up);
+                    });
+                }
+                function build(parent, after) {
+                    if (!parent) return;
+                    const el = document.createElement('div');
+                    el.className = 'fs-rp-prog';
+                    el.hidden = true;
+                    el.innerHTML = '<div class="fs-rp-track" title="Drag to jump through the replay"><div class="fs-rp-fill"></div><div class="fs-rp-knob"></div></div>' +
+                        '<div class="fs-rp-meta"><span class="fs-rp-count"></span><span class="fs-rp-left"></span></div>';
+                    if (after && after.parentNode === parent) parent.insertBefore(el, after.nextSibling);
+                    else parent.appendChild(el);
+                    wire(el);
+                    bars.push(el);
+                }
+                function init() {
+                    const status = document.getElementById('fs-replay-status');
+                    if (status) build(status.parentNode, status);
+                    build(document.getElementById('fs-replay-trade-controls'), null);
+                    update();
+                }
+                if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+                else init();
+            })();
+
             window._fsPaperTrade = {
                 position: null,   // { side:'long'|'short', qty, entryPrice, entryDate }
                 trades: [],       // completed trades
@@ -44113,7 +44805,7 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
             // ═══════════════════════════════════════════════════════
             // DRAWING TOOLS ENGINE
             // ═══════════════════════════════════════════════════════
-            window._fsDrawings = [];       // { type, x1,y1,x2,y2 } or { type:'hline', y }
+            window._fsDrawings = [];       // { type:'trend', tk, a1, a2 } or { type:'hline', tk, p } — a = { i, p } (see _fsPtToAnchor)
             window._fsDrawMode = null;     // 'hline' | 'trend' | null
             let _fsDrawPending = null;     // in-progress trend line
 
@@ -44217,17 +44909,71 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                 _fsPaintDrawings();
             };
 
-            // Helper: map canvas Y back to price using chart state
-            function _fsYToPrice(y) {
+            /* ── Drawing anchors ──
+               Drawings are stored in chart terms — a (fractional) candle index
+               into the ticker's full series and a price — plus the ticker they
+               belong to, and turned into pixels on every paint. So they stay
+               glued to the candles while the chart is dragged, through duration
+               changes and price-scale changes, and only show on their own ticker.
+               The draw canvas shares the price canvas's origin (top-left of
+               #fs-chart-wrapper). */
+            function _fsDrawState() {
                 const pCv = document.getElementById('fs-chart-pcv');
-                if (!pCv || !pCv._chartState) return null;
-                const st = pCv._chartState;
+                const st = pCv && pCv._chartState;
+                return st && st.toY && st.barStep ? st : null;
+            }
+            function _fsPtToAnchor(x, y) {
+                const st = _fsDrawState();
+                if (!st) return null;
                 const pH = st.PH - st.PP.t - st.PP.b;
                 if (pH <= 0) return null;
-                const frac = (y - st.PP.t) / pH;
-                const price = Math.exp(Math.log(st.pMax) - frac * st.logR);
-                return isFinite(price) && price > 0 ? price : null;
+                const i = st.actualStart + (x - st.fractionalShift - st.PP.l) / st.barStep - 0.5 - st.drawIndexOffset;
+                const price = Math.exp(st.logMax - ((y - st.PP.t) / pH) * st.logR);
+                if (!isFinite(i) || !isFinite(price) || price <= 0) return null;
+                return { i, p: price, tk: String(st.ticker).toUpperCase() };
             }
+            function _fsAnchorToPt(a, st) {
+                st = st || _fsDrawState();
+                if (!a || !st) return null;
+                return {
+                    x: st.PP.l + (a.i - st.actualStart + st.drawIndexOffset + 0.5) * st.barStep + st.fractionalShift,
+                    y: st.toY(a.p)
+                };
+            }
+            function _fsYToPrice(y) {
+                const a = _fsPtToAnchor(0, y);
+                return a ? a.p : null;
+            }
+            function _fsOwnTk(o, st) { return !o.tk || !st || o.tk === String(st.ticker).toUpperCase(); }
+            // Drawings of the shown ticker, resolved to pixels for this paint.
+            function _fsResolvedDrawings(st) {
+                const out = [];
+                for (const d of window._fsDrawings) {
+                    if (!_fsOwnTk(d, st)) continue;
+                    if (d.type === 'hline') {
+                        if (!st) continue;
+                        out.push({ type: 'hline', y: st.toY(d.p), label: d.label });
+                    } else if (d.type === 'trend') {
+                        const a = _fsAnchorToPt(d.a1, st), b = _fsAnchorToPt(d.a2, st);
+                        if (a && b) out.push({ type: 'trend', x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+                    }
+                }
+                return out;
+            }
+            function _fsResolvedQLines(st) {
+                const out = [];
+                for (const q of (window._fsQLines || [])) {
+                    if (!_fsOwnTk(q, st)) continue;
+                    const a = _fsAnchorToPt(q.a1, st), b = _fsAnchorToPt(q.a2, st);
+                    if (a && b) out.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, price1: q.price1, price2: q.price2, retPct: q.retPct });
+                }
+                return out;
+            }
+            // Is there anything on the draw canvas worth repainting after a chart redraw?
+            window._fsHasDrawings = function () {
+                return (window._fsDrawings && window._fsDrawings.length) || (window._fsQLines && window._fsQLines.length) ||
+                    _fsDrawPending || (window._fsQTrend && window._fsQTrend.p1);
+            };
 
             function _fsPaintDrawings() {
                 const canvas = document.getElementById('fs-draw-canvas');
@@ -44241,11 +44987,13 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                 const ctx = canvas.getContext('2d');
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 ctx.save();
+                const _dst = _fsDrawState();
+                if (_dst) { ctx.beginPath(); ctx.rect(0, 0, canvas.width, _dst.PH); ctx.clip(); }
 
                 // ── Render standard drawings (hline / trend) ──
                 ctx.setLineDash([5, 4]);
                 ctx.lineWidth = 2.0; // Thicker lines for better visibility
-                for (const d of window._fsDrawings) {
+                for (const d of _fsResolvedDrawings(_dst)) {
                     if (d.type === 'hline') {
                         ctx.strokeStyle = '#ff5c00'; // Bright neon orange for Levels
                         ctx.beginPath();
@@ -44288,7 +45036,7 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
 
                 // ── Render Quick Trendlines (Advanced Pro Design) ──
                 ctx.setLineDash([]);
-                for (const ql of (window._fsQLines || [])) {
+                for (const ql of _fsResolvedQLines(_dst)) {
                     const isUp = ql.retPct >= 0;
                     const neonGreen = '#00ff88';
                     const neonRed = '#ff3355';
@@ -44411,8 +45159,10 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                 }
 
                 // ── Render Quick Trendline first anchor point (pending) ──
-                if (window._fsQTrend.active && window._fsQTrend.state === 1 && window._fsQTrend.p1) {
-                    const p1 = window._fsQTrend.p1;
+                const _qp1 = window._fsQTrend.active && window._fsQTrend.state === 1 && window._fsQTrend.p1
+                    ? _fsAnchorToPt(window._fsQTrend.p1.a, _dst) : null;
+                if (_qp1) {
+                    const p1 = _qp1;
                     const accentColor = '#00d4ff'; // Electric cyan accent
 
                     // Crosshair
@@ -44470,12 +45220,13 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                 }
 
                 // Draw in-progress standard trend line
-                if (_fsDrawPending && _fsDrawPending.x2 != null) {
+                const _dp1 = _fsDrawPending && _fsDrawPending.x2 != null ? _fsAnchorToPt(_fsDrawPending.a1, _dst) : null;
+                if (_dp1) {
                     ctx.strokeStyle = 'rgba(0, 255, 255, 0.60)';
                     ctx.setLineDash([4, 4]);
                     ctx.lineWidth = 1.5;
                     ctx.beginPath();
-                    ctx.moveTo(_fsDrawPending.x1, _fsDrawPending.y1);
+                    ctx.moveTo(_dp1.x, _dp1.y);
                     ctx.lineTo(_fsDrawPending.x2, _fsDrawPending.y2);
                     ctx.stroke();
                 }
@@ -44504,8 +45255,10 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
 
                         if (state === 0) {
                             // ── Click 1: Set anchor ──
-                            const price1 = _fsYToPrice(y);
-                            window._fsQTrend.p1 = { x, y, price: price1 };
+                            const a1 = _fsPtToAnchor(x, y);
+                            if (!a1) return;
+                            const price1 = a1.p;
+                            window._fsQTrend.p1 = { a: a1, price: price1 };
                             window._fsQTrend.state = 1;
                             if (qtBtn) qtBtn.textContent = '📐 Click 2nd Point…';
                             _fsPaintDrawings();
@@ -44513,15 +45266,16 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                         } else if (state === 1) {
                             // ── Click 2: Draw trendline with return % ──
                             const p1 = window._fsQTrend.p1;
+                            const a2 = _fsPtToAnchor(x, y);
+                            if (!a2) return;
                             const price1 = p1.price;
-                            const price2 = _fsYToPrice(y);
+                            const price2 = a2.p;
                             let retPct = 0;
                             if (price1 && price2 && price1 > 0) {
                                 retPct = ((price2 - price1) / price1) * 100;
                             }
                             window._fsQLines.push({
-                                x1: p1.x, y1: p1.y,
-                                x2: x, y2: y,
+                                tk: a2.tk, a1: p1.a, a2,
                                 price1, price2, retPct
                             });
                             window._fsQTrend.state = 0;
@@ -44536,23 +45290,18 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                     if (!window._fsDrawMode) return;
 
                     if (window._fsDrawMode === 'hline') {
-                        const pCv = document.getElementById('fs-chart-pcv');
-                        let label = '';
-                        if (pCv && pCv._chartState) {
-                            const st = pCv._chartState;
-                            const pH = st.PH - st.PP.t - st.PP.b;
-                            const frac = (y - st.PP.t) / pH;
-                            const price = Math.exp(Math.log(st.pMax || 1) - frac * (st.logR || 1));
-                            label = isFinite(price) ? price.toFixed(1) : '';
-                        }
-                        window._fsDrawings.push({ type: 'hline', y, label });
+                        const a = _fsPtToAnchor(x, y);
+                        if (!a) return;
+                        window._fsDrawings.push({ type: 'hline', tk: a.tk, p: a.p, label: a.p.toFixed(1) });
                         _fsPaintDrawings();
 
                     } else if (window._fsDrawMode === 'trend') {
+                        const a = _fsPtToAnchor(x, y);
+                        if (!a) return;
                         if (!_fsDrawPending) {
-                            _fsDrawPending = { x1: x, y1: y, x2: null, y2: null };
+                            _fsDrawPending = { a1: a, x2: null, y2: null };
                         } else {
-                            window._fsDrawings.push({ type: 'trend', x1: _fsDrawPending.x1, y1: _fsDrawPending.y1, x2: x, y2: y });
+                            window._fsDrawings.push({ type: 'trend', tk: a.tk, a1: _fsDrawPending.a1, a2: a });
                             _fsDrawPending = null;
                             _fsPaintDrawings();
                         }
@@ -44634,146 +45383,611 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                 }
             }, { passive: true });
 
-            // Horizontal scroll/pan for the full-screen chart.
-            function _fsPanChart(deltaCandles) {
+            /* ── Full chart: drag to pan (TradingView style, no zoom) ──
+               The visible span is fixed by the duration pills (1Y … 5Y); this
+               only slides that window through history. One continuous position
+               P (candles back from the latest, fractional) drives the renderer:
+               _panOffset = floor(P), _panFrac = the remainder, which shifts the
+               plots by a fraction of a candle so a drag follows the pointer
+               pixel for pixel. A fling glides on with momentum, and every
+               motion comes to rest on a whole candle, where the chart draws
+               exactly as it always has. One redraw per animation frame.
+               In the multi-chart grid each box pans on its own: the box you
+               drag / scroll becomes the active one (_fsPan.box), P tracks that
+               box, and » / Home / End / arrows act on it. */
+            const _fsPan = { pos: 0, lastP: null, raf: 0, anim: null, wheelT: 0, dragging: false, settle: false, drawDirty: false, box: null };
+            /* Every canvas ever marked busy. A layout switch or ticker change
+               mid-glide swaps the targets; the ones left behind must not stay
+               busy (that would silence their crosshair for good). */
+            const _fsPanBusySet = new Set();
+            function _fsPanRelease(keep) {
+                _fsPanBusySet.forEach(cv => {
+                    if (keep && keep.indexOf(cv) !== -1) return;
+                    cv._fsPanBusy = false;
+                    cv._fsScaleEase = false;
+                    _fsPanBusySet.delete(cv);
+                });
+            }
+
+            function _fsPanOpen() {
+                const modal = document.getElementById('fs-chart-modal');
+                return !!(modal && modal.style.display === 'flex');
+            }
+            function _fsGridOn() {
+                const g = document.getElementById('fs-grid');
+                return !!(g && !g.hidden);
+            }
+            // The canvas a pan moves: the full chart, or the active grid box.
+            function _fsPanTargets() {
+                if (!_fsPanOpen()) return [];
+                if (_fsGridOn()) {
+                    const b = _fsPan.box, cells = document.getElementById('fs-grid-cells');
+                    return (b && b.isConnected && b._chartState && b.style.display !== 'none' && cells && cells.contains(b)) ? [b] : [];
+                }
                 const pCv = document.getElementById('fs-chart-pcv');
-                if (!pCv || !pCv._chartState) return false;
+                if (!pCv || !pCv._chartState || pCv.style.display === 'none') return [];
+                return [pCv];
+            }
+            function _fsPanMaxOf(ts) {
+                let m = 0;
+                ts.forEach(cv => { m = Math.max(m, cv._chartState.maxPanOffset || 0); });
+                return m;
+            }
+            function _fsPanStepOf(ts) { return Math.max(0.5, (ts[0] && ts[0]._chartState.barStep) || 8); }
+            /* The renderer may have reset or clamped the offset (new ticker, new
+               duration, new grid page, resize); re-read it when idle. */
+            function _fsPanSync(ts) {
+                if (_fsPan.anim || _fsPan.raf || _fsPan.dragging || _fsPan.wheelT) return;
+                let P = 0;
+                ts.forEach(cv => { P = Math.max(P, (cv._panOffset || 0) + (cv._panFrac || 0)); });
+                _fsPan.pos = Math.min(_fsPanMaxOf(ts), P);
+                _fsPan.lastP = _fsPan.pos;
+            }
 
-                const state = pCv._chartState;
-                const maxOffset = state.maxPanOffset || 0;
-                if (maxOffset <= 0) return false;
+            // The grid box (price canvas) under an event target, if any.
+            function _fsPanBoxAt(target) {
+                const cell = target && target.closest && target.closest('.fsg-cell');
+                const cv = cell && cell.querySelector('.card-chart-canvas-price');
+                return (cv && cv._chartState && cv.style.display !== 'none') ? cv : null;
+            }
+            /* Make `cv` the grid box that pans. A box left mid-glide lands on
+               its target candle at once, so it never stays half-moved or busy. */
+            function _fsPanFocus(cv) {
+                if (!cv || cv === _fsPan.box) return;
+                const old = _fsPan.box;
+                const moving = !!(_fsPan.anim || _fsPan.raf || _fsPan.wheelT);
+                const to = _fsPan.anim ? _fsPan.anim.to : Math.round(_fsPan.pos);
+                _fsPanStop();
+                clearTimeout(_fsPan.wheelT);
+                _fsPan.wheelT = 0;
+                if (old && old.isConnected && old._chartState && (moving || old._fsPanBusy)) {
+                    old._fsPanBusy = false;
+                    old._fsScaleEase = false;
+                    _fsPanBusySet.delete(old);
+                    _fsPanRender([old], Math.max(0, Math.min(old._chartState.maxPanOffset || 0, to)));
+                }
+                _fsPan.box = cv;
+                _fsPan.pos = Math.min(cv._chartState.maxPanOffset || 0, (cv._panOffset || 0) + (cv._panFrac || 0));
+                _fsPan.lastP = _fsPan.pos;
+                _fsPanLayoutKey = '';
+            }
 
-                const current = pCv._panOffset || 0;
-                const next = Math.max(0, Math.min(maxOffset, current + deltaCandles));
-                if (next === current) return false;
+            function _fsPanRender(ts, P) {
+                const k = Math.floor(P), f = P - k;
+                ts.forEach(cv => {
+                    cv._panOffset = k;
+                    cv._panFrac = f;
+                    cv._hoverX = cv._hoverY = cv._hoverIdx = cv._hoverCanvas = null;
+                });
+                if (_fsGridOn()) {
+                    if (typeof window._renderCardCandleChart !== 'function') return;
+                    ts.forEach(cv => {
+                        const st = cv._chartState;
+                        window._renderCardCandleChart(st.ticker, st.period, cv, st.vCv, st.loadEl, st.widthEl);
+                    });
+                } else {
+                    window.renderFullScreenChart({ skipChrome: true });
+                }
+            }
 
-                pCv._panOffset = next;
-                pCv._panFractional = 0;
-                pCv._panFractionalTouch = 0;
-                pCv._hoverX = null;
-                pCv._hoverY = null;
-                pCv._hoverIdx = null;
-                pCv._hoverCanvas = null;
+            function _fsPanFlush() {
+                _fsPan.raf = 0;
+                const ts = _fsPanTargets();
+                _fsPanRelease(ts);
+                if (!ts.length) { _fsPan.anim = null; return; }
+                const a = _fsPan.anim;
+                if (a) {
+                    const t = performance.now() - a.t0;
+                    if (t >= a.dur) {
+                        _fsPan.pos = a.to;
+                        _fsPan.anim = null;
+                    } else {
+                        // exponential ease-out: the glide decays like real inertia
+                        const e = 1 - Math.exp(-t / a.tau);
+                        _fsPan.pos = a.from + (a.to - a.from) * (e / a.kEnd);
+                    }
+                }
+                let P = Math.max(0, Math.min(_fsPanMaxOf(ts), _fsPan.pos));
+                if (Math.abs(P - Math.round(P)) < 1e-3) P = Math.round(P);
+                _fsPan.pos = P;
 
-                /* skipChrome: panning cannot change the ticker, so the
-                   watermark and the mini financial card are already correct.
-                   Rebuilding them per pan frame meant two full scans of
-                   allData plus an innerHTML rebuild on every frame of a drag —
-                   exactly the waste the flag was introduced for. */
-                window.renderFullScreenChart({ skipChrome: true });
-                requestAnimationFrame(_fsPaintDrawings);
+                const moving = !!_fsPan.anim || _fsPan.dragging || !!_fsPan.wheelT;
+                if (!moving && ts.some(cv => cv._fsPanBusy)) _fsPan.settle = true;
+                ts.forEach(cv => {
+                    cv._fsPanBusy = moving;
+                    if (moving) { cv._fsScaleEase = true; _fsPanBusySet.add(cv); }
+                });
+                const easing = ts.some(cv => cv._fsScaleEase);
+                if (P !== _fsPan.lastP || _fsPan.settle || easing) {
+                    _fsPan.lastP = P;
+                    _fsPan.settle = false;
+                    _fsPanRender(ts, P);
+                }
+                if (_fsPan.anim || easing) _fsPan.raf = requestAnimationFrame(_fsPanFlush);
+            }
+            function _fsPanQueue() {
+                _fsPanTargets().forEach(cv => { cv._fsPanBusy = true; _fsPanBusySet.add(cv); });
+                if (!_fsPan.raf) _fsPan.raf = requestAnimationFrame(_fsPanFlush);
+            }
+            function _fsPanStop() {
+                // grabbing / scrolling during a grid-wide Home glide lands every box at once
+                if (_fsAllBoxes.length) _fsPanAllFinish();
+                _fsPan.anim = null;
+                if (_fsPan.raf) { cancelAnimationFrame(_fsPan.raf); _fsPan.raf = 0; }
+            }
+            /* Glide to `to` (snapped to a whole candle, clamped). tau sets the
+               feel: ~110ms for a snap, ~320ms for a fling. */
+            function _fsPanAnimTo(to, tau) {
+                const ts = _fsPanTargets();
+                if (!ts.length) return false;
+                const max = _fsPanMaxOf(ts);
+                const want = Math.round(to);
+                to = Math.max(0, Math.min(max, want));
+                if (want !== to) _fsPanEdge(want > max ? 'l' : 'r');
+                const from = _fsPan.pos;
+                if (Math.abs(to - from) < 1e-3) { _fsPan.anim = null; _fsPan.pos = to; _fsPanQueue(); return false; }
+                _fsPan.anim = { from, to, t0: performance.now(), tau, dur: tau * 4, kEnd: 1 - Math.exp(-4) };
+                _fsPanQueue();
                 return true;
+            }
+            // Long jumps (Home / End / ») glide a little longer than a snap.
+            function _fsPanGlideTo(to) {
+                const ts = _fsPanTargets();
+                if (!ts.length || !_fsPanMaxOf(ts)) return false;
+                _fsPanSync(ts);
+                return _fsPanAnimTo(to, Math.min(240, 110 + Math.abs(to - _fsPan.pos) * 0.5));
+            }
+            window._fsPanToLatest = function () { return _fsPanGlideTo(0); };
+
+            /* Grid: every box glides back to its latest candle together (Home).
+               Each box eases from its own position, so they all land at once. */
+            let _fsAllRaf = 0, _fsAllBoxes = [];
+            function _fsPanAllFinish() {
+                if (_fsAllRaf) { cancelAnimationFrame(_fsAllRaf); _fsAllRaf = 0; }
+                const list = _fsAllBoxes;
+                _fsAllBoxes = [];
+                list.forEach(b => {
+                    const cv = b.cv;
+                    cv._fsPanBusy = false;
+                    cv._fsScaleEase = false;
+                    _fsPanBusySet.delete(cv);
+                    if (cv.isConnected && cv._chartState && ((cv._panOffset || 0) + (cv._panFrac || 0)) > 0) _fsPanRender([cv], 0);
+                });
+            }
+            function _fsPanAllToLatest() {
+                if (!_fsGridOn() || !_fsPanOpen()) return false;
+                _fsPanStop();
+                clearTimeout(_fsPan.wheelT);
+                _fsPan.wheelT = 0;
+                const boxes = Array.prototype.filter.call(
+                    document.querySelectorAll('#fs-grid-cells .card-chart-canvas-price'),
+                    cv => cv._chartState && cv.isConnected && cv.style.display !== 'none' &&
+                        ((cv._panOffset || 0) + (cv._panFrac || 0)) > 0);
+                _fsPan.pos = 0;
+                _fsPan.lastP = 0;
+                if (!boxes.length) return false;
+                _fsAllBoxes = boxes.map(cv => ({ cv, from: (cv._panOffset || 0) + (cv._panFrac || 0) }));
+                const far = Math.max.apply(null, _fsAllBoxes.map(b => b.from));
+                const tau = Math.min(240, 110 + far * 0.5), dur = tau * 4, kEnd = 1 - Math.exp(-4), t0 = performance.now();
+                let done = false;
+                const tick = function () {
+                    _fsAllRaf = 0;
+                    const t = performance.now() - t0;
+                    if (!done && t >= dur) done = true;
+                    const k = done ? 1 : (1 - Math.exp(-t / tau)) / kEnd;
+                    let easing = false;
+                    _fsAllBoxes.forEach(b => {
+                        const cv = b.cv;
+                        if (!cv.isConnected || !cv._chartState) return;
+                        cv._fsPanBusy = !done;
+                        if (!done) { cv._fsScaleEase = true; _fsPanBusySet.add(cv); }
+                        _fsPanRender([cv], b.from * (1 - k));
+                        if (cv._fsScaleEase) easing = true;
+                    });
+                    // after landing, keep drawing until each price scale has settled
+                    if (!done || (easing && t < dur + 1500)) _fsAllRaf = requestAnimationFrame(tick);
+                    else _fsPanAllFinish();
+                };
+                _fsAllRaf = requestAnimationFrame(tick);
+                return true;
+            }
+            // Home key: the single chart → latest; the grid → every box → latest.
+            window._fsPanHome = function () {
+                return _fsGridOn() ? _fsPanAllToLatest() : window._fsPanToLatest();
+            };
+            window._fsPanToOldest = function () { return _fsPanGlideTo(_fsPanMaxOf(_fsPanTargets())); };
+            window._fsPanReset = function () {
+                _fsPanStop();
+                clearTimeout(_fsPan.wheelT);
+                _fsPan.wheelT = 0;
+                _fsPan.pos = 0;
+                _fsPan.lastP = null;
+                if (!_fsPan.dragging) _fsPanRelease(null);
+            };
+
+            // Programmatic pan by whole candles (arrow keys): animated, positive = back in time.
+            function _fsPanChart(deltaCandles) {
+                const ts = _fsPanTargets();
+                if (!ts.length || !_fsPanMaxOf(ts)) return false;
+                _fsPanSync(ts);
+                const base = _fsPan.anim ? _fsPan.anim.to : Math.round(_fsPan.pos);
+                return _fsPanAnimTo(base + deltaCandles, 110);
             }
 
             window._fsPanChart = _fsPanChart;
 
-            function _fsWireChartPan() {
+            /* drawChartCore moved a panned chart's offset by `d` candles to hold
+               the view while the series grew / shrank (replay): move the live
+               pan position (and any glide in flight) with it. */
+            window._fsPanShift = function (cv, d) {
+                if (_fsPanTargets().indexOf(cv) === -1) return true;
+                // gliding to the latest (Home / » / double-click): chase the new
+                // candles instead of holding the old view
+                if (_fsPan.anim && _fsPan.anim.to === 0) return false;
+                _fsPan.pos += d;
+                if (_fsPan.lastP != null) _fsPan.lastP += d;
+                if (_fsPan.anim) { _fsPan.anim.from += d; _fsPan.anim.to += d; }
+                return true;
+            };
+
+            /* ── Pan overlay: » jump-to-latest, visible date range while moving,
+               and a glow on the edge you hit (no more history / already latest).
+               One layer over both the single chart and the grid; positioned from
+               layout offsets (not screen rects) so it also works on the rotated
+               phone layout. */
+            function _fsPanUI() {
+                let L = document.getElementById('fs-pan-ui');
+                if (L) return L;
                 const wrap = document.getElementById('fs-chart-wrapper');
-                const pCv = document.getElementById('fs-chart-pcv');
-                if (!wrap || !pCv || wrap._fsPanWired) return;
-                wrap._fsPanWired = true;
+                const host = wrap && wrap.parentElement;
+                if (!host) return null;
+                if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+                L = document.createElement('div');
+                L.id = 'fs-pan-ui';
+                L.innerHTML = '<div class="fsp-edge fsp-edge-l"></div><div class="fsp-edge fsp-edge-r"></div>' +
+                    '<div class="fsp-range"></div>' +
+                    '<button type="button" class="fsp-latest" title="Jump to latest candle (Home · double-click chart)" aria-label="Jump to latest candle">»</button>';
+                host.appendChild(L);
+                const btn = L.querySelector('.fsp-latest');
+                btn.addEventListener('pointerdown', e => e.stopPropagation());
+                btn.addEventListener('click', e => { e.stopPropagation(); window._fsPanToLatest(); });
+                return L;
+            }
+            const _fsEdgeT = { l: 0, r: 0 };
+            function _fsPanEdge(side) {
+                const L = _fsPanUI();
+                const el = L && L.querySelector('.fsp-edge-' + side);
+                if (!el) return;
+                el.classList.add('on');
+                clearTimeout(_fsEdgeT[side]);
+                _fsEdgeT[side] = setTimeout(() => el.classList.remove('on'), 260);
+            }
+            let _fsPanLayoutKey = '', _fsRangeHideT = 0;
+            const _FSP_MOS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const _fspDate = d => {
+                d = d instanceof Date ? d : new Date(d);
+                return isNaN(d) ? '' : d.getDate() + ' ' + _FSP_MOS[d.getMonth()] + ' ' + d.getFullYear();
+            };
+            function _fsPanLayout(L, grid, cv, st) {
+                const wrap = document.getElementById('fs-chart-wrapper');
+                const g = document.getElementById('fs-grid');
+                let x0, y0, w, h, axisR, axisB;
+                if (grid) {
+                    // the active box's price pane, located by walking offsetParents
+                    // up to the overlay's host (layout space, so rotation is fine)
+                    const host = L.offsetParent || L.parentElement;
+                    x0 = 0; y0 = 0;
+                    for (let el = cv; el && el !== host; el = el.offsetParent) { x0 += el.offsetLeft; y0 += el.offsetTop; }
+                    w = st.W; h = st.PH; axisR = st.PP.r; axisB = st.PP.b;
+                } else {
+                    x0 = wrap.offsetLeft + cv.offsetLeft; y0 = wrap.offsetTop + cv.offsetTop;
+                    w = st.W; h = st.PH; axisR = st.PP.r; axisB = st.PP.b;
+                }
+                const key = [grid, x0, y0, w, h, axisR, axisB].join('|');
+                if (key === _fsPanLayoutKey) return;
+                _fsPanLayoutKey = key;
+                const plotW = w - axisR, plotH = h - axisB;
+                const el = s => L.querySelector(s);
+                Object.assign(el('.fsp-edge-l').style, { left: x0 + 'px', top: y0 + 'px', height: plotH + 'px' });
+                Object.assign(el('.fsp-edge-r').style, { left: (x0 + plotW - 34) + 'px', top: y0 + 'px', height: plotH + 'px' });
+                Object.assign(el('.fsp-range').style, { left: (x0 + plotW / 2) + 'px', top: (y0 + plotH - (grid ? 34 : 30)) + 'px' });
+                Object.assign(el('.fsp-latest').style, { left: (x0 + plotW - (grid ? 44 : 40)) + 'px', top: (y0 + plotH - (grid ? 44 : 40)) + 'px' });
+            }
+            /* Called by drawChartCore after every full-chart / grid-box draw:
+               keeps drawings glued to the candles and the overlay current. */
+            window._fsPanAfterDraw = function (cv) {
+                if (cv.id === 'fs-chart-pcv' && window._fsReplayProgressUpdate) window._fsReplayProgressUpdate();
+                const grid = _fsGridOn();
+                if (grid) {
+                    if (cv.id === 'fs-chart-pcv') return;
+                    // only the active box drives the overlay; none yet → hide it
+                    const b = _fsPanTargets()[0];
+                    if (!b) {
+                        const L0 = document.getElementById('fs-pan-ui');
+                        if (L0) L0.classList.remove('fsp-show-latest', 'fsp-show-range');
+                        return;
+                    }
+                    if (cv !== b) return;
+                } else if (cv.id !== 'fs-chart-pcv') return;
+                const st = cv._chartState;
+                if (!st) return;
 
-                wrap.addEventListener('wheel', function (e) {
-                    const modal = document.getElementById('fs-chart-modal');
-                    if (!modal || modal.style.display !== 'flex') return;
-                    const state = pCv._chartState;
-                    if (!state || !state.maxPanOffset) return;
+                if (!grid && window._fsHasDrawings) {
+                    const has = !!window._fsHasDrawings();
+                    if (has || _fsPan.drawDirty) _fsPaintDrawings();
+                    _fsPan.drawDirty = has;
+                }
 
-                    const horizontalDelta = Math.abs(e.deltaX) >= Math.abs(e.deltaY) ? e.deltaX : (e.shiftKey ? e.deltaY : 0);
-                    if (!horizontalDelta) return;
+                const L = _fsPanUI();
+                if (!L) return;
+                _fsPanLayout(L, grid, cv, st);
+                // Where this chart (or the active grid box) sits now.
+                const P = (cv._panOffset || 0) + (cv._panFrac || 0);
+                L.classList.toggle('fsp-show-latest', P > 0.01);
 
+                const busy = !!cv._fsPanBusy;
+                const r = st.raw || [];
+                if (busy && r.length && !window._fsTrainingMode) {
+                    const first = r[st.panFrac > 0 && r.length > 1 ? 1 : 0];
+                    L.querySelector('.fsp-range').textContent = _fspDate(first.date) + '  —  ' + _fspDate(r[r.length - 1].date);
+                    L.classList.add('fsp-show-range');
+                    clearTimeout(_fsRangeHideT);
+                    _fsRangeHideT = 0;
+                } else if (!busy && L.classList.contains('fsp-show-range') && !_fsRangeHideT) {
+                    _fsRangeHideT = setTimeout(() => { _fsRangeHideT = 0; L.classList.remove('fsp-show-range'); }, 900);
+                }
+            };
+
+            /* Pointer / wheel / double-click handling for one pan surface (the
+               full chart wrapper, or the grid). `skip` lists elements that keep
+               their own pointer behaviour. */
+            function _fsWirePanSurface(surf, skip, dblReset) {
+                if (!surf || surf._fsPanWired) return;
+                surf._fsPanWired = true;
+                const mainCv = document.getElementById('fs-chart-pcv');
+                const isGrid = surf.id === 'fs-grid-cells';
+
+                /* Every wheel pans, never zooms (the span comes from the duration
+                   pills). Wheel down / swipe left = newer candles, wheel up /
+                   swipe right = back in time. A mouse-wheel notch glides a few
+                   candles; trackpad deltas follow the fingers 1:1. */
+                surf.addEventListener('wheel', function (e) {
+                    if (e.ctrlKey) return;            // pinch / browser zoom stays the browser's
+                    if (isGrid) {                     // the box under the pointer pans alone
+                        if (_fsPan.dragging) return;
+                        const b = _fsPanBoxAt(e.target);
+                        if (!b) return;
+                        _fsPanFocus(b);
+                    }
+                    const ts = _fsPanTargets();
+                    if (!ts.length || !_fsPanMaxOf(ts)) return;
+                    const vertical = Math.abs(e.deltaY) > Math.abs(e.deltaX);
+                    if (vertical && skip && e.target.closest && e.target.closest(skip)) return;
+                    let dx = vertical ? e.deltaY : e.deltaX;
+                    if (!dx) return;
                     e.preventDefault();
-                    const barStep = Math.max(6, state.barStep || 8);
-                    const candles = Math.sign(horizontalDelta) * Math.max(1, Math.round(Math.abs(horizontalDelta) / barStep));
-                    _queuePan(candles);
+                    // Mouse wheel notch (line/page mode, or a big pixel jump): glide.
+                    if (vertical && (e.deltaMode !== 0 || Math.abs(dx) >= 40)) {
+                        if (_fsPan.dragging) return;
+                        _fsPanSync(ts);
+                        clearTimeout(_fsPan.wheelT);
+                        _fsPan.wheelT = 0;
+                        const n = (ts[0]._chartState.raw || []).length || 60;
+                        const perNotch = Math.max(1, Math.round(n / 24));
+                        const notches = e.deltaMode === 0 ? dx / 100 : (e.deltaMode === 1 ? dx / 3 : dx);
+                        let mv = Math.round(notches * perNotch);
+                        if (!mv) mv = dx > 0 ? 1 : -1;
+                        const base = _fsPan.anim ? _fsPan.anim.to : Math.round(_fsPan.pos);
+                        _fsPanAnimTo(base - mv, 120);
+                        return;
+                    }
+                    if (e.deltaMode === 1) dx *= 16; else if (e.deltaMode === 2) dx *= surf.clientWidth;
+                    _fsPanSync(ts);
+                    _fsPan.anim = null;
+                    // swipe left (dx > 0) brings newer candles in, like scrolling a page right
+                    const max = _fsPanMaxOf(ts);
+                    const next = _fsPan.pos - dx / _fsPanStepOf(ts);
+                    if (next < 0) _fsPanEdge('r'); else if (next > max) _fsPanEdge('l');
+                    _fsPan.pos = Math.max(0, Math.min(max, next));
+                    clearTimeout(_fsPan.wheelT);
+                    _fsPan.wheelT = setTimeout(function () {
+                        _fsPan.wheelT = 0;
+                        _fsPanAnimTo(_fsPan.pos, 110);
+                    }, 140);
+                    _fsPanQueue();
                 }, { passive: false });
 
-                let dragActive = false;
-                let lastX = 0;
-                let carryPx = 0;
+                let down = null;          // pointer that may become a drag
                 let dragRect = null;
+                let samples = [];         // recent {t, x} for fling velocity
+                let justDragged = false;
+                let step = 8, max = 0;
+                /* Touch extras: long-press = crosshair scrub (no pan), double-tap
+                   = back to latest, a second finger ends the pan (no pinch zoom). */
+                let lpTimer = 0, lastTap = null, touchDblT = 0;
+                const LONG_PRESS_MS = 380, TAP_SLOP = 10;
 
-                /* ── pan renders are coalesced to one per frame ──
-                   pointermove fires up to 120 times a second on an iPad, and
-                   every crossing of a bar width used to call _fsPanChart ->
-                   renderFullScreenChart -> a complete chart redraw, several
-                   times inside a single frame that only ever gets painted
-                   once. The candle deltas are accumulated instead and spent in
-                   one redraw per frame, which is the most the screen can show
-                   anyway — the drag stays exactly as responsive and stops
-                   doing work nobody sees. */
-                let panPending = 0, panRaf = 0;
-                function _flushPan() {
-                    panRaf = 0;
-                    const n = panPending;
-                    panPending = 0;
-                    if (n) _fsPanChart(n);
-                }
-                function _queuePan(candles) {
-                    if (!candles) return;
-                    panPending += candles;
-                    if (!panRaf) panRaf = requestAnimationFrame(_flushPan);
-                }
-
-                /* The canvas cannot move or resize mid-drag, so its rect is
-                   read once at pointerdown instead of on every move. Each
-                   getBoundingClientRect() during a drag is a forced layout,
-                   and the drag itself is what keeps dirtying layout. */
-                const getChartX = function (e) {
-                    const coords = window._getRotatedCoords
-                        ? window._getRotatedCoords(e, pCv, dragRect)
-                        : { mx: e.clientX - (dragRect || (dragRect = pCv.getBoundingClientRect())).left };
-                    return coords.mx;
+                /* Chart-space x/y of the pointer. The rect is read once at
+                   pointerdown; _getRotatedCoords maps the rotated phone layout. */
+                const getChartXY = function (e) {
+                    return window._getRotatedCoords
+                        ? window._getRotatedCoords(e, mainCv, dragRect)
+                        : { mx: e.clientX - dragRect.left, my: e.clientY - dragRect.top };
                 };
+                const getChartX = function (e) { return getChartXY(e).mx; };
 
-                wrap.addEventListener('pointerdown', function (e) {
-                    const modal = document.getElementById('fs-chart-modal');
-                    if (!modal || modal.style.display !== 'flex') return;
-                    if (e.button !== 0 || window._fsDrawMode || (window._fsQTrend && window._fsQTrend.active)) return;
-                    if (e.target && e.target.closest && e.target.closest('button, input, select')) return;
-
-                    const state = pCv._chartState;
-                    if (!state || !state.maxPanOffset) return;
-
-                    dragActive = true;
-                    carryPx = 0;
-                    dragRect = pCv.getBoundingClientRect();
-                    lastX = getChartX(e);
-                    wrap.classList.add('fs-panning');
-                    // Removed setPointerCapture to allow events to reach canvases for crosshair
-                    e.preventDefault();
-                });
-
-                wrap.addEventListener('pointermove', function (e) {
-                    if (!dragActive) return;
-                    const state = pCv._chartState;
-                    if (!state) return;
-
-                    const x = getChartX(e);
-                    carryPx += x - lastX;
-                    lastX = x;
-
-                    const barStep = Math.max(6, state.barStep || 8);
-                    if (Math.abs(carryPx) >= barStep) {
-                        const candles = Math.trunc(carryPx / barStep);
-                        carryPx -= candles * barStep;
-                        _queuePan(candles);
+                const onMove = function (e) {
+                    if (!down || e.pointerId !== down.id) return;
+                    if (down.scrub || down.multi) {        // finger is reading values, not panning
+                        if (e.cancelable) e.preventDefault();
+                        return;
                     }
-                    e.preventDefault();
-                });
-
-                const stopDrag = function (e) {
-                    if (!dragActive) return;
-                    dragActive = false;
-                    carryPx = 0;
-                    dragRect = null;
-                    wrap.classList.remove('fs-panning');
-                    // Removed releasePointerCapture
+                    const p = getChartXY(e), x = p.mx;
+                    if (!_fsPan.dragging) {
+                        if (down.touch && Math.hypot(x - down.x0, p.my - down.y0) > TAP_SLOP) {
+                            clearTimeout(lpTimer); down.moved = true;
+                        }
+                        // still a click / tap (a finger jitters more than a mouse)
+                        if (Math.abs(x - down.x0) < (down.touch ? 6 : 3)) return;
+                        clearTimeout(lpTimer);
+                        down.moved = true;
+                        _fsPan.dragging = true;
+                        surf.classList.add('fs-panning');
+                    }
+                    const now = performance.now();
+                    const next = _fsPan.pos + (x - down.last) / step;
+                    if (next < 0) _fsPanEdge('r'); else if (next > max) _fsPanEdge('l');
+                    // clamp as we go so reversing direction responds at once
+                    _fsPan.pos = Math.max(0, Math.min(max, next));
+                    down.last = x;
+                    samples.push({ t: now, x });
+                    while (samples.length > 2 && now - samples[0].t > 100) samples.shift();
+                    _fsPanQueue();
+                    if (e.cancelable) e.preventDefault();
                 };
 
-                wrap.addEventListener('pointerup', stopDrag);
-                wrap.addEventListener('pointercancel', stopDrag);
-                wrap.addEventListener('pointerleave', stopDrag);
+                const onUp = function (e) {
+                    if (!down || (e && e.pointerId !== down.id)) return;
+                    window.removeEventListener('pointermove', onMove);
+                    window.removeEventListener('pointerup', onUp);
+                    window.removeEventListener('pointercancel', onUp);
+                    clearTimeout(lpTimer);
+                    const was = down;
+                    down = null;
+                    dragRect = null;
+                    if (!_fsPan.dragging) {
+                        samples = [];
+                        // double-tap (touch) → back to the latest candle
+                        if (dblReset && was.touch && !was.scrub && !was.multi && !was.moved && e && e.type === 'pointerup') {
+                            const now = performance.now();
+                            if (lastTap && now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) {
+                                lastTap = null;
+                                touchDblT = now;
+                                window._fsPanToLatest();
+                            } else {
+                                lastTap = { t: now, x: e.clientX, y: e.clientY };
+                            }
+                        }
+                        return;
+                    }
+                    _fsPan.dragging = false;
+                    surf.classList.remove('fs-panning');
+                    justDragged = true;
+                    setTimeout(function () { justDragged = false; }, 0);
+
+                    // fling velocity (candles/ms) from the last ~100ms of movement
+                    let v = 0;
+                    const now = performance.now();
+                    if (e && e.type === 'pointerup' && samples.length >= 2 && now - samples[samples.length - 1].t < 60) {
+                        const a = samples[0], b = samples[samples.length - 1];
+                        v = (b.x - a.x) / Math.max(8, b.t - a.t) / step;
+                    }
+                    samples = [];
+                    const TAU = 320;
+                    if (Math.abs(v) * step > 0.25) {
+                        // land where the inertia would carry it, on a whole candle
+                        _fsPanAnimTo(_fsPan.pos + v * TAU, TAU);
+                    } else {
+                        _fsPanAnimTo(_fsPan.pos, 110);
+                    }
+                };
+
+                surf.addEventListener('pointerdown', function (e) {
+                    if (!e.isPrimary) {
+                        // second finger: stop following the first one (no zoom)
+                        if (down && down.touch) { down.multi = true; samples = []; clearTimeout(lpTimer); }
+                        return;
+                    }
+                    if (down) return;
+                    if (e.pointerType === 'mouse' && e.button !== 0) return;
+                    if (window._fsDrawMode || (window._fsQTrend && window._fsQTrend.active)) return;
+                    if (e.target && e.target.closest && e.target.closest(skip)) return;
+                    if (isGrid) {                     // grab = that box becomes the one that pans
+                        const b = _fsPanBoxAt(e.target);
+                        if (!b) return;
+                        _fsPanFocus(b);
+                    }
+                    const ts = _fsPanTargets();
+                    max = _fsPanMaxOf(ts);
+                    if (!ts.length || !max) return;
+                    step = _fsPanStepOf(ts);
+
+                    // catching a gliding chart stops it where it is
+                    _fsPanStop();
+                    clearTimeout(_fsPan.wheelT);
+                    _fsPan.wheelT = 0;
+                    _fsPanSync(ts);
+
+                    dragRect = mainCv.getBoundingClientRect();
+                    const p0 = getChartXY(e), x = p0.mx;
+                    const touch = e.pointerType !== 'mouse';
+                    down = { id: e.pointerId, x0: x, y0: p0.my, last: x, touch, scrub: false, multi: false, moved: false };
+                    samples = [{ t: performance.now(), x }];
+                    if (touch) {
+                        // hold still → crosshair mode: the finger scrubs values instead of panning
+                        const me = down;
+                        clearTimeout(lpTimer);
+                        lpTimer = setTimeout(function () {
+                            if (down !== me || me.moved || me.multi || _fsPan.dragging) return;
+                            me.scrub = true;
+                            lastTap = null;
+                            try { if (navigator.vibrate) navigator.vibrate(8); } catch (err) { }
+                        }, LONG_PRESS_MS);
+                    }
+                    // tracked on window so the drag survives leaving the chart
+                    window.addEventListener('pointermove', onMove, { passive: false });
+                    window.addEventListener('pointerup', onUp);
+                    window.addEventListener('pointercancel', onUp);
+                    if (e.pointerType === 'mouse') e.preventDefault();   // no text selection
+                });
+
+                // The click that ends a drag must not reach chart / box click handlers.
+                surf.addEventListener('click', function (e) {
+                    if (justDragged) { e.stopImmediatePropagation(); e.stopPropagation(); e.preventDefault(); justDragged = false; }
+                }, true);
+
+                // A long-press must not open the browser's context menu.
+                surf.addEventListener('contextmenu', function (e) {
+                    if (down && down.touch) e.preventDefault();
+                }, true);
+
+                if (dblReset) {
+                    surf.addEventListener('dblclick', function (e) {
+                        if (performance.now() - touchDblT < 700) return;   // touch double-tap already handled
+                        if (window._fsDrawMode || (window._fsQTrend && window._fsQTrend.active)) return;
+                        if (e.target && e.target.closest && e.target.closest(skip)) return;
+                        window._fsPanToLatest();
+                    });
+                }
+            }
+
+            function _fsWireChartPan() {
+                _fsWirePanSurface(document.getElementById('fs-chart-wrapper'),
+                    'button, input, select, a, #fs-mini-financial-card, #fs-nav-overlay-container, #fs-replay-trade-controls', true);
+                // Grid: dragging any box slides every box. Double-click keeps its
+                // existing meaning there (open that box alone).
+                _fsWirePanSurface(document.getElementById('fs-grid-cells'),
+                    'button, input, select, a, .fsg-head, .fsg-ts, .fsg-fhbtn', false);
             }
 
             if (document.readyState === 'loading') {
@@ -44781,6 +45995,201 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
             } else {
                 _fsWireChartPan();
             }
+
+            /* ── Home page charts (company cards + hover pop-up): drag to pan ──
+               Same feel as the full chart — follows the pointer pixel for
+               pixel, flings with momentum, rests on a whole candle — but drag
+               only: no wheel (the page scrolls with it) and, on touch, only a
+               sideways drag (a vertical swipe still scrolls the page). Each
+               chart pans on its own and opens on the latest candle; once it
+               leaves the screen (card scrolled away, pop-up closed) it is put
+               back on the latest. */
+            (function () {
+                const SEL = '.card-chart-canvas-price, .card-chart-canvas-vol, #csph-canvas-price, #csph-canvas-vol';
+                const LONG_PRESS_MS = 380;
+                const ownerOf = cv => (cv._chartState ? cv : cv._ownerPCv) || null;
+                const maxOf = pc => (pc._chartState && pc._chartState.maxPanOffset) || 0;
+                const stepOf = pc => Math.max(0.5, (pc._chartState && pc._chartState.barStep) || 6);
+                const stateOf = pc => pc._mp || (pc._mp = { pos: 0, lastP: null, anim: null, raf: 0, dragging: false, settle: false, t0: 0 });
+                const isPopup = pc => pc.id === 'csph-canvas-price';
+
+                function render(pc, P) {
+                    const k = Math.floor(P);
+                    pc._panOffset = k;
+                    pc._panFrac = P - k;
+                    pc._hoverX = pc._hoverY = pc._hoverIdx = pc._hoverCanvas = null;
+                    const st = pc._chartState;
+                    if (st && typeof window._renderCardCandleChart === 'function') {
+                        window._renderCardCandleChart(st.ticker, st.period, pc, st.vCv, st.loadEl, st.widthEl);
+                    }
+                }
+                function flush(pc) {
+                    const m = stateOf(pc);
+                    m.raf = 0;
+                    if (!pc.isConnected || !pc._chartState) {
+                        m.anim = null; m.dragging = false;
+                        pc._fsPanBusy = false; pc._fsScaleEase = false;
+                        return;
+                    }
+                    const a = m.anim;
+                    if (a) {
+                        const t = performance.now() - a.t0;
+                        if (t >= a.dur) { m.pos = a.to; m.anim = null; }
+                        else m.pos = a.from + (a.to - a.from) * ((1 - Math.exp(-t / a.tau)) / a.kEnd);
+                    }
+                    let P = Math.max(0, Math.min(maxOf(pc), m.pos));
+                    if (Math.abs(P - Math.round(P)) < 1e-3) P = Math.round(P);
+                    m.pos = P;
+                    const moving = !!m.anim || m.dragging;
+                    if (!moving && pc._fsPanBusy) { m.settle = true; m.t0 = performance.now(); }
+                    pc._fsPanBusy = moving;
+                    if (moving) pc._fsScaleEase = true;
+                    // the price scale eases to its new range; stop chasing it after 1.5s regardless
+                    if (!moving && pc._fsScaleEase && performance.now() - m.t0 > 1500) pc._fsScaleEase = false;
+                    const easing = !!pc._fsScaleEase;
+                    if (P !== m.lastP || m.settle || easing) {
+                        m.lastP = P;
+                        m.settle = false;
+                        render(pc, P);
+                    }
+                    if (m.anim || easing) m.raf = requestAnimationFrame(() => flush(pc));
+                }
+                function queue(pc) {
+                    const m = stateOf(pc);
+                    pc._fsPanBusy = true;
+                    if (!m.raf) m.raf = requestAnimationFrame(() => flush(pc));
+                }
+                function animTo(pc, to, tau) {
+                    const m = stateOf(pc);
+                    to = Math.max(0, Math.min(maxOf(pc), Math.round(to)));
+                    if (Math.abs(to - m.pos) < 1e-3) { m.anim = null; m.pos = to; queue(pc); return; }
+                    m.anim = { from: m.pos, to, t0: performance.now(), tau, dur: tau * 4, kEnd: 1 - Math.exp(-4) };
+                    queue(pc);
+                }
+                // Back on the latest candle at once (no glide — nobody is watching).
+                function resetToLatest(pc, redraw) {
+                    const m = stateOf(pc);
+                    if (m.raf) { cancelAnimationFrame(m.raf); m.raf = 0; }
+                    m.anim = null; m.dragging = false; m.pos = 0; m.lastP = null;
+                    const was = (pc._panOffset || 0) + (pc._panFrac || 0);
+                    pc._panOffset = 0; pc._panFrac = 0;
+                    pc._fsPanBusy = false; pc._fsScaleEase = false;
+                    if (redraw && was > 0 && pc.isConnected && pc._chartState) render(pc, 0);
+                }
+
+                // Off screen → latest. Only charts that were actually moved are watched.
+                const io = 'IntersectionObserver' in window ? new IntersectionObserver(function (entries) {
+                    entries.forEach(en => {
+                        if (en.isIntersecting) return;
+                        io.unobserve(en.target);
+                        resetToLatest(en.target, true);
+                    });
+                }) : null;
+
+                // Every pop-up opening starts on the latest candle.
+                const origOpen = window.openCandleChart;
+                if (typeof origOpen === 'function') {
+                    window.openCandleChart = function () {
+                        const pc = document.getElementById('csph-canvas-price');
+                        if (pc) resetToLatest(pc, false);
+                        return origOpen.apply(this, arguments);
+                    };
+                }
+
+                let down = null, samples = [], justDragged = false, lpTimer = 0;
+
+                const onMove = function (e) {
+                    if (!down || e.pointerId !== down.id) return;
+                    const pc = down.pc, m = stateOf(pc);
+                    if (down.scrub) return;                       // long-press: crosshair reads values
+                    const x = e.clientX;
+                    if (!m.dragging) {
+                        const dx = x - down.x0, dy = e.clientY - down.y0;
+                        if (down.touch && Math.hypot(dx, dy) > 10) clearTimeout(lpTimer);
+                        if (Math.abs(dx) < (down.touch ? 6 : 4)) return;
+                        if (down.touch && Math.abs(dy) > Math.abs(dx)) { finish(null); return; }   // a scroll, not a pan
+                        clearTimeout(lpTimer);
+                        m.dragging = true;
+                        document.documentElement.classList.add('mp-panning');
+                        if (io) io.observe(pc);
+                    }
+                    if (isPopup(pc) && typeof window.cancelCandleClose === 'function') window.cancelCandleClose();
+                    const now = performance.now();
+                    m.pos = Math.max(0, Math.min(down.max, m.pos + (x - down.last) / down.step));
+                    down.last = x;
+                    samples.push({ t: now, x });
+                    while (samples.length > 2 && now - samples[0].t > 100) samples.shift();
+                    queue(pc);
+                    if (e.cancelable) e.preventDefault();
+                };
+                function finish(e) {
+                    if (!down) return;
+                    window.removeEventListener('pointermove', onMove);
+                    window.removeEventListener('pointerup', onUp);
+                    window.removeEventListener('pointercancel', onUp);
+                    clearTimeout(lpTimer);
+                    const d = down, pc = d.pc, m = stateOf(pc);
+                    down = null;
+                    if (!m.dragging) { samples = []; return; }
+                    m.dragging = false;
+                    document.documentElement.classList.remove('mp-panning');
+                    justDragged = true;
+                    setTimeout(function () { justDragged = false; }, 0);
+                    let v = 0;
+                    const now = performance.now();
+                    if (e && e.type === 'pointerup' && samples.length >= 2 && now - samples[samples.length - 1].t < 60) {
+                        const a = samples[0], b = samples[samples.length - 1];
+                        v = (b.x - a.x) / Math.max(8, b.t - a.t) / d.step;
+                    }
+                    samples = [];
+                    if (Math.abs(v) * d.step > 0.25) animTo(pc, m.pos + v * 320, 320);
+                    else animTo(pc, m.pos, 110);
+                    // released outside the pop-up: let it close as a normal mouse-out would
+                    if (isPopup(pc) && e && e.pointerType === 'mouse' && typeof window.scheduleCandleClose === 'function') {
+                        const pop = document.getElementById('csp-hover-popup');
+                        const r = pop && pop.getBoundingClientRect();
+                        if (r && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom)) window.scheduleCandleClose();
+                    }
+                }
+                const onUp = function (e) { if (down && e.pointerId === down.id) finish(e); };
+
+                document.addEventListener('pointerdown', function (e) {
+                    if (!e.isPrimary || down) return;
+                    if (e.pointerType === 'mouse' && e.button !== 0) return;
+                    const cv = e.target && e.target.closest && e.target.closest(SEL);
+                    if (!cv || cv.closest('#fs-chart-modal')) return;     // the full chart has its own
+                    const pc = ownerOf(cv);
+                    if (!pc || !pc._chartState) return;
+                    const max = maxOf(pc);
+                    if (!max) return;                                      // nothing older to show
+                    const m = stateOf(pc);
+                    if (m.raf) { cancelAnimationFrame(m.raf); m.raf = 0; }
+                    m.anim = null;
+                    m.pos = Math.min(max, (pc._panOffset || 0) + (pc._panFrac || 0));
+                    m.lastP = m.pos;
+                    const touch = e.pointerType !== 'mouse';
+                    down = { id: e.pointerId, pc, x0: e.clientX, y0: e.clientY, last: e.clientX, max, step: stepOf(pc), touch, scrub: false };
+                    samples = [{ t: performance.now(), x: e.clientX }];
+                    window.addEventListener('pointermove', onMove, { passive: false });
+                    window.addEventListener('pointerup', onUp);
+                    window.addEventListener('pointercancel', onUp);
+                    if (touch) {
+                        const me = down;
+                        clearTimeout(lpTimer);
+                        lpTimer = setTimeout(function () {
+                            if (down === me && !stateOf(pc).dragging) me.scrub = true;
+                        }, LONG_PRESS_MS);
+                    } else {
+                        e.preventDefault();                                // no text selection while dragging
+                    }
+                });
+                // the click that ends a drag must not reach the card / chart
+                document.addEventListener('click', function (e) {
+                    if (justDragged && e.target && e.target.closest && e.target.closest(SEL)) {
+                        e.stopImmediatePropagation(); e.preventDefault(); justDragged = false;
+                    }
+                }, true);
+            })();
 
             // Global helper to extract coordinates, accounting for CSS rotation on mobile
             window._getRotatedCoords = function (e, canvas, cachedRect) {
@@ -44881,6 +46290,13 @@ ${xDef.label}: ${xDef.fmt(p.x)} · ${yDef.label}: ${yDef.fmt(p.y)} · MCap: ${PA
                 if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
                     e.preventDefault();
                     _fsPanChart(e.key === 'ArrowLeft' ? 8 : -8);
+                    return;
+                }
+
+                // Home: back to the latest candle · End: the oldest
+                if (e.key === 'Home' || e.key === 'End') {
+                    e.preventDefault();
+                    if (e.key === 'Home') window._fsPanHome(); else window._fsPanToOldest();
                     return;
                 }
 
